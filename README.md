@@ -5,6 +5,7 @@
 - **总览首页**：https://futurehafuture.github.io/embodied-ai-notes/
 - **Astra × 具身智能**：https://futurehafuture.github.io/embodied-ai-notes/astra/
 - **GR00T 学习笔记**：https://futurehafuture.github.io/embodied-ai-notes/gr00t/
+- **上下文压缩**：https://futurehafuture.github.io/embodied-ai-notes/context-compression/
 
 旧的 Astra 章节地址（例如 `/#s-paradigm`）会自动跳转到新的 Astra 页面相应章节。
 
@@ -16,3 +17,5 @@
 - `gr00t/index.html` / `gr00t/theme.css`：GR00T 完整笔记及专用组件适配。
 
 正文、图示和交互计算器保留在各自内容页，每篇笔记均提供返回首页的入口。新增笔记时，创建独立目录并在首页的 `notebook-list` 中添加入口，然后更新首页数量。
+
+`context-compression/index.html` 保留原笔记的正文编辑、分级目录、字体切换和 HTML 保存功能，样式内联以便下载后独立打开。

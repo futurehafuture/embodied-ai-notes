@@ -1,0 +1,2021 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-font="long">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上下文压缩 · 实战研究笔记</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Long+Cang&family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+:root{
+  --paper:#f5f8fb; --grid:rgba(60,110,180,.13); --grid2:rgba(60,110,180,.26);
+  --ink:#1c2848; --soft:#55627f; --red:#c93a33; --hl:rgba(255,228,70,.62);
+  --green:#2b8a57; --blue:#2a5fc4;
+  --sheet:rgba(255,255,255,.80); --card:#fffffb; --line:#1c2848;
+  --sticky:#fff4a3; --sticky-ink:#2b2a12; --shadow:rgba(28,40,72,.18);
+  --fs:22px;--bar-h:56px;--toc-w:290px;
+  --hand:"Caveat","Long Cang","Kaiti SC","STKaiti","KaiTi","Segoe Print","Bradley Hand",cursive;
+  --brush:"Ma Shan Zheng","Caveat","Kaiti SC","STKaiti","KaiTi",cursive;
+}
+html[data-font="kai"]{--hand:"Kaiti SC","STKaiti","KaiTi","楷体","AR PL UKai CN",serif;--brush:"Kaiti SC","STKaiti","KaiTi","楷体",serif}
+html[data-font="sans"]{--hand:system-ui,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;--brush:system-ui,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif}
+@media (prefers-color-scheme:dark){
+  :root{--paper:#171e2c;--grid:rgba(140,180,255,.08);--grid2:rgba(140,180,255,.17);--ink:#e8edf7;--soft:#a3b0c9;
+    --red:#ff7f75;--hl:rgba(255,214,10,.30);--green:#73d6a0;--blue:#93b6ff;--sheet:rgba(27,35,52,.84);--card:#212b40;
+    --line:#c9d4ec;--sticky:#5a5220;--sticky-ink:#fbf4c4;--shadow:rgba(0,0,0,.35)}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:calc(var(--bar-h) + 14px)}
+body{
+  margin:0;color:var(--ink);font-family:var(--hand);font-size:var(--fs);line-height:1.75;
+  background-color:var(--paper);
+  background-image:
+    linear-gradient(var(--grid2) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid2) 1px,transparent 1px),
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:160px 160px,160px 160px,32px 32px,32px 32px;
+  min-height:100vh;
+}
+/* ---------- 工具条 ---------- */
+#bar{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;
+  padding:8px 16px;background:var(--sheet);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  border-bottom:2px dashed var(--line);font-size:.78em;line-height:1.3}
+#bar .brand{font-family:var(--brush);font-size:1.25em}
+#bar button,#bar select{font:inherit;color:var(--ink);background:var(--card);cursor:pointer;
+  border:2px solid var(--line);border-radius:255px 12px 225px 12px/12px 225px 12px 255px;padding:2px 12px}
+#bar button:hover{transform:translateY(-1px);box-shadow:2px 3px 0 var(--shadow)}
+#bar button:focus-visible,#bar select:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+#bar button.primary{background:var(--hl)}
+#bar .sep{width:2px;height:1.4em;background:var(--grid2)}
+#status{color:var(--soft)}
+#status.dirty{color:var(--red)}
+/* ---------- 纸面 ---------- */
+#paper{max-width:940px;margin:0 auto;padding:30px 22px 140px;outline:none}
+h1,h2,h3,h4{font-weight:400;margin:0}
+h1{font-family:var(--brush);font-size:2.7em;line-height:1.25;margin:.2em 0 .15em;
+  text-decoration:underline wavy var(--red);text-decoration-thickness:3px;text-underline-offset:10px}
+h2{font-family:var(--brush);font-size:1.9em;line-height:1.3;display:inline-block;
+  background:linear-gradient(transparent 58%,var(--hl) 58%);padding:0 .25em;margin:0 0 .3em -.25em}
+h3{font-family:var(--brush);font-size:1.45em;line-height:1.35}
+h4{font-weight:700;font-size:1.05em;margin:1em 0 .2em}
+p{margin:.55em 0}
+.lede{color:var(--soft);font-size:1.02em;max-width:36em}
+.stage{margin-top:3.2rem;padding-top:.8rem;border-top:3px double var(--line)}
+.stage > .sub{color:var(--soft);margin:.1em 0 1em}
+.sheet{position:relative;background:var(--sheet);border:2.5px solid var(--line);
+  border-radius:255px 18px 225px 18px/18px 225px 18px 255px;padding:16px 26px 18px;margin:26px 0;
+  box-shadow:3px 4px 0 var(--shadow)}
+.sheet ul,.sheet ol{margin:.3em 0;padding-left:1.4em}
+/* 资料卡 */
+.src{margin-top:44px}
+.src::before{content:"";position:absolute;top:-15px;left:50%;width:120px;height:28px;margin-left:-60px;
+  background:rgba(255,224,110,.72);transform:rotate(-2.2deg);border-left:3px dotted rgba(0,0,0,.12);border-right:3px dotted rgba(0,0,0,.12)}
+.src-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;justify-content:space-between}
+.meta{color:var(--soft);font-size:.8em;margin:.1em 0 .5em}
+.tag{display:inline-block;padding:0 .6em;margin-right:.45em;border:2px solid currentColor;
+  border-radius:255px 8px 225px 8px/8px 225px 8px 255px;font-size:.76em;line-height:1.5;vertical-align:.1em}
+.t-prim{color:var(--green)} .t-sec{color:var(--red)} .t-vendor{color:var(--blue)} .t-paper{color:var(--green)}
+.rd{color:var(--soft);border-style:dashed}
+.lnk{display:inline-block;font-size:.78em}
+.lnk a{color:var(--blue);text-decoration:underline dashed;text-underline-offset:4px;word-break:break-all}
+.one{background:linear-gradient(transparent 58%,var(--hl) 58%);padding:0 .15em}
+ul.pts{list-style:none;padding-left:0 !important}
+ul.pts li{position:relative;padding-left:1.35em;margin:.25em 0}
+ul.pts li::before{content:"–";position:absolute;left:.15em;color:var(--blue);font-weight:700}
+.take{border-left:4px solid var(--red);padding:.1em 0 .1em .9em;margin:.9em 0 .2em}
+.take b{font-family:var(--brush);font-weight:400;color:var(--red);font-size:1.1em;margin-right:.4em}
+.caveat{border:2px dashed var(--soft);border-radius:14px;padding:.2em .9em;margin:.7em 0 .1em;color:var(--soft);font-size:.92em}
+.caveat b{color:var(--ink)}
+.sticky{background:var(--sticky);color:var(--sticky-ink);padding:14px 22px 14px;margin:26px 0;
+  box-shadow:4px 6px 0 var(--shadow);transform:rotate(-.4deg);border-radius:4px 4px 30px 4px/4px 4px 14px 4px}
+.sticky h3{color:inherit;margin-bottom:.2em}
+.sticky ul{margin:.2em 0;padding-left:1.3em}
+ul.check{list-style:none;padding-left:0 !important}
+ul.check li{position:relative;padding-left:1.7em;margin:.2em 0}
+ul.check li::before{content:"☐";position:absolute;left:0;color:var(--soft)}
+ul.check li.done::before{content:"✔";color:var(--green);font-weight:700}
+ul.check li.doing::before{content:"✎";color:var(--red)}
+.pending{color:var(--soft);font-style:italic}
+table{border-collapse:collapse;width:100%;margin:.6em 0;font-size:.92em}
+th,td{border:2px solid var(--line);padding:3px 10px;text-align:left;vertical-align:top}
+th{background:var(--hl);font-weight:700}
+code,.mono{font-family:var(--hand);background:var(--hl);padding:0 .3em;border-radius:6px;font-weight:700}
+[contenteditable="false"]{user-select:text}
+.scroll{overflow-x:auto;margin:.4em 0}
+.scroll table{min-width:560px}
+.group{margin:1.6em 0 .2em}
+.group h3{display:inline-block;background:linear-gradient(transparent 60%,var(--hl) 60%);padding:0 .2em}
+.mini{border-bottom:2px dotted var(--grid2);padding:.55em 0 .6em}
+.mini h4{margin:0 0 .1em;font-size:1.08em}
+.mini p{margin:.12em 0}
+.mini .k{color:var(--blue);font-weight:700;margin-right:.3em}
+.mini .w{color:var(--red);font-weight:700;margin-right:.3em}
+.memo{background:var(--card);border:2px dashed var(--line);border-radius:14px;padding:12px 18px;margin:.8em 0;white-space:pre-wrap;line-height:1.65;font-size:.92em}
+.art > h3{margin-top:1.8em;padding-top:.3em;border-top:2px dashed var(--grid2)}
+.art > h3:first-child{margin-top:.2em;border-top:none}
+.art h4{margin-top:1.1em}
+ol.steps{padding-left:1.5em}
+ol.steps > li{margin:.5em 0}
+#bar a.nav{font:inherit;color:var(--ink);text-decoration:none;border:2px solid var(--line);border-radius:255px 12px 225px 12px/12px 225px 12px 255px;padding:2px 12px;background:var(--card)}
+#bar a.nav:hover{background:var(--hl)}
+#bar a.nav:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+/* ---------- 左侧目录(树形,与正文同步) ---------- */
+#toc{position:fixed;left:0;top:var(--bar-h);bottom:0;width:var(--toc-w);overflow-y:auto;overscroll-behavior:contain;
+  padding:12px 10px 40px 10px;background:var(--sheet);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+  border-right:2px dashed var(--line);z-index:40;font-size:.7em;line-height:1.4;display:none}
+#toc .toc-title{font-family:var(--brush);font-size:1.5em;margin:0 0 .3em 6px}
+#toc .row{display:flex;align-items:center;margin-top:.55em}
+#toc .tg{flex:none;width:22px;height:22px;padding:0;border:0;background:transparent;color:var(--soft);
+  font:inherit;line-height:1;cursor:pointer;border-radius:6px;transition:transform .15s}
+#toc .row.open .tg{transform:rotate(90deg)}
+#toc .tg:hover{background:var(--grid2)}
+#toc .tg:focus-visible{outline:3px solid var(--blue);outline-offset:-2px}
+#toc a{display:block;color:var(--ink);text-decoration:none;padding:2px 8px;border-left:3px solid transparent;
+  border-radius:0 8px 8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#toc a.hid{display:none}
+#toc a.l1{flex:1;min-width:0;font-family:var(--brush);font-size:1.2em}
+#toc a.l2{padding-left:26px;color:var(--soft)}
+#toc a.l3{padding-left:42px;font-size:.92em;color:var(--soft)}
+#toc a.anc{border-left-color:var(--blue);color:var(--ink)}
+#toc a:hover{background:var(--grid2)}
+#toc a.on,#toc a.on:hover{background:var(--hl);border-left-color:var(--red);color:var(--ink);font-weight:700}
+#toc a:focus-visible{outline:3px solid var(--blue);outline-offset:-2px}
+@keyframes tocflash{0%{background-color:var(--hl);box-shadow:0 0 0 8px var(--hl)}100%{background-color:transparent;box-shadow:0 0 0 8px transparent}}
+.flash{animation:tocflash 1.4s ease-out;border-radius:6px}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}#toc .tg{transition:none}}
+@media (min-width:1100px){
+  html:not([data-toc="off"]) #toc{display:block}
+  html:not([data-toc="off"]) body{padding-left:var(--toc-w)}
+  html:not([data-toc="off"]) #bar{margin-left:calc(-1 * var(--toc-w))}
+}
+@media (max-width:1099px){
+  html[data-toc-open="1"] #toc{display:block;width:min(86vw,330px);box-shadow:6px 0 0 var(--shadow)}
+}
+@media (max-width:640px){
+  :root{--fs:19px}
+  #paper{padding:20px 12px 120px}
+  .sheet{padding:14px 16px}
+  h1{font-size:2.1em}
+}
+@media print{
+  #bar,#toc{display:none !important}
+  body{padding-left:0 !important}
+  body{background:#fff}
+  .sheet,.sticky{box-shadow:none}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}#bar button:hover{transform:none}}
+</style>
+<style>
+/* Collection styling stays inline so saved HTML remains portable. */
+/* Shared visual theme for the notebook collection. */
+
+:root{
+  --paper:#FBF8EF;
+  --grid:rgba(122,150,176,.20);
+  --grid-strong:rgba(122,150,176,.34);
+  --ink:#24324A;
+  --ink-soft:#5A667C;
+  --red:#C7362F;
+  --red-soft:rgba(199,54,47,.10);
+  --blue:#2F5D9E;
+  --hl:rgba(255,224,60,.62);
+  --hl-green:rgba(140,220,140,.45);
+  --margin-line:rgba(199,54,47,.38);
+  --card:rgba(255,255,255,.60);
+  --sticky:#FFF2A1;
+  --sticky-ink:#3B3420;
+  --tape:rgba(232,214,160,.78);
+  --shadow:rgba(60,50,30,.16);
+  --f-body:"LXGW WenKai","Kalam","KaiTi","STKaiti","楷体",serif;
+  --f-head:"Ma Shan Zheng","LXGW WenKai","KaiTi","STKaiti",cursive;
+  --f-note:"Long Cang","Caveat","KaiTi","STKaiti",cursive;
+  --f-latin:"Caveat","Kalam","Comic Sans MS",cursive;
+  --f-num:"Kalam","LXGW WenKai",cursive;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#1C2129;--grid:rgba(140,170,205,.10);--grid-strong:rgba(140,170,205,.18);
+    --ink:#E7E2D4;--ink-soft:#A8B0BD;--red:#FF7E72;--red-soft:rgba(255,126,114,.10);--blue:#8DB6F2;
+    --hl:rgba(255,214,10,.32);--hl-green:rgba(120,220,120,.25);--margin-line:rgba(255,126,114,.30);
+    --card:rgba(255,255,255,.04);--sticky:#4A4428;--sticky-ink:#F2E9C2;--tape:rgba(200,180,120,.30);--shadow:rgba(0,0,0,.45);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#1C2129;--grid:rgba(140,170,205,.10);--grid-strong:rgba(140,170,205,.18);
+  --ink:#E7E2D4;--ink-soft:#A8B0BD;--red:#FF7E72;--red-soft:rgba(255,126,114,.10);--blue:#8DB6F2;
+  --hl:rgba(255,214,10,.32);--hl-green:rgba(120,220,120,.25);--margin-line:rgba(255,126,114,.30);
+  --card:rgba(255,255,255,.04);--sticky:#4A4428;--sticky-ink:#F2E9C2;--tape:rgba(200,180,120,.30);--shadow:rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+
+:root{--soft:var(--ink-soft);--grid2:var(--grid-strong);--sheet:var(--card);--line:var(--ink);--fs:20px;--hand:var(--f-body);--brush:var(--f-head)}
+body{background-size:120px 120px,120px 120px,24px 24px,24px 24px;background-attachment:fixed}
+#bar{border-bottom:1.5px dashed var(--grid-strong);background:var(--paper)}
+#bar button,#bar select,#bar a.nav{border-width:1.5px;border-color:var(--grid-strong);border-radius:4px 10px 4px 10px}
+#toc{border-right:1px dashed var(--grid-strong);background:var(--paper)}
+.sheet{border:1.5px solid var(--grid-strong);border-radius:6px 14px 8px 16px;box-shadow:2px 4px 0 var(--grid)}
+.src::before{background:var(--tape)}
+.stage{border-top-color:var(--grid-strong)}
+th,td{border:1.4px dashed var(--grid-strong)}
+th{background:var(--red-soft);border-bottom:2px solid var(--ink)}
+a{color:var(--blue);text-underline-offset:3px}
+#paper header{margin-bottom:36px}
+@media(max-width:640px){:root{--fs:18px}#bar{padding:8px 10px;gap:6px}#bar .brand{display:none}}
+</style>
+</head>
+<body>
+
+<div id="bar" contenteditable="false">
+  <a class="nav" href="../">← 笔记首页</a>
+  <span class="brand">研究笔记本</span>
+  <button type="button" data-act="toc" title="显示 / 隐藏左侧目录">目录</button>
+  <button type="button" data-act="save" class="primary" title="保存修改后的整页为 .html(快捷键 Ctrl/⌘+S)">保存</button>
+  <span id="status">尚未修改</span>
+  <span class="sep"></span>
+  <a class="nav" href="#stage1">资料采集</a>
+  <a class="nav" href="#stage2">逐篇小结</a>
+  <a class="nav" href="#stage3">最佳实践全文</a>
+  <span class="sep"></span>
+  <button type="button" data-act="hl" title="选中文字后点击">荧光笔</button>
+  <button type="button" data-act="red">红笔</button>
+  <button type="button" data-act="bold">加粗</button>
+  <button type="button" data-act="clear">清格式</button>
+  <button type="button" data-act="undo">撤销</button>
+  <span class="sep"></span>
+  <label>字体
+    <select id="fontSel" aria-label="切换字体">
+      <option value="long">手写 · 文楷</option>
+      <option value="kai">手写 · 楷体</option>
+      <option value="sans">清晰 · 黑体</option>
+    </select>
+  </label>
+  <button type="button" data-act="smaller" aria-label="缩小字号">A−</button>
+  <button type="button" data-act="larger" aria-label="放大字号">A+</button>
+</div>
+
+<nav id="toc" contenteditable="false" aria-label="目录"></nav>
+
+<main id="paper" contenteditable="true" spellcheck="false">
+
+  <header>
+    <h1>上下文压缩 · 实战研究笔记</h1>
+    <p class="lede">目标:把“先缩工具结果、再让模型总结”这种一句话方案,拆成照着就能做的细节——什么时候触发、先压什么、摘要里必须留什么、怎么评估压得好不好、什么时候干脆别压。</p>
+    <p class="meta">整理日期:2026-10-18 · 本页所有文字都可以直接点击修改,改完点顶部“保存”。</p>
+  </header>
+
+  <div class="sheet">
+    <h3>这份笔记怎么读</h3>
+    <ul class="pts">
+      <li>第一步“资料采集本”:边搜边记,每一轮追加,带来源、日期、可信度标签。</li>
+      <li>第二步“逐篇小结”:所有资料收齐后,每篇一句话 + 带走什么。</li>
+      <li>第三步“最佳实践全文”:把以上证据串成一篇能落地的完整文章。</li>
+      <li>左侧是目录,与正文双向同步:滚动正文时自动高亮并展开当前章节,点目录条目会跳转并让目标标题闪一下;点章标题前的小三角可手动展开或收起;窄屏请点顶部“目录”按钮展开。</li>
+      <li>标签含义:<span class="tag t-prim">一手</span>原作者发布 <span class="tag t-paper">论文</span>可查证实验 <span class="tag t-vendor">厂商自评</span>有利益相关 <span class="tag t-sec">二手</span>转述,需回溯原文</li>
+    </ul>
+  </div>
+
+  <div class="sheet">
+    <h3>进度板</h3>
+    <ul class="check">
+      <li class="done">第 1 轮:Anthropic 上下文工程(二手转述)、Factory 压缩评测、JetBrains 观察遮蔽 vs 摘要、Manus 可恢复压缩</li>
+      <li class="done">第 2 轮:Anthropic 官方 cookbook(压缩 / 工具结果清理 / 记忆的参数与实验)、UT Austin《Beyond Token Savings》受控实验、逐 token 压缩在 agent 上失效的论文、Focus 自主压缩、开源实现文档</li>
+      <li class="done">第 3 轮:Anthropic 博客原文、Anthropic 官方压缩文档(按需压缩 / 保留近期轮次 / 后台压缩)、OpenAI 压缩指南</li>
+      <li class="done">第 4 轮:Factory《Compressing Context》、Claude Code 官方上下文说明(压缩后留什么)、LangChain Deep Agents 分层落盘与评估方法、ACON、Chroma Context Rot、LLMLingua</li>
+      <li class="done">第 5 轮:TokenPilot(压缩与提示缓存的冲突、前缀稳定的压缩)</li>
+      <li class="done">第 6 轮:补查待查项——Copilot 生产追踪、TRACE、Governance Decay、CoACT、OpenHands 压缩器、Cursor 动态上下文发现、Cognition(仅二手)</li>
+      <li class="done">第 7 轮:读开源 agent 的压缩实现——Pi(含 OpenClaw 记忆冲刷)、Codex(官方提示词与实测分析)、Gemini CLI、OpenCode / Amp、LangChain 中间件(沙箱无网络,未能自己克隆源码)</li>
+      <!--MARK_LOG-->
+      <li class="done">第二步:逐篇小结(31 份资料)</li>
+      <li class="done">第三步:最佳实践全文</li>
+    </ul>
+    <h4>下一轮待查线索</h4>
+    <ul class="check">
+      <li class="done">Anthropic 原文《Effective context engineering for AI agents》(第 3 轮已读原文)</li>
+      <li class="done">Anthropic API 的 compaction / 上下文编辑 / memory 三个原语(第 2 轮已读 cookbook)</li>
+      <li class="done">arXiv 2609.32961《Beyond Token Savings》:触发时机、压缩深度、压缩自身成本(第 2 轮已读全文)</li>
+      <li class="done">OpenAI 的服务端压缩与 /responses/compact 官方说明(第 3 轮已读)</li>
+      <li class="done">Factory《Compressing Context》全文(第 4 轮已读)</li>
+      <li class="done">ACON、LLMLingua、Chroma Context Rot、LangChain Deep Agents(第 4 轮已读)</li>
+      <li class="done">TokenPilot(arXiv 2606.17016):前缀稳定、保护缓存的压缩(第 5 轮已读摘要与摘录)</li>
+      <li class="done">CoACT(2607.02911)与 Min 等 TRACE(2608.06503)(第 6 轮已读)</li>
+      <li class="done">Copilot 生产追踪论文(2608.00101)(第 6 轮已读摘要与解读)</li>
+      <li class="done">Anthropic compaction 官方文档页(第 3 轮已读:按需压缩、保留近期轮次)</li>
+      <li>Cognition《Don't Build Multi-Agents》原文(目前只有转述)</li>
+      <li>《Prune the Summary, Not the History: Source-Judged Compaction》(arXiv 2610.20927,TRACE 的后续,只读到摘录)</li>
+      <li>《Beyond Compaction: Structured Context Eviction》(arXiv 2606.11213);《Omission Constraints Decay…》(arXiv 2604.20911)</li>
+      <li class="done">Gemini CLI、Codex、Pi coding agent 的压缩实现细节(第 7 轮已读第三方源码分析与官方提示词)</li>
+      <li>Claude Code 内部实现(闭源,目前只有官方文档;不采用社区提取的提示词)</li>
+      <li>Cline、Hermes、OpenClaw 的压缩源码(TRACE 论文用作基线,仅知文件路径)</li>
+      <li>把 Pi、Codex、Gemini CLI 的源码真正克隆到本地分析(需要在设置里打开沙箱网络,目前只读了第三方分析)</li>
+      <!--MARK_LEADS-->
+    </ul>
+  </div>
+
+  <!-- ================= 第一步 ================= -->
+  <section class="stage" id="stage1">
+    <h2>第一步 · 资料采集本</h2>
+    <p class="sub">每张卡片是一份资料。写的是我读到的事实和数字,不是原文摘抄;“我的批注”是我自己的判断。</p>
+
+    <div id="notes">
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Factory:压缩质量到底怎么评测</h3>
+        <span class="lnk" contenteditable="false"><a href="https://factory.ai/news/evaluating-compression" target="_blank" rel="noopener">factory.ai/news/evaluating-compression</a></span>
+      </div>
+      <p class="meta"><span class="tag t-vendor">厂商自评</span><span class="tag rd">第1轮</span>Factory Research · 2025-12-16 · 已读全文</p>
+      <p><span class="one">核心观点:优化目标是“完成整个任务花的 token”,不是“每次请求花的 token”。</span>压得过狠,agent 会重读文件、重走死胡同,反而更贵。</p>
+      <h4>评测方法(可以直接借鉴)</h4>
+      <ul class="pts">
+        <li>不用 ROUGE、嵌入相似度——摘要可以字面很像,却恰好丢了 agent 继续干活唯一需要的那个文件路径。</li>
+        <li>改用“探针”:压缩之后向 agent 提问,要求它回忆被截断历史里的具体细节。四类探针:回忆(原始报错是什么)、文件轨迹(改过哪些文件、各改了什么)、续作(下一步做什么)、决策(之前讨论的方案最后选了哪个)。</li>
+        <li>用评审模型盲评,六个维度各 0–5 分:准确性、上下文感知、文件轨迹、完整性、连续性、指令遵循。样本是 36,611 条真实生产会话消息(PR 评审、修 bug、做功能、重构等)。</li>
+      </ul>
+      <h4>三种做法与结果</h4>
+      <div class="scroll"><table>
+        <tr><th>做法</th><th>机制</th><th>总分</th><th>准确性</th><th>压缩率</th></tr>
+        <tr><td>Factory</td><td>结构化 + 锚定式增量摘要:只总结“刚被截掉的那一段”,合并进一份持久摘要;摘要有固定分区(会话意图、文件修改、决策、下一步)</td><td>3.70</td><td>4.04</td><td>98.6%</td></tr>
+        <tr><td>Anthropic SDK</td><td>结构化摘要,约 7–12k 字符,含分析/文件/待办/当前状态;每次压缩整体重写</td><td>3.44</td><td>3.74</td><td>98.7%</td></tr>
+        <tr><td>OpenAI /responses/compact</td><td>不透明压缩,压缩率最高但人读不了、无法核验保留了什么</td><td>3.35</td><td>3.43</td><td>99.3%</td></tr>
+      </table></div>
+      <ul class="pts">
+        <li>“结构强制保留”:固定分区像清单,摘要器必须填写或明确写“无”,不会悄悄丢文件路径和决策。</li>
+        <li>增量合并比每次重写更稳:反复压缩多轮后,重写式摘要的细节会漂移、消失。</li>
+        <li><b>文件轨迹</b>是三家共同的弱项(2.19–2.45 / 5)。作者的判断:这件事不该靠摘要,应该由脚手架单独维护一份文件索引 / 文件状态。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 评测方式比结论更值钱:自己做一套“压缩后探针”,每次改摘要提示词就跑一遍。② 摘要模板里必须有“改过的文件 / 关键标识符 / 决策与理由 / 下一步”几个硬分区。③ 文件列表交给代码维护,别指望模型总结。</div>
+      <div class="caveat"><b>局限:</b>Factory 是在推销自家方案;裁判是 LLM;OpenAI 和 Anthropic 的摘要是把同一段前缀喂给各自接口生成的,并非在它们原生 agent 里跑的真实效果。三家总分差只有 0.26–0.35。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>JetBrains:观察遮蔽 vs LLM 摘要</h3>
+        <span class="lnk" contenteditable="false"><a href="https://blog.jetbrains.com/research/2025/12/efficient-context-management/" target="_blank" rel="noopener">blog.jetbrains.com/research/2025/12/…</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第1轮</span>JetBrains Research(NeurIPS 2025 DL4Code 工作坊)· 论文《The Complexity Trap》arXiv 2508.21433 · 已读博客全文</p>
+      <p><span class="one">结论很反直觉:最简单的“把旧的工具输出换成占位符”,在成本和成功率上不输、甚至常常优于让模型做摘要。</span></p>
+      <h4>实验设置</h4>
+      <ul class="pts">
+        <li>基准:SWE-bench Verified 500 题,单题最长 250 轮;模型:Qwen3(32B 到 480B)和 Gemini 2.5 Flash,覆盖思考 / 非思考模式。</li>
+        <li><b>观察遮蔽</b>:推理和动作原样保留,只把窗口之外的环境观察(文件内容、测试日志)替换成“部分细节已省略”之类的占位符。最佳窗口:最近 10 轮。</li>
+        <li><b>LLM 摘要</b>:单独的摘要模型,每次压缩 21 轮,最近 10 轮保持原文;摘要覆盖观察、动作和推理三部分。</li>
+      </ul>
+      <h4>结果</h4>
+      <ul class="pts">
+        <li>两种策略都比“不管理”的原始 agent 便宜 50% 以上。观察遮蔽在 5 个设置里的 4 个更便宜且常更准;Qwen3-Coder 480B 上成功率 +2.6%、平均便宜 52%。</li>
+        <li>摘要的隐藏成本一:agent 的轨迹被拉长约 13–15%。作者推测摘要把“已经该放弃了”的信号抹平了,于是它多走了不少冤枉步。</li>
+        <li>隐藏成本二:摘要调用本身可占单题成本的 7% 以上,而且每次要处理的历史片段都不同,几乎吃不到缓存。</li>
+        <li>遮蔽窗口要按脚手架调:OpenHands 因为把失败重试的轮次全留着,窗口开 10 轮可能全是报错,必须调大。</li>
+        <li><b>混合策略</b>:平时靠遮蔽,只有上下文真的很长时才触发一次摘要兜底。相对纯遮蔽再省 7%、相对纯摘要省 11%,成功率再提约 2.6 个百分点。无需训练,任何模型都能套。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>“先遮蔽、后摘要”是有证据支撑的顺序,不是拍脑袋。摘要触发的阈值、遮蔽窗口都是要调的超参,别抄别人的数。</div>
+      <div class="caveat"><b>局限:</b>场景是编码 agent,环境观察占上下文的绝大部分;对话型、深度研究型 agent 的占比不同,结论未必平移。遮蔽之后上下文仍会无限增长,只是变慢。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Manus:压缩一定要“可恢复”</h3>
+        <span class="lnk" contenteditable="false"><a href="https://manus.im/en/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus" target="_blank" rel="noopener">manus.im/en/blog/Context-Engineering-…</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第1轮</span>Manus(Yichao “Peak” Ji)· 2025-07-18 · 已读全文</p>
+      <p><span class="one">不可逆的压缩都有风险,因为你没法预测哪条观察十步之后会突然变关键。</span>所以 Manus 的所有压缩都设计成能还原:丢掉网页正文但保留 URL,省略文档内容但保留沙箱里的路径。</p>
+      <ul class="pts">
+        <li>把文件系统当作“终极上下文”:容量无限、天然持久、模型自己会读写。上下文里只放“指针”,内容落在文件里。</li>
+        <li>用 token 账解释为什么要管上下文:agent 的输入输出 token 比约 100:1;用 Claude Sonnet 举例,缓存命中的输入价格是未命中的十分之一。</li>
+        <li>保护 KV 缓存的四条做法:提示词前缀保持稳定(别在开头放精确到秒的时间戳);上下文只追加、不改历史;序列化要确定性(JSON 键序别乱);必要时显式标缓存断点。</li>
+        <li>复述(recitation):一个典型任务约 50 次工具调用,Manus 不断重写 todo.md,把全局目标顶到上下文末尾,避免“中间遗忘”。</li>
+        <li>保留错误:失败的动作和栈信息留在上下文里,模型会据此调整,不再重复同样的错。</li>
+        <li>工具“遮蔽而非移除”:不在回合中途增删工具定义(会让缓存失效、让历史里的调用悬空),而是在解码时屏蔽 token。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 压缩的第一选择是“落盘 + 留指针”,而不是“摘要”。② 我的推论:每次压缩都会改写历史,等于缓存前缀失效,所以“多久压一次、一次压多少”要和缓存成本一起算。③ 压缩时别把失败轨迹洗干净。</div>
+      <div class="caveat"><b>局限:</b>经验帖,没有对照实验数据;很多做法依赖有沙箱文件系统的 agent 形态。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Anthropic 博客原文:有效的上下文工程</h3>
+        <span class="lnk" contenteditable="false"><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank" rel="noopener">anthropic.com/engineering/effective-context-engineering-for-ai-agents</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第1轮转述 → 第3轮原文</span>Anthropic Applied AI 团队 · 2025-09-29(页面 2026-01 更新过)· 已读全文</p>
+      <p><span class="one">总原则:找到“尽可能小的一组高信号 token”。</span>上下文是边际收益递减的有限资源,模型有“注意力预算”,每多塞一个 token 都在消耗它。</p>
+      <h4>为什么窗口再大也要管</h4>
+      <ul class="pts">
+        <li>上下文越长,模型回忆其中信息的准确度越低(context rot),所有模型都有,只是缓急不同。成因包括:注意力要处理 n² 个两两关系,以及训练数据里长序列本来就少。表现是“渐变的坡”,不是“悬崖”。</li>
+        <li>作者明确说:等更大的窗口不是办法——任何尺寸的窗口都会有上下文污染和相关性问题。</li>
+      </ul>
+      <h4>压缩(compaction)怎么做</h4>
+      <ul class="pts">
+        <li>Claude Code 的做法:把消息历史交给模型,让它总结并压缩最关键的细节——保留<b>架构决策、未解决的 bug、实现细节</b>,丢掉冗余的工具输出和消息;然后带着“压缩后的上下文 + 最近访问的 5 个文件”继续。</li>
+        <li>怎么调:拿<b>复杂的真实 agent 轨迹</b>调压缩提示词;先把召回拉满(别漏任何相关信息),再迭代提精度(删冗余)。压得太狠会丢掉“当时看不出重要、后来才显出重要”的细微上下文。</li>
+        <li>最轻、最安全的一档压缩就是<b>清工具结果</b>:一次调用埋进历史深处之后,agent 还需要再看一遍原始结果吗?</li>
+      </ul>
+      <h4>压缩之外的三件套</h4>
+      <ul class="pts">
+        <li><b>即时检索</b>:上下文里只留轻量标识符(文件路径、已存查询、链接),需要时再用工具加载。文件名、目录层级、时间戳本身就是信号。Claude Code 是混合型:CLAUDE.md 预先放进上下文,glob / grep 即时检索。</li>
+        <li><b>结构化笔记</b>:把进度写到窗口外(NOTES.md、待办清单),上下文重置后读回来继续。文中例子是 Claude 玩宝可梦——跨越上下文重置仍能保持数千步的统计和策略。</li>
+        <li><b>子 agent</b>:各自在干净的窗口里深入探索(可能用掉几万 token),只返回 1,000–2,000 token 的提炼结果。</li>
+      </ul>
+      <h4>怎么选</h4>
+      <ul class="pts">
+        <li>需要大量来回对话 → 压缩;有明确里程碑的迭代开发 → 笔记;复杂研究、能并行探索 → 多 agent。</li>
+        <li>总的建议:做最简单有效的事。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>这篇给的是“工具箱”和总原则,不是参数手册;具体怎么配要看后面的 cookbook、官方文档和实验论文。其中“拿真实轨迹调摘要提示词、先召回后精度”和“清工具结果是最轻的压缩”是后面所有工程做法的共同起点。</div>
+      <div class="caveat"><b>局限:</b>概念性文章,没有定量实验;“保留 5 个文件”是 Claude Code 当时的实现细节,不是通用参数。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>MorphLLM:压缩方式的三分法(厂商文章)</h3>
+        <span class="lnk" contenteditable="false"><a href="https://www.morphllm.com/compaction-vs-summarization" target="_blank" rel="noopener">morphllm.com/compaction-vs-summarization</a></span>
+      </div>
+      <p class="meta"><span class="tag t-sec">二手</span><span class="tag t-vendor">厂商自评</span><span class="tag rd">第1轮</span>只读到搜索摘要</p>
+      <p><span class="one">把压缩分成三类:LLM 摘要、不透明压缩、逐字压缩(只删不改写)。</span>这个分类法有用,但文章本身带销售意图,数据需回溯到 Factory、JetBrains、ACON 原文再采信。</p>
+      <ul class="pts">
+        <li>逐字压缩的卖点是“删除不会产生幻觉”,代价是压缩率明显低于摘要(文章称约 50–70%,未核实)。</li>
+        <li>不透明压缩的风险:换模型提供商后,之前压缩出的内容用不了(这与 Factory 对不透明方案“人读不了”的批评一致)。</li>
+      </ul>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Anthropic cookbook:压缩、工具结果清理、记忆</h3>
+        <span class="lnk" contenteditable="false"><a href="https://platform.claude.com/cookbook/tool-use-context-engineering-context-engineering-tools" target="_blank" rel="noopener">platform.claude.com/cookbook/…context-engineering-tools</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag t-vendor">厂商示例</span><span class="tag rd">第2轮</span>Anthropic · Isabella He · 2026-03-20 · 已读全文</p>
+      <p><span class="one">官方把三件事拆开讲清楚了:压缩动整个窗口,清理只动工具结果,记忆把信息搬到窗口外。</span>并给出了可直接用的参数和对照实验。</p>
+      <h4>三者各管什么</h4>
+      <ul class="pts">
+        <li><b>压缩</b>:整份对话(用户消息、助手消息、工具调用、工具结果,甚至之前的压缩块)被拍平成一份摘要,有损但能处理所有类型的增长。</li>
+        <li><b>工具结果清理</b>:只把旧的 tool_result 换成占位符,保留 tool_use 记录,让模型知道“调用过、但内容已清”。没有推理成本;只要工具可重复调用,就近乎无损。</li>
+        <li><b>记忆</b>:模型自己通过工具调用读写窗口外的文件,解决跨会话保留;存储后端由你实现。</li>
+      </ul>
+      <h4>官方原语与参数</h4>
+      <div class="scroll"><table>
+        <tr><th>原语</th><th>类型名 / beta 头</th><th>触发与可调项</th></tr>
+        <tr><td>压缩</td><td>compact_20260112 / compact-2026-01-12</td><td>服务端按 token 阈值触发,最小 5 万,默认 15 万;可配 instructions、pause_after_compaction</td></tr>
+        <tr><td>清理</td><td>clear_tool_uses_20250919 / context-management-2025-06-27</td><td>默认 10 万触发;默认保留最近 3 次工具使用;可配 clear_at_least、exclude_tools、clear_tool_inputs</td></tr>
+        <tr><td>记忆</td><td>memory_20250818</td><td>模型自己决定何时存取;客户端实现 view / create / str_replace / insert / delete / rename</td></tr>
+      </table></div>
+      <h4>实现细节</h4>
+      <ul class="pts">
+        <li>压缩触发后,响应里会带一个 compaction 块;下次请求时原样放回消息列表,API 会丢弃它之前的全部历史。</li>
+        <li>自定义 instructions 是<b>整体替换</b>默认摘要提示词,不是补充,所以要自己写完整框架。默认提示词的思路:告诉模型“之后看不到原始历史,请写下能让你继续推进的状态、下一步和经验”,并包进 <code>&lt;summary&gt;</code> 标签。官方例子:偏重保留代码片段、变量名和技术决策。</li>
+        <li>清理会让提示缓存前缀失效,所以要用 clear_at_least 让每次清得足够多,值得付这次缓存重写的代价。</li>
+        <li>叠加使用时:清理的编辑放在压缩之前;和记忆工具一起用时,用 exclude_tools 把记忆读写排除在清理之外,否则模型可能忘了自己刚存了什么。</li>
+        <li>官方文档页还说明:多数长对话场景,服务端压缩是首选;上下文编辑(清工具结果、清思考块)用于更精细的控制。</li>
+        <li><b>时间提示</b>:这篇 cookbook 写于 2026 年 3 月,讲的是“阈值触发”版压缩(compact_20260112)。官方文档此后新增了“按需压缩”(compact-2026-09-04),并建议能用按需就用按需,见下面第 3 轮的卡片。</li>
+      </ul>
+      <h4>对照实验(研究型 agent:读 8 篇各约 4 万 token 的文档,共约 33 万 token)</h4>
+      <ul class="pts">
+        <li>不管理时上下文涨到约 33.5 万,<b>其中约 96% 是文件读取结果</b>——绝大多数是 agent 已经处理并记过笔记的内容。</li>
+        <li>压缩(触发线 18 万):一次触发把前面的历史换成约 2.8k token 的摘要,上下文从约 17 万掉到约 5.6k。</li>
+        <li>清理(触发 3 万、保留 4 个):峰值压在约 17 万,但前面读的文件几乎全被清掉,agent 要靠笔记或重读;笔记写得稀疏,综合阶段就会漏细节。</li>
+        <li>三者叠加:先清理再压缩,记忆全程在线;末尾上下文约 1.4 万,比无管理的峰值小一个数量级以上。</li>
+        <li>摘要保留了什么:用探针检查摘要文本,任务主线上的高层事实 3/3 保留,附录表格里的冷门数值 0/3 保留。结论:摘要擅长留“实质”,不擅长留“逐字细节”,想保住哪类细节就要在 instructions 里点名。</li>
+        <li>大窗口不是免死金牌:1M 窗口下,陈旧工具结果填满窗口的速度和 200K 窗口一样快;上下文腐烂和预填充延迟随“窗口里实际装了多少”增长,与上限在哪无关。</li>
+      </ul>
+      <h4>官方列的“什么时候不该用”</h4>
+      <ul class="pts">
+        <li>会话短到自然不超限:别压缩,有损还白付。</li>
+        <li>任务需要把多段原文并排对比:别清理,重读来不及。</li>
+        <li>每次对话都应该从零开始的产品:别加记忆。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 分层顺序可以直接抄:清理(便宜、可重取)→ 压缩(兜底)→ 关键事实进记忆。② 摘要提示词里要点名“精确数值、标识符、已读/未读清单”这类容易被概括掉的东西。③ 工具结果要真的“可重取”才适合清理——不可重取的结果先落盘或先提炼进笔记。</div>
+      <div class="caveat"><b>局限:</b>厂商自己的示例;语料是合成的、任务单一;“3/3、0/3”是玩具探针,不是统计结论;延迟和计费没有测。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>UT Austin:《Beyond Token Savings》——压缩是三个旋钮</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/abs/2609.32961" target="_blank" rel="noopener">arxiv.org/abs/2609.32961</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第2轮</span>Satish、Sinha、Kawada、Yadwadkar · 2026-09-26 · 预印本 · 已读全文(HTML 版)</p>
+      <p><span class="one">省 token ≠ 省钱 ≠ 更快 ≠ 更准。</span>作者把压缩拆成“压什么(primitive)/ 何时压(trigger)/ 压多深(depth)”三个独立旋钮,在近 3.5 万次运行里分别拧。</p>
+      <h4>实验设计</h4>
+      <ul class="pts">
+        <li>65 种策略 × 3 个开源模型(Qwen3.5-35B-A3B、Devstral-Small-2-24B、GLM-4.7-Flash)× SWE-bench Verified(100 题)与 Terminal-Bench 1.0(40 题),每个组合跑 3 次;智能体框架用最小的 mini-swe-agent,自身不带任何记忆或压缩机制。</li>
+        <li>八种压缩原语:截断 TR(只按新旧)、工具结果清理 TRC(按内容类型,保留最近 3 个)、整段摘要 SU、结构化摘要 SS(按预设类别写)、只摘要旧部分的 SU-p / SS-p、叠加型 TRC+SU / TRC+SS,以及每步触发的清理 OTRC。</li>
+        <li>触发:按 token 阈值,或按步数(每一步都清)。压缩深度 D = 1 − 目标 token / 当前 token,取 0.3 / 0.5 / 0.7。</li>
+        <li>阈值怎么定:先跑不压缩的轨迹,统计每条轨迹的峰值上下文,取第 5 / 15 / 25 百分位作为“紧 / 主 / 松”三档,而不是所有模型都用同一个 token 数。</li>
+      </ul>
+      <h4>主要发现</h4>
+      <ul class="pts">
+        <li><b>token 与账单、耗时不成比例</b>:Terminal-Bench 上用约三分之一 token 的策略,耗时是全上下文的 1.2–1.8 倍,有的账单比不压缩还高。三个原因:缓存命中的输入价只有未命中的十分之一(论文的假设),频繁改写历史会毁掉可复用的前缀,于是更多 token 按“新鲜价”计费;每步触发的策略要多出 10–27% 的模型调用;摘要调用本身耗时——摘要类策略里,摘要调用占已解决任务墙钟时间的 28–46%。</li>
+        <li><b>晚一点压更好</b>(在测试范围内):阈值从 1 万提到 2 万,每次尝试的压缩次数从 4.85 降到 1.15,所有原语成功率都上升;SU 从 50.7% 升到 62.7%,输入成本从 1.10 倍降到 0.92 倍。</li>
+        <li><b>压多深取决于原语</b>:截断压得越深越差(61.3% 降到 50.7%);摘要压得越深反而更好(50.7% 升到 60.0%,成本和延迟都降,因为触发次数少了)。15 个原语×阈值组合里,浅压成功率最高占 8 个,深压成本最低占 8 个、延迟最低占 7 个。</li>
+        <li><b>总成功率相同,解的题不同</b>:TRC+SU 总共解 52 题(全上下文 53),但新解了 7 题、丢了 8 题;截断新解 3 题、丢 14 题。</li>
+        <li><b>跨模型不通用</b>:每步清理(OTRC)对 Qwen、GLM 不错,对 Devstral 把成功率拉到 38.7%、延迟升到 1.42 倍;相对截断的优势甚至反转(Qwen +7.0 个百分点,Devstral −17.0)。</li>
+        <li><b>但有两个跨模型都有效的设计</b>(SWE-bench):保留近期原文、只摘要旧部分(SS-p 对 SS,三个模型分别 +6.7 / +8.7 / +8.0 个百分点);先清工具输出、再做结构化摘要(TRC+SS 对 SS,分别 +7.7 / +9.7 / +9.7)。</li>
+        <li><b>换工作负载可能失效</b>:在每步清理的基础上再叠部分结构化摘要,Terminal-Bench 成功率反而降 7.5–12.5 个百分点。</li>
+      </ul>
+      <h4>文中引用的现实参照</h4>
+      <ul class="pts">
+        <li>GitHub Copilot 的 1300 万次会话追踪:需要压缩的会话占全部 token 的 44.2%;单次压缩的中位数去掉约 72.8% 的上下文。</li>
+        <li>各家默认触发线(来自参考文献说明):Cline 为窗口的 90%;Codex 未设置时为 90%;Gemini CLI 默认阈值 0.5、压缩后保留 30%;Copilot CLI 为 80% 并写检查点文件;OpenHands 默认把前一半事件换成一条摘要事件。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 评估要四件套一起看:成功率、调用次数、墙钟时间、按缓存计费的账单,别只看压缩率。② 触发线默认偏晚,并按自己的轨迹分布标定。③ 稳妥组合:先清工具输出 → 保留近期原文 → 只摘要旧部分、用结构化摘要。④ 换模型或换任务类型就要重新调。</div>
+      <div class="caveat"><b>局限:</b>只有三个 24B–35B 的开源模型和编码类任务;摘要模型与执行模型是同一个;未经同行评议;作者自己也说没能查明排序反转的原因;计费用的是假设的缓存价格。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>AGORA:逐 token 压缩在 agent 上整体失效</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/pdf/2605.26596" target="_blank" rel="noopener">arxiv.org/pdf/2605.26596</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第2轮</span>arXiv 2605.26596 · 只读到“范式失败”一节的摘录</p>
+      <p><span class="one">LLMLingua-2、Selective Context 这类“按困惑度删 token”的压缩,在 agent 场景里全军覆没。</span>作者在 17 个(环境、模型、方法)组合里测,全部崩溃,尽管实际压缩比有 1.3–13.3 倍。</p>
+      <ul class="pts">
+        <li>原因叫“动作语法被破坏”:标识符、括号分隔符、动作动词、介词这些 token,对语言模型来说高度可预测、自信息很低,于是被当成可删内容;但它们恰恰是 agent 动作的承载者。</li>
+        <li>换超参、重训练都没用(两个 LLMLingua-2 变体崩溃方式一致),说明是范式问题,不是调参问题。</li>
+        <li>作者的方向:在<b>完整步骤</b>的粒度上压缩(整条动作 / 整条观察,而不是 token),并且不为此额外调用 LLM。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>不要对 agent 的动作轨迹做逐 token 压缩。LLMLingua 这一路在普通长文档问答 / RAG 里的表现是另一回事,下一轮单独查。</div>
+      <div class="caveat"><b>局限:</b>只读了一节摘录;其评测环境和指标定义没有细看,结论先当作强信号而非定论。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Focus:让 agent 自己决定何时压缩</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/html/2601.07190v1" target="_blank" rel="noopener">arxiv.org/html/2601.07190v1</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第2轮</span>《Active Context Compression》arXiv 2601.07190 · 只读到搜索摘录 · 样本很小</p>
+      <p><span class="one">自主压缩可行,但模型默认不太会用,需要脚手架强推。</span></p>
+      <ul class="pts">
+        <li>在 5 个 SWE-bench 实例上,用“激进提示”促使模型频繁压缩:总 token 从 1490 万降到 1150 万(−22.7%),准确率持平(3/5);平均每个任务自主压缩 6 次,个别实例省 57%。</li>
+        <li>被动提示下,Claude Haiku 4.5 平均每任务只压缩 2 次,只省 6% 且准确率下降。</li>
+        <li>探索密集的任务省得多(18%–57%);需要反复迭代、旧上下文一直有用的任务(如 pylint-7080),压缩开销反而大于收益。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>“让模型在自然断点主动总结已完成的阶段”是个好方向,但 5 个样本只能当线索。若采用,要在提示词和工具层强制它压缩,并限制在探索类任务里。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>开源实现:OpenClaw 会话裁剪 + Trigger.dev 可移植检查点</h3>
+        <span class="lnk" contenteditable="false"><a href="https://docs.openclaw.ai/concepts/session-pruning?ref=aiworkflowpro.com" target="_blank" rel="noopener">docs.openclaw.ai/concepts/session-pruning</a></span>
+      </div>
+      <p class="meta"><span class="tag t-sec">二手</span><span class="tag rd">第2轮</span>两份产品文档的搜索摘录 · 另见 <span class="lnk" contenteditable="false"><a href="https://trigger.dev/docs/ai-chat/patterns/native-compaction" target="_blank" rel="noopener">trigger.dev/…/native-compaction</a></span></p>
+      <p><span class="one">工程实现里,“裁剪工具结果”和“摘要整段对话”被明确当成两个互补的层。</span></p>
+      <ul class="pts">
+        <li>OpenClaw:裁剪只处理工具结果(命令输出、文件读取、搜索结果),不改写正常对话文字;压缩才摘要整段对话;裁剪让两次压缩之间的工具输出保持精简。</li>
+        <li>走 Anthropic 官方 API 密钥的请求,直接委托服务端的工具结果清理(默认保留最近 3 次);其他路线在缓存 TTL 过期后于本地裁剪。本地规则的例子:上下文占用仍在约 50% 以上、且可裁剪的工具内容至少 5 万字符时,执行硬清理,用占位符替换内容。若同时开了服务端压缩,清理放在压缩之前。</li>
+        <li>Trigger.dev:各家“原生压缩”(Anthropic 的上下文编辑、OpenAI 的存储式响应)是单轮优化,而且是供应商私有的,换供应商后无法沿用;所以它们另存一份与供应商无关的摘要检查点,用于故障切换。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>如果要做多供应商容灾,就必须自己保存一份人能读、可移植的摘要,而不是只依赖不透明的原生句柄。</div>
+      <div class="caveat"><b>局限:</b>文档摘录,没有性能数据;OpenClaw 的数值是它自己的默认值,不是通用最优。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Anthropic 官方文档:按需压缩 + 保留近期轮次</h3>
+        <span class="lnk" contenteditable="false"><a href="https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand" target="_blank" rel="noopener">platform.claude.com/docs/…/compaction-on-demand</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第3轮</span>Claude Platform Docs · beta 头 compact-2026-09-04 · 已读总览、按需压缩、保留近期轮次三页 · 另见 <span class="lnk" contenteditable="false"><a href="https://platform.claude.com/docs/en/build-with-claude/compaction" target="_blank" rel="noopener">compaction 总览</a></span> · <span class="lnk" contenteditable="false"><a href="https://platform.claude.com/docs/en/build-with-claude/compaction-keep-recent-turns" target="_blank" rel="noopener">保留近期轮次</a></span></p>
+      <p><span class="one">官方现在的推荐路径:你的代码决定“什么时候压”,近期几轮保持原文,必要时在后台压。</span>只要按需压缩可用,就用按需压缩。</p>
+      <h4>三种压法对比</h4>
+      <div class="scroll"><table>
+        <tr><th></th><th>按需压缩</th><th>阈值压缩</th><th>自己写摘要器</th></tr>
+        <tr><td>谁决定时机</td><td>你,发一次请求</td><td>API,输入 token 到你设的触发线</td><td>你</td></tr>
+        <tr><td>近期轮次原文保留</td><td>能(专门有一种做法)</td><td>要靠“压缩后暂停”再手动补回</td><td>能</td></tr>
+        <tr><td>能否后台跑</td><td>能</td><td>不能,在触发它的那次请求里同步完成</td><td>能</td></tr>
+        <tr><td>适合</td><td>需要控制时机、不能停下等摘要、要保留近期轮次</td><td>想让 API 在普通请求里自动管</td><td>已有自己的摘要器</td></tr>
+      </table></div>
+      <h4>按需压缩怎么用</h4>
+      <ul class="pts">
+        <li>把对话原样发出,带上 compaction 参数(类型 summarize);响应里<b>只有一个压缩块</b>,没有回复,stop_reason 是 “compaction”。块里有人能读的摘要文本,加一个签名。</li>
+        <li>压缩请求要带上和正常对话<b>相同的 system 与 tools</b>,摘要器会读它们;摘要调用沿用该请求的模型、思考设置和 max_tokens——max_tokens 要留几千,因为思考也算在内。</li>
+        <li>继续对话时:压缩块放在 messages 的<b>最前面</b>,被摘要的旧消息<b>删掉</b>(旧消息留在块前面会报 400),每次请求只能带一个块,块必须原样回传(改了签名或内容会报错)。有两种错误不会报错:被摘要的消息留在块后面(会被重复发给模型),以及后续请求漏带块(模型拿不到摘要)。</li>
+        <li>再次压缩:对已经以压缩块开头的对话再发一次,新块会摘要“旧摘要 + 之后的所有内容”,之后只发最新块。</li>
+        <li>自定义摘要提示:instructions 最长 16,384 字符,<b>整体替换</b>默认提示;要写清必须保留什么,并告诉模型不要调用工具。</li>
+      </ul>
+      <h4>什么时候压</h4>
+      <ul class="pts">
+        <li>任何完成的一轮之后都可以压,由你的代码决定。估算下一次请求的大小:取上一次响应的输入 + 输出 token;开了提示缓存时,还要加上缓存读取和缓存创建的 token;与你自己选的、低于窗口上限的线比较。</li>
+        <li>压缩请求本身也必须放得进上下文窗口,所以要“趁早压,别等撑爆”。</li>
+        <li>最后一条 assistant 消息若以没有结果的工具调用结尾,压缩请求会被拒;要先补上工具结果。</li>
+      </ul>
+      <h4>保留近期几轮原文(keep-tail)</h4>
+      <ul class="pts">
+        <li>没有参数控制保留几轮,你自己选“切点”:切点之前的消息送去压缩,切点之后的原样放在压缩块后面。保留得越多,释放的空间越少。</li>
+        <li>切点要落在<b>没有未完成工具调用</b>的位置,每个工具调用和它的结果必须在同一侧;官方示例保留最近 2 轮。</li>
+        <li>用了保留思考(preserved thinking)的模型,保留轮次里的思考块只有在特定条件下才有效,会限制切点位置。</li>
+        <li><b>后台压缩</b>:对话不能停下来等摘要时,在后台发起压缩请求,期间对话继续;摘要回来后换入,期间新增的轮次接在块后面。</li>
+      </ul>
+      <h4>失败与代价</h4>
+      <ul class="pts">
+        <li>只有摘要调用正常结束、输出文本、没有工具调用时才会产出摘要。否则响应仍是 200 但 content 为空,所以<b>先检查 stop_reason</b>:max_tokens 就加大上限重发;tool_use 就在指令里禁止调用工具;窗口放不下就缩短指令或减少消息;拒绝或无文本就先不摘要,下次再压。</li>
+        <li>摘要带不走的东西:被摘要消息里的<b>图片、文档、容器上传、抓取的网页内容</b>,压完就没了,后面需要得重新上传或重述。被摘要范围内的 system 消息指令也会被概括,不再按原文生效,需要的话要用新的 system 消息重述。</li>
+        <li>计费:摘要调用按普通请求计费,usage.iterations 里单列 compaction 项,顶层 token 为 0;统计总用量要把 iterations 加起来。块上可以放 cache_control 缓存断点。</li>
+        <li>不能与 context_management 在同一请求里使用(阈值压缩和上下文编辑也是这个限制)。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① “自己掌握时机 + 保留近期原文”和 UT Austin 论文里“保留近期原文只摘要旧部分”的发现是一回事,可以互相印证。② “摘要带不走的东西”可以直接变成工程检查清单:图片、文档、网页内容、system 指令。③ 压缩前要先校验没有悬空的工具调用。</div>
+      <div class="caveat"><b>局限:</b>beta 功能,参数名可能变;文档不提供质量或成本数据,示例中的阈值(如 2,500 token)只是演示值。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>OpenAI 压缩指南:服务端压缩与独立端点</h3>
+        <span class="lnk" contenteditable="false"><a href="https://developers.openai.com/api/docs/guides/compaction" target="_blank" rel="noopener">developers.openai.com/api/docs/guides/compaction</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第3轮</span>OpenAI API 文档 · 已读全文</p>
+      <p><span class="one">OpenAI 走“不透明”路线:压缩结果是加密的,模型能用,人读不了。</span></p>
+      <ul class="pts">
+        <li><b>服务端压缩</b>:在创建响应的请求里设置 context_management,类型 compaction,并给出 compact_threshold(文档示例是 20 万)。渲染后的 token 数超过阈值时,服务端在同一个流里完成压缩、输出一个加密的压缩项,再继续生成。不需要单独调用端点。</li>
+        <li><b>独立端点 /responses/compact</b>:完全无状态。你送入完整的上下文窗口(消息、工具等),它返回新的压缩窗口,下一次请求原样传入,<b>不要裁剪它</b>。送进去的窗口自己必须还放得进模型的上下文。返回的窗口通常除了压缩项,还保留了上一个窗口里的部分条目。</li>
+        <li>压缩项携带之前的关键状态和推理,用更少的 token;它是不透明的,不打算让人读。</li>
+        <li>两种串联方式:无状态的数组链(把输出项连同压缩项追加到下一次输入)或 previous_response_id(每轮只传新消息)。无状态数组链下,最近一次压缩项之前的内容可以丢掉,减小请求、降低长尾延迟;用 previous_response_id 时则不要手动裁剪。</li>
+        <li>两种方式都支持零数据保留:请求里设 store=false。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>省事,但无法审计“保留了什么”,也无法换供应商沿用(对应 Factory 对不透明压缩的批评和 Trigger.dev 的可移植检查点)。如果要做质量评估,不透明方案只能靠“压缩后提问”的探针间接测。</div>
+      <div class="caveat"><b>局限:</b>文档只讲用法,没有质量数据;阈值只是示例。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Factory:《Compressing Context》——触发线与回落线</h3>
+        <span class="lnk" contenteditable="false"><a href="https://www.factory.ai/news/compressing-context" target="_blank" rel="noopener">factory.ai/news/compressing-context</a></span>
+      </div>
+      <p class="meta"><span class="tag t-vendor">厂商自评</span><span class="tag rd">第4轮</span>Factory · Theo Luan · 2025-07-21(页面 2026-10 更新过)· 已读全文</p>
+      <p><span class="one">把压缩做成“带滞回的两个阈值”:到触发线才压,压到回落线为止;并且只摘要新被丢弃的那一段,合并进一份持久摘要。</span></p>
+      <h4>朴素做法的四个毛病</h4>
+      <ul class="pts">
+        <li>重复摘要:每次请求都把整段前缀重新摘要一遍,尽管上一轮已经摘要过大半。</li>
+        <li>成本随对话变长线性上涨:要摘要的区间一直变大。</li>
+        <li>逼出分层摘要:一旦超过单次可处理的长度(文中提到当时最长约 100 万 token),单次摘要做不了,只能分块,延迟和成本进一步叠加。</li>
+        <li>“永远贴着上限”:一开始摘要就长期运行在接近最大上下文的状态,经验上会拉低回答质量。</li>
+      </ul>
+      <h4>他们的设计</h4>
+      <ul class="pts">
+        <li>维护一份持久摘要,每次更新“锚定”在某条消息上,覆盖到那条消息为止的对话。压缩时只摘要“新截掉的那一段”,再合并进已有摘要。</li>
+        <li>两个阈值:<b>触发线</b>(总上下文到这个数就压缩,文中叫 fill line)和<b>回落线</b>(压缩后最多保留的 token,叫 drain line,必须低于触发线)。另有一个单份摘要的最大长度上限。实际计算时,系统提示词、工具定义、元数据和预留的输出额度都要算进去。</li>
+        <li>两线间隔决定压缩频率:间隔窄 → 频繁压缩,摘要开销高、提示缓存频繁失效,但近期上下文保留得更好;间隔宽 → 压缩少,但每次砍得狠,可能误删相关信息。</li>
+        <li>触发线越高保留越多,但成本线性上涨:平均上下文长 50%,推理成本就高 50%。作者也提到有些模型在接近最大长度时表现下降,所以收益递减。</li>
+        <li>最优配置取决于任务形态:调试这类状态依赖复杂的会话适合更高阈值;简单问答可以更激进。</li>
+      </ul>
+      <h4>摘要里必须保住什么(对他们的编码会话)</h4>
+      <ul class="pts">
+        <li><b>会话意图</b>:用户为什么开这个会话、提过哪些要求、理想结果是什么。</li>
+        <li><b>高层经过</b>:一条线串起“谁要求了什么 → 调了什么 → 改了哪些文件 → 又澄清了什么”。</li>
+        <li><b>产物轨迹</b>:哪些文件创建 / 修改 / 删除、关键改动是什么;跑过测试的话,哪些过了、哪些没过。</li>
+        <li><b>面包屑</b>:文件路径、函数名、关键标识符——让 agent 之后能自己去把被截掉的输出重新查出来。</li>
+      </ul>
+      <h4>压得太狠是“假经济”,以及主动压缩</h4>
+      <ul class="pts">
+        <li>一旦关键产物被摘要掉,agent 就得重新取,增加调用和延迟;在反复回看同一批信息的工作里(迭代式代码评审、复杂系统里的实现),这些来回可能超过省下的 token。目标是“每个任务的 token”而不是“每次请求的 token”。</li>
+        <li>上面说的都是被动的、机械按阈值触发。作者认为未来是“主动整理”:在自然断点(比如刚把一个难 bug 调通)自己总结已完成的阶段;维护任务清单、决策日志这类结构化的工作记忆;让检索型子 agent 只把最终结果回给主 agent。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① “触发线 + 回落线”这套滞回设计很实用:两线间隔直接决定压缩频率和缓存失效的次数,可以用 UT Austin 论文里“晚压更好、深压减少触发次数”的结果来定初值。② “面包屑”就是 Manus 的“可恢复压缩”在摘要里的写法。③ 四个必留项可以直接做成摘要提示词的固定字段。</div>
+      <div class="caveat"><b>局限:</b>厂商设计文章,没有定量对照(定量评测在它 12 月那篇里,见前面的卡片);“压缩后质量下降”主要是经验判断。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Claude Code 官方说明:压缩后什么会留下</h3>
+        <span class="lnk" contenteditable="false"><a href="https://code.claude.com/docs/en/context-window" target="_blank" rel="noopener">code.claude.com/docs/en/context-window</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第4轮</span>Claude Code 文档 · 已读全文(含交互演示的说明文字)</p>
+      <p><span class="one">一份难得具体的“压缩后状态重建清单”:什么从磁盘重载、什么重新读、什么被摘要吞掉。</span></p>
+      <div class="scroll"><table>
+        <tr><th>内容</th><th>压缩后</th></tr>
+        <tr><td>系统提示词、输出风格</td><td>仍然生效</td></tr>
+        <tr><td>项目根目录 CLAUDE.md、不带路径限定的规则</td><td>从磁盘重新注入</td></tr>
+        <tr><td>自动记忆(Claude 给自己写的笔记)</td><td>从磁盘重新注入</td></tr>
+        <tr><td>计划模式里写下的计划</td><td>从磁盘重新注入</td></tr>
+        <tr><td>读过 / 改过的文件</td><td>重新读取最多 5 个,按最近修改优先;超过 5,000 token 的文件只给路径引用,不给内容</td></tr>
+        <tr><td>被调用过的技能正文</td><td>重新注入,单个技能最多 5,000 token、总共最多 25,000;超出时先丢最旧的,截断时保留开头</td></tr>
+        <tr><td>带路径限定的规则、子目录里的 CLAUDE.md</td><td>读到对应文件时才按需加载;已经进了消息历史的那份会被摘要掉</td></tr>
+        <tr><td>后台命令和后台子 agent</td><td>继续运行;会提醒模型哪些还在跑,避免重复启动</td></tr>
+        <tr><td>钩子(hook)早先加进来的上下文</td><td>和其余对话一起被摘要</td></tr>
+        <tr><td>匹配 compact 来源的 SessionStart 钩子</td><td>运行,并把输出加进压缩后的上下文</td></tr>
+        <tr><td>技能的一行描述清单</td><td>不再重新注入;只保留被你真正调用过的技能</td></tr>
+      </table></div>
+      <ul class="pts">
+        <li>摘要本身保留的内容(交互演示里的说明):用户的请求与意图、关键技术概念、查看或修改过的文件及重要代码片段、出过的错和修法、待办事项、当前正在做的事。完整的工具输出和中间推理都没了。</li>
+        <li>从某个版本起,摘要请求会沿用会话的扩展思考设置:会话开了思考,摘要时也开。</li>
+        <li><b>你可以主动干预</b>:带焦点的压缩(例如 /compact 后写“重点保留 auth bug 的修复”);用回退功能只摘要某条消息之前或之后的部分;用 /autocompact 加 token 数调整自动压缩发生的位置;任务切换时用 /clear;大量读文件的研究派给子 agent;用 /context 看实时的上下文构成。系统在接近上限时也会自动压缩,还有空闲会话的压缩设置。</li>
+        <li>文档里的几处设计提示:文件读取通常占上下文的大头(演示中的示意数字);子 agent 读了约 6,100 token 的文件,只回了 420 token 的结果(也是示意);钩子输出超过 1 万字符时存成文件,只给模型一段预览加文件路径。</li>
+        <li>如果某条规则必须在压缩后继续生效,就别放在“带路径限定”的规则里,改放到项目根的 CLAUDE.md;技能里最重要的指令要写在文件最前面,因为截断保留开头。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>这张表可以当作自己 agent 的“压缩后重建”清单:稳定指令放磁盘、每次重载;近期文件按需重读、大文件只留路径;进度状态放进摘要;长期知识放记忆;后台任务要告诉模型“还在跑”。最后这点很容易漏。</div>
+      <div class="caveat"><b>局限:</b>产品文档,演示里的 token 数都是示意值;各模型默认的自动压缩阈值在另一页,本轮没读。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>LangChain Deep Agents:分层落盘 + 评估方法</h3>
+        <span class="lnk" contenteditable="false"><a href="https://blog.langchain.com/context-management-for-deepagents" target="_blank" rel="noopener">blog.langchain.com/context-management-for-deepagents</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag t-vendor">框架方</span><span class="tag rd">第4轮</span>LangChain · Chester Curme、Mason Daugherty · 2026-01-28 · 已读全文 · 另见 <span class="lnk" contenteditable="false"><a href="https://docs.langchain.com/oss/python/deepagents/context-engineering" target="_blank" rel="noopener">官方文档</a></span></p>
+      <p><span class="one">按“触发频率”分三层:大结果随时落盘;大输入在 85% 时落盘;都不够才摘要,而且摘要的同时把原始对话也存下来。</span></p>
+      <h4>三层压缩</h4>
+      <ul class="pts">
+        <li><b>大工具结果落盘</b>:工具返回超过 2 万 token,就写进文件系统,上下文里换成“文件路径 + 前 10 行预览”。agent 之后可以重读或搜索。</li>
+        <li><b>大工具输入落盘</b>:写 / 编辑文件的工具调用会把完整文件内容留在历史里,但那些内容本来就已经在磁盘上了。当上下文占用超过窗口的 85%,把较旧的这类调用换成“指向磁盘文件的指针”。</li>
+        <li><b>摘要</b>(兜底,前两层腾不出足够空间时才做):① 上下文内摘要——LLM 写一份结构化摘要(会话意图、已创建的产物、下一步),替换全部历史;② 文件系统保存——把完整的原始对话写到文件系统,作为权威记录,需要时用搜索找回细节。</li>
+        <li>所有阈值按“占模型窗口的比例”设置,模型的窗口大小来自模型配置表。</li>
+      </ul>
+      <h4>他们怎么评估(很值得抄)</h4>
+      <ul class="pts">
+        <li><b>先真实基准,再压力测试</b>:先在代表性任务上跑出基线;然后人为把触发线从 85% 拉到 10–20%(图例里用 25%),让每次运行出现很多次压缩,放大单个特性的信号,方便比较摘要提示词的不同版本。</li>
+        <li><b>靶向小测试</b>:摘要有没有保住目标——在任务中途强制摘要,看 agent 是否还继续原任务;能不能找回被摘要掉的信息——在对话早期埋一条“针”事实,强制摘要后,要求 agent 靠文件系统搜索把它找回来才能完成任务。</li>
+        <li><b>监控目标漂移</b>:最隐蔽的失败是摘要后 agent 忘了用户意图,表现为压缩后的下一轮去问澄清、或错误宣布任务完成。</li>
+        <li>一个具体改动:在摘要提示词里加“会话意图”和“下一步”两个专用字段,效果变好。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 把“摘要 + 保存原始记录”做成同一个动作:摘要写错了还能回头查,这是对“有损摘要”最实用的保险。② 评估套路可以直接用:强制高频压缩 + 靶向小测试 + 目标漂移监控。③ 大文件写入的内容可以直接丢,因为磁盘上有。</div>
+      <div class="caveat"><b>局限:</b>框架方自己的文章,没有给出各设计带来多少提升的数字;85% 是它的默认值,UT Austin 的结果显示默认偏晚是有益的,但在不同工作负载上要自己验证。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>ACON:用失败案例自动优化“压缩指南”</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/abs/2510.00615v2" target="_blank" rel="noopener">arxiv.org/abs/2510.00615</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第4轮</span>Microsoft 等 · ICML 2026(PMLR 306)· 只读到摘要与评述</p>
+      <p><span class="one">不靠人手写摘要提示词,而是拿“完整上下文成功、压缩后失败”的成对轨迹,让模型分析丢了什么,再自动改压缩指南。</span></p>
+      <ul class="pts">
+        <li>方法:在自然语言空间里做“无梯度”的优化。对每对轨迹,优化器 LLM 分析压缩造成了什么信息缺失或扭曲,产出文字反馈;再用这些反馈更新压缩指南。也会反馈“压缩后的内容里哪些信息真的被用到了”,鼓励更短而够用。</li>
+        <li>同时压缩两样东西:环境观察和交互历史。</li>
+        <li>把优化好的压缩器蒸馏到小模型,降低额外的压缩开销。</li>
+        <li>结果(AppWorld、OfficeBench、多目标问答):峰值 token 降 26–54%,任务表现基本保持;蒸馏到小压缩器后保留 95% 以上的准确率;小模型当长程 agent 时,因为上下文干扰减少,最多提升 46%。代码在 microsoft/acon。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>这是把 Anthropic 那句“拿真实轨迹调摘要提示词”自动化。条件是:你有评测任务集,并且能跑出“完整上下文成功”的参照轨迹。没有这些,先做手工版——人工看失败案例,改摘要模板。</div>
+      <div class="caveat"><b>局限:</b>只读了摘要;基准是通用 agent 任务集,不是长编码会话;需要成对轨迹,成本不低。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Chroma:Context Rot——输入越长越不稳</h3>
+        <span class="lnk" contenteditable="false"><a href="https://research.trychroma.com/context-rot" target="_blank" rel="noopener">research.trychroma.com/context-rot</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第4轮</span>Chroma 技术报告 · 2025-07-14 · 已读全文 · 测的是 2025 年中的模型</p>
+      <p><span class="one">在尽量控制任务难度不变的前提下,18 个模型的表现随输入变长而越来越不稳定,哪怕任务很简单。</span></p>
+      <ul class="pts">
+        <li>针与问题的语义相似度越低,随长度退化得越快;一个干扰项就会拉低表现,四个更差,并且这种影响随长度放大。</li>
+        <li>针在上下文里的位置,在这个任务里没有显著影响。</li>
+        <li>出人意料:把文本句子打乱(去掉连贯性)后,模型反而表现更好;保持逻辑连贯的长文反而更差。作者没能解释机制。</li>
+        <li>LongMemEval 对话问答:只给相关片段(约 300 token)对比完整输入(约 11.3 万 token),所有模型都明显下降;Claude 系列差距最大,主要因为不确定时倾向于拒答。</li>
+        <li>复制重复词的任务:输入和输出变长后也会出现随机输出、拒绝尝试等不稳定现象。</li>
+        <li>作者明确说:这些是简单任务,真实应用更复杂,退化可能更严重;他们也没有解释背后的机制。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>这给“为什么压缩”提供了最直接的证据:同样的信息,只给相关的 300 token 和混在 11 万 token 里给,差别很大。所以压缩的目标是提高信噪比,而不只是省钱或不超限。我的推论:摘要里别并排留下多个“看起来都像答案”的旧版本——干扰项会放大退化。</div>
+      <div class="caveat"><b>局限:</b>受控 / 合成任务;测的是 GPT-4.1、Claude 4、Gemini 2.5 这一代模型;新一代模型可能缓和,但 Anthropic 的文章和 cookbook 仍把它当作现实约束引用。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>LLMLingua 系列:逐 token 的提示压缩(适用边界)</h3>
+        <span class="lnk" contenteditable="false"><a href="https://www.microsoft.com/en-us/research/project/llmlingua/" target="_blank" rel="noopener">microsoft.com/en-us/research/project/llmlingua</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第4轮</span>Microsoft · 项目页 + LLMLingua-2(ACL 2024 Findings,<span class="lnk" contenteditable="false"><a href="https://arxiv.org/pdf/2403.12968" target="_blank" rel="noopener">arXiv 2403.12968</a></span>)· 读了项目页和摘要</p>
+      <p><span class="one">在“长文档、会议记录、检索片段”这类自然语言段落上有效,但别搬去压 agent 的动作轨迹。</span></p>
+      <ul class="pts">
+        <li>LLMLingua:项目页称最高 20 倍压缩、性能损失很小;LongLLMLingua 在 RAG 里 4 倍压缩时有 17.1% 的提升。</li>
+        <li>LLMLingua-2:把压缩当成“保留还是删除每个 token”的分类问题,用 BERT 量级的小编码器(XLM-RoBERTa-large 等)做,训练数据从 GPT-4 蒸馏而来,是抽取式的,所以不会凭空生成内容;比前代快 3–6 倍,端到端延迟快 1.6–2.9 倍,压缩比 2–5 倍;在 MeetingBank、LongBench、ZeroScrolls、GSM8K、BBH 上评测。</li>
+        <li>结合前面的 AGORA:在 agent 轨迹(含标识符、括号、动作动词)上,这类逐 token 压缩 17 个组合全部崩溃。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>压 RAG 检索回来的长段落、会议纪要可以考虑;压工具调用、命令输出、带路径的日志,不要用它。</div>
+      <div class="caveat"><b>局限:</b>数字来自项目页和论文摘要,是学术基准上的结果;没有在 agent 长会话里验证。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>TokenPilot:让压缩不破坏提示缓存</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/abs/2606.17016" target="_blank" rel="noopener">arxiv.org/abs/2606.17016</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第5轮</span>Xu 等(浙江大学团队)· 2026-06 · 预印本 · 读了摘要和正文摘录</p>
+      <p><span class="one">核心矛盾:文本越“稀”越省 token,但每次改写历史都会让提示前缀对不上、缓存失效。</span>它的办法是把“能删的”提前到入口处做,把“要驱逐的”攒成批再做。</p>
+      <ul class="pts">
+        <li>入口侧压缩(Ingestion-Aware Compaction):在工具结果进入上下文的那道门上,用确定性的规则裁剪噪声,并做“规范化”,让提示前缀从第一轮起就逐字节一致。这样压缩发生在“写入”时,而不是回头改历史。</li>
+        <li>生命周期驱逐(Lifecycle-Aware Eviction):持续监控每段上下文还剩多少用处,按保守的“按批、隔几轮”节奏,只在某段与任务不再相关时才把它卸下来。批越大,前缀连续性越好,缓存命中率越高。</li>
+        <li>结果(PinchBench 与 Claw-Eval):隔离模式成本降 61% 和 56%,连续模式降 61% 和 87%,性能与已有系统相当。一个消融数据:加入入口侧压缩后,总花费从 7.24 美元降到 4.22 美元。</li>
+        <li>把输入 token 拆成“缓存读取”和“缓存未命中”两类来看,衡量的是前缀稳定性和复用效率。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>这和 UT Austin 的发现、Manus 的“只追加”原则、Anthropic 的 clear_at_least 是同一件事的不同侧面:<b>压缩的价格不只是摘要那次调用,还有被它破坏的缓存</b>。可操作的启发:能在入口处就裁掉的(超长工具输出、重复日志)别等到上下文里再清;驱逐要成批做,别每轮都动。</div>
+      <div class="caveat"><b>局限:</b>预印本;评测基准较新、较小众;我只读了摘要和摘录,没看完整实验设置。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Copilot 生产追踪:压缩在真实世界里意味着什么</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/abs/2608.00101" target="_blank" rel="noopener">arxiv.org/abs/2608.00101</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag t-sec">二手细节</span><span class="tag rd">第6轮</span>Liu 等(Microsoft / UIUC)· 2026-07 · 摘要来自 arXiv,详细数字来自一篇逐图解读博客(<span class="lnk" contenteditable="false"><a href="https://kstark007.github.io/blog/agentic-coding-in-the-wild/" target="_blank" rel="noopener">kstark007.github.io</a></span>)</p>
+      <p><span class="one">第一份生产规模的编码 agent 负载测量:2026 年 6 月一周的 Copilot 追踪,约 320 万用户、1300 万会话、7.61 亿次模型调用。</span>其中压缩事件的数据,是前面实验论文反复引用的现实参照。</p>
+      <h4>压缩事件</h4>
+      <ul class="pts">
+        <li>触发过压缩的会话只占 7.8%,却占全部 token 的 44.2%、模型调用的 37.1%、工具调用的 38.9%——压缩集中发生在最重的会话里。</li>
+        <li>一次压缩的中位数去掉约 72.8% 的提示 token(中间一半事件在 58%–81% 之间),6.1% 的事件去掉 90% 以上。</li>
+        <li>压缩把缓存命中率中位下降约 66.1%;34.3% 的事件下降 90% 以上,21% 的事件几乎清零。作者的形容:压缩造成的缓存重置,严重程度和“切换模型”相当。</li>
+        <li>压缩本身是一次完整的模型调用(先对要摘要的历史做长预填充,再解码出摘要):中位数占所在回合总执行时间的约 22%,P90 约 34%。</li>
+        <li>触发时的上下文占用率不是单一阈值,而是多峰:峰值约在 50%、65%–66%、80%、接近 100%,中位数 66%——不同模型、不同产品用的触发线不同。</li>
+      </ul>
+      <h4>上下文长什么样、缓存怎么失效</h4>
+      <ul class="pts">
+        <li>提示词构成:对话历史约 48%、函数调用消息(工具调用及结果)约 28%、系统提示词约 14%、仓库指令与上下文约 10%。工具只占约 4.7% 的墙钟时间,却贡献约 28% 的提示 token。</li>
+        <li>回合内部缓存命中率稳定在 87%–91%;跨回合(用户离开又回来)平均降到约 55%;切换模型后的第一次调用只剩约 8%。</li>
+        <li>回合之间空闲不到 2 分钟,缓存命中率中位仍在 94%–96%;空闲 2–10 分钟中位降到约 70%;超过 10 分钟中位接近 0——这是服务端按时间驱逐缓存的特征。</li>
+        <li>失败的构建会往上下文里注入多 7–8 倍的 token(成功的构建中位只返回约 60 个)。</li>
+        <li>作者给的方向:增量的、保持前缀不变的压缩,可以保住一部分缓存。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 这是“压缩集中在重会话、且一次就毁掉大半缓存”的生产证据,和 UT Austin 的“省 token 不等于省钱”互相印证。② 压缩自己占回合时间两成多,所以别在用户正在等的关键路径上同步做,Anthropic 的“后台压缩”正好对应。③ 触发线多峰也说明没有通用最优值,要自己标定。</div>
+      <div class="caveat"><b>局限:</b>负载来自 Copilot 一个产品、美国区域抽样;详细数字我读的是第三方逐图解读,该博客自己指出论文正文与表格有一处不一致;摘要与前面 UT Austin 论文对 44.2% 和 72.8% 的引用一致。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>TRACE:压缩后 agent“找不到自己在哪”</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/abs/2608.06503" target="_blank" rel="noopener">arxiv.org/abs/2608.06503</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第6轮</span>Min 等(弗吉尼亚大学 / Nokia)· 2026-08-06 · 预印本,作者自称“初步研究” · 已读全文(HTML 版)</p>
+      <p><span class="one">摘要不只是丢信息,更会让 agent 失去“我做到哪一步了、还能做什么、该不该结束”的位置感。</span>结果是更多被阻塞的动作、更多重复探索、跨次运行更不稳定。</p>
+      <h4>诊断(AppWorld 基准,MiniMax-M3 既做压缩器也做 agent)</h4>
+      <ul class="pts">
+        <li>环境是“信息可重取”的:早先的观察被压掉后还能重新查。在这种设置里,<b>摘要并不总是比简单截断(FIFO)好</b>:预算为 16K、8K、4K 时,截断与摘要持平甚至略好;只有最紧的预算下摘要才明显占优(72.8% 对 42.2%)。两者都低于完整上下文。</li>
+        <li>压缩越强,“至少成功一次(P@2)”和“两次都成功(P²)”的差距越大——压缩把一部分“稳定做得对”的任务变成了“时好时坏”。任务越长,退化越明显。</li>
+        <li><b>终止判断受损</b>:在 2K 预算、同一决策点固定的对照里,摘要条件下只有 44.6% 的采样正确结束(37.3% 用了要求的输出形式);截断为 77.2% / 68.1%,完整历史为 66.6% / 60.6%。摘要后的 agent 更容易“继续动作”或多说废话,而不是直接收尾。</li>
+        <li><b>近期更新被削弱</b>:与完整历史相比,保留最近的原始交互时行为偏离度为 0.149;把它压进摘要后升到 0.233;完全省略为 0.289。也就是说,应当改变后续决策的新信息(目标修订、工具失败、意外结果、完成事件),被摘要吸收后影响力变弱或变形。</li>
+        <li><b>压缩后的前几步</b>:摘要条件下,第一步就多出 0.108 个被阻塞 / 报错的动作;第二步起重复取回(refetch / replay)变多。信息仍然可以重取,但变得“不那么可执行”。</li>
+      </ul>
+      <h4>他们的办法:在“压缩发生的那个边界”上评估和优化</h4>
+      <ul class="pts">
+        <li>在同一个环境状态,分别用“压缩前上下文(PRE)”和“压缩后上下文(POST)”做成对的闭环续跑,数“被阻塞或重复的动作”比 PRE 多多少,作为这份摘要的得分——这样能把压缩造成的退化,和 agent 自身的随机性分开。</li>
+        <li>每个边界让压缩器生成 3 份候选摘要,取最好和最差组成偏好对;一个冻结的“提议者”模型只看到偏好对(看不到后续动作和报错),据此改写压缩提示词模板;最终模板由开发集上的端到端 Pass² 选出。所有模型参数全程冻结,只优化压缩提示词。</li>
+        <li>一个实战教训:提议者一开始会写出与下游 agent 系统提示词<b>矛盾</b>的规则(例如写“之前会话的变量不保留”,而系统提示词明确说变量可以继续用),所以必须把下游系统提示词一起交给提议者。</li>
+        <li>结果:测试集上准确率 77.1(此前最好的压缩基线 71.4,不压缩 85.7),Pass² 为 67.3(对 59.5);难题上 TRACE 在三项指标上都是压缩方法里最好;在难题上平均步数接近完整上下文,峰值上下文不到其一半。逐 token 压缩(LLMLingua-2)在 MiniMax-M3 上是 68.2,换成 Kimi-K2.7-Code 后只剩 35.7,跨模型很不稳。</li>
+        <li>用 MiniMax-M3 优化出的模板,直接搬到 Kimi-K2.7-Code 上,准确率 84.5,超过其不压缩的 82.7(Pass² 79.2 对 73.8),但 Pass@2 略低(89.9 对 91.7);只有一个目标模型,泛化性待验证。</li>
+      </ul>
+      <p class="meta">相关后续(只读到搜索摘录,未细读):《Prune the Summary, Not the History: Source-Judged Compaction》(arXiv 2610.20927)报告在四个基准上比提示式压缩高 2.1%–8.9%,收益集中在难任务和多应用任务。</p>
+      <div class="take"><b>我的批注</b>① 摘要里要显式写“执行位置”:已完成的动作清单、当前可执行的下一步、是否已满足终止条件,不要只写事实和进度。② 近期几轮保留原文不是可有可无——它保住的正是“新信息的影响力”。③ 评估不能只看单次成功率,要看多次运行的一致性(Pass^k)。④ 摘要提示词必须和系统提示词对齐,不能引入矛盾的指令。</div>
+      <div class="caveat"><b>局限:</b>作者明确说这是初步研究;只在 AppWorld 一个基准上;两个模型是较新的开源模型;作者承认他们的验证器只看“被阻塞和重复的动作”,抓不到“静默的状态损坏”;也说没有完全分开“信息遗漏 / 进度扭曲 / 没用好保留的信息”这几种成因。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Governance Decay:压缩会悄悄吃掉“规则”</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/pdf/2606.22528" target="_blank" rel="noopener">arxiv.org/pdf/2606.22528</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第6轮</span>Shiyang Chen(北京理工大学)· 2026-06 · 预印本 · 读了摘要和正文摘录</p>
+      <p><span class="one">只存在于上下文里的规则(运行时策略、记忆条目、常驻指令),在压缩后会被丢掉,而模型在它们可见时本来是守规矩的。</span>原因是压缩只优化“任务连续性”,把常驻规则当成低显著度内容。</p>
+      <ul class="pts">
+        <li>用一个叫 ConstraintRot 的基准(确定性判分)测了 7 个模型、1,323 个回合:压缩把违规率从 0% 抬到 30%(最高 59%);约束留在摘要里时违规率为 0%,被丢掉时为 38%。</li>
+        <li>软性的组织规则比硬性的安全规范衰减大 8.3 倍——恰好是最依赖上下文、没有别处可放的那类约束。</li>
+        <li>压缩越激进,衰减越大;在四种压缩策略上都成立。</li>
+        <li>攻击面:“压缩驱逐攻击”——攻击者在上下文里诱导压缩删掉某条约束;优化过的注入能让每个模型中招,包括一个对固定探针免疫的模型(0% 升到 65%)。</li>
+        <li>防御:“约束钉住”(Constraint Pinning),免训练,把约束隔离在压缩范围之外、每次重新注入;约 47 个 token(不到生产规模压缩上下文的 0.5%)就能把违规率恢复到 0%;作者也报告了它仍会失败的情形。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>压缩不是语义中性的。必须遵守的规则(合规要求、用户的硬约束、权限边界)要从“可压缩区”里搬出来,放进系统提示词或每次重新注入的固定区域,并在评测里加一类“约束违反率”。这和 Anthropic 文档说的“摘要范围里的 system 消息会被概括”是同一个问题。</div>
+      <div class="caveat"><b>局限:</b>预印本,只读了摘要和摘录;基准是构造的场景,违规率数字不能直接当作你的生产环境的概率。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>CoACT:压“看到的”,别压“要做的”</h3>
+        <span class="lnk" contenteditable="false"><a href="https://arxiv.org/html/2607.02911v1" target="_blank" rel="noopener">arxiv.org/html/2607.02911v1</a></span>
+      </div>
+      <p class="meta"><span class="tag t-paper">论文</span><span class="tag rd">第6轮</span>Chen 等(清华大学)· 2026-07 · 预印本 · 读了摘要、方法摘录和官方仓库说明 · <span class="lnk" contenteditable="false"><a href="https://github.com/THU-Agent/CoACT" target="_blank" rel="noopener">github.com/THU-Agent/CoACT</a></span></p>
+      <p><span class="one">观察压缩的合格标准:压缩后的观察要让 agent 做出和原始观察<b>同样的下一步动作</b>(next-action preservation,NAP)。</span></p>
+      <ul class="pts">
+        <li>做法:一个教师模型对每条观察生成多份压缩候选;用“动作保持”奖励过滤掉会改变 agent 下一步动作的候选,再用“长度缩减”奖励在剩下的候选里挑最短的,作为监督信号训练一个轻量压缩器。</li>
+        <li>部署时只在每条新观察进入轨迹之前压缩它,不改历史,所以能保住前缀缓存复用;也可以先做观察压缩,再叠加滑动窗口或 AgentDiet 这类轨迹压缩。</li>
+        <li>结果(SWE-bench Verified、三个 agent 模型):平均总 token 消耗降低 33.0%,任务求解效果接近不压缩。论文还检查了压缩会不会逼出更多“恢复动作”。</li>
+        <li>仓库里另有第三方为 Pi 编码 agent 写的同名扩展:压缩旧的工具调用树,但“永不压缩最近、仍相关的观察”,摘要不比原文短就跳过。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 给“入口压缩”一个可操作的验收标准:同一份上下文,换成压缩后的观察,agent 的下一步动作变不变。这个标准也可以直接用在你自己的规则裁剪上。② 压缩发生在“写入时”,不碰历史,和 TokenPilot、Manus 的缓存原则一致。</div>
+      <div class="caveat"><b>局限:</b>预印本;只在 SWE-bench Verified 上;要训练压缩器,门槛比规则裁剪高;“动作一致”是代理指标,不能保证长期结果一致。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>OpenHands:带“头”和“尾”的摘要压缩器</h3>
+        <span class="lnk" contenteditable="false"><a href="https://docs.openhands.dev/sdk/arch/condenser" target="_blank" rel="noopener">docs.openhands.dev/sdk/arch/condenser</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第6轮</span>OpenHands SDK 文档 + 2025-04 博客 · 已读博客全文,文档读了架构页摘录 · <span class="lnk" contenteditable="false"><a href="https://www.openhands.dev/blog/openhands-context-condensensation-for-more-efficient-ai-agents" target="_blank" rel="noopener">博客</a></span> · <span class="lnk" contenteditable="false"><a href="https://docs.openhands.dev/sdk/guides/context-condenser" target="_blank" rel="noopener">使用指南</a></span></p>
+      <p><span class="one">事件数超过阈值才压缩;开头几条永远保留原文;中间摘要;近期事件保留。</span>这是 JetBrains 论文里“摘要”一侧的原型实现。</p>
+      <ul class="pts">
+        <li>默认的 LLMSummarizingCondenser:事件数超过 max_size(架构页写默认 120)才触发;始终保留最前面的 keep_first 个事件(默认 4,系统提示词和最初的用户消息);保留最近的事件(目标大小为 max_size 的一半,默认 60 条左右);把头和尾之间的中间部分压成一条摘要事件。摘要用的模型可以比推理模型便宜。</li>
+        <li>压缩器每一步都被调用来检查;也有“压缩请求”事件:agent 在上下文窗口报错时,或应用代码,可以主动请求压缩。</li>
+        <li>摘要内容:用户目标、agent 已取得的进展、还没做完的事;软件任务里还会保留关键文件和失败的测试。</li>
+        <li>缓存:只在上下文长到一定程度才压缩,让缓存重建的成本摊到多个回合上。博客称,不压缩的基线每轮成本随时间近似二次增长,压缩后近似线性;一旦压缩起效,单轮 API 成本稳定在不到基线的一半。</li>
+        <li>结果(SWE-bench Verified 子集):平均解决 54%,基线为 53%;唯一的代价是回合数略多,因为 agent 偶尔需要一个回合来压缩。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>“保头、保尾、摘要中间”是最朴素也最稳的结构:头里是系统提示词和最初任务(那些不能被概括掉的东西),尾里是近期原文。博客里的成本曲线是厂商自测,和 JetBrains 论文里“摘要有隐藏成本”的结论并不矛盾——后者强调摘要调用本身和轨迹拉长。</div>
+      <div class="caveat"><b>局限:</b>厂商博客,子集样本量没给全;默认值取自架构页摘录,版本变动时可能不同。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Cursor:动态上下文发现(一切落成文件)</h3>
+        <span class="lnk" contenteditable="false"><a href="https://cursor.com/blog/dynamic-context-discovery" target="_blank" rel="noopener">cursor.com/blog/dynamic-context-discovery</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第6轮</span>Cursor · 2026-01 · 读了博客摘录和两篇转述(<span class="lnk" contenteditable="false"><a href="https://www.infoq.com/news/2026/01/cursor-dynamic-context-discovery" target="_blank" rel="noopener">InfoQ</a></span>)</p>
+      <p><span class="one">把“静态地一直放在上下文里”改成“按需发现”:长工具输出、聊天历史、终端输出、技能和 MCP 工具描述都变成文件,让 agent 用 grep 或语义搜索自己去找。</span></p>
+      <ul class="pts">
+        <li>长工具响应写成文件:第三方工具(如 MCP)可能一次返回巨大的 JSON;Cursor 自带的编辑和搜索工具则靠精简的工具定义和最小响应格式防止膨胀。</li>
+        <li><b>摘要时引用聊天历史</b>:上下文窗口满了,Cursor 会触发摘要、给 agent 一个全新的窗口;但摘要是有损的,agent 的知识会退化。所以摘要前先把完整聊天历史写到文件,agent 之后可以搜索找回被摘要掉的细节。</li>
+        <li>终端会话同步成文件,agent 只 grep 需要的部分;MCP 工具描述同步到文件夹,只在需要时读取——Cursor 的内部 A/B 测试称,涉及 MCP 工具的运行里 token 用量降低 46.9%。</li>
+        <li>Cursor 还称文件化的工具输出减少了不必要的摘要次数,聊天历史引用提升了摘要质量(这是厂商自述)。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>和 LangChain Deep Agents“摘要同时存原始对话”、Manus“文件系统当终极上下文”是同一个模式的第三个独立来源:<b>有损摘要的保险,是把原始记录留在可搜索的地方。</b></div>
+      <div class="caveat"><b>局限:</b>厂商博客;46.9% 是内部实验,条件没公开;我读到的是摘录与转述。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Cognition:专门的压缩模型(二手)</h3>
+        <span class="lnk" contenteditable="false"><a href="https://agentic-ai.readthedocs.io/en/latest/ContextEngineering/devin/" target="_blank" rel="noopener">agentic-ai.readthedocs.io/…/devin/</a></span>
+      </div>
+      <p class="meta"><span class="tag t-sec">二手</span><span class="tag rd">第6轮</span>原文是 Cognition 的《Don't Build Multi-Agents》;本轮没找到可直接打开的原文链接,只读到转述</p>
+      <p><span class="one">转述的要点:对真正长时间的任务,引入一个专门的“压缩模型”,把动作和决策的历史提炼成关键细节、事件和决策;这件事很难做好,Cognition 为此微调了一个较小的模型。</span></p>
+      <ul class="pts">
+        <li>另一个相关观点:动作里带着隐含的决策,多个子 agent 如果各自看不到对方的决策,就会基于相互冲突的假设行动——所以压缩 / 交接摘要里要写“决策”,不只是事实。</li>
+        <li>转述也提到,这是在 agent 与 agent 交接的边界处做摘要的一个例子。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>方向可信,但我没读到原文和任何定量数据,所以只当线索:若你的压缩任务量大、质量要求高,可以评估“微调小模型做压缩”;否则先用现成模型加好的模板和评测。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Pi 编码 agent:可读摘要、增量更新、文件清单由代码追加</h3>
+        <span class="lnk" contenteditable="false"><a href="https://gist.github.com/sam-saffron-jarvis/8128d9838cc947c17c531f81c3619e1a" target="_blank" rel="noopener">gist:Pi 压缩深度分析</a></span>
+      </div>
+      <p class="meta"><span class="tag t-sec">二手·源码分析</span><span class="tag rd">第7轮</span>分析对应仓库 badlogic/pi-mono 的提交 f430dce(2026-03),并参考 <span class="lnk" contenteditable="false"><a href="https://github.com/earendil-works/pi/issues/92" target="_blank" rel="noopener">官方设计 issue</a></span> 的摘录和另一份对 0.83 版的描述 · 已读全文;沙箱无网络,未自己克隆</p>
+      <p><span class="one">一个把压缩做得“读得懂、查得到”的开源实现:摘要是明文、存进会话文件;更新时合并旧摘要;读写过的文件清单不让 LLM 写,由代码从工具调用历史里累计。</span></p>
+      <h4>触发与切点</h4>
+      <ul class="pts">
+        <li>触发:上下文 token 超过“窗口 − 预留”。预留默认 16,384(给摘要输出约 13k,再留约 3k 余量),所以 200K 窗口大约在 184K(约 92%)触发;近期原文保留约 20,000 token。token 数用最近一次 API 返回的真实用量,没有才退回按字符数除以 4 估算。</li>
+        <li>两个触发点:每个回合结束后的阈值检查;以及发送前发现上一条回复是“上下文溢出”错误时的紧急压缩(压缩后重试失败的请求)。三道护栏:只重试一次防死循环;换过模型就忽略旧模型的溢出错误;溢出错误早于最近一次压缩的也忽略。</li>
+        <li>切点:从最新往回累计 token,超过保留额度的地方就是切点。合法切点不包括“工具结果”(必须跟着它的调用)。如果切点正好落在一个回合中间,就对被切出去的“回合前缀”另写一份小摘要(预算只有正常的一半),并入主摘要。</li>
+      </ul>
+      <h4>摘要调用与提示词</h4>
+      <ul class="pts">
+        <li>摘要调用不走 agent 循环:直接调用模型、无工具;摘要输出上限约为预留的 0.8 倍。历史先被序列化成纯文本(方括号标出用户、助手、思考、工具调用、工具结果),图片丢掉——这样摘要器不会把历史当成要继续的对话;系统提示词也明确说“不要继续对话,只输出结构化摘要”。(另一份分析说,在较新的版本里,工具结果在摘要输入里被截到 2,000 字符。)</li>
+        <li>首次压缩的固定分区:目标;约束与偏好;进度(已完成 / 进行中 / 受阻);关键决策及理由;下一步(有序);关键上下文。并要求精确保留文件路径、函数名、报错信息。</li>
+        <li>再次压缩用另一套“更新”提示词:把旧摘要放进 previous-summary 标签,规则是——保留旧摘要的全部信息、加入新进展、把“进行中”里已完成的挪到“已完成”、据此更新下一步、不再相关的可以删。可以通过额外的“关注点”参数附加自定义指令。</li>
+        <li><b>文件清单由代码追加</b>:harness 从工具调用历史里累计 read / written / edited,去重(改过的 = 写过 ∪ 编辑过;只读的 = 读过 − 改过的),以两个 XML 块追加到摘要末尾,并跨多次压缩带下去。</li>
+        <li>摘要以“用户角色”的消息注入(带“此前历史已被压缩成以下摘要”之类的前缀),并作为 compaction 条目写进会话文件,明文可审计。扩展可以用 session_before_compact 钩子整体接管压缩。</li>
+      </ul>
+      <h4>相关:OpenClaw 的“压缩前冲刷记忆”</h4>
+      <ul class="pts">
+        <li>OpenClaw 建立在 Pi 的运行时上,并加了一步:当上下文越过一个比压缩阈值更低的“软阈值”时,先跑一个安静的 agent 回合,让它把需要长期保留的状态写进磁盘文件(例如按天的记忆文件),这样压缩就抹不掉关键信息。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① “文件清单由代码追加”正是 Factory 评测里“文件轨迹是三家共同弱项”的工程解法。② 首次 / 更新两套提示词加明确的合并规则,是“增量合并”的具体写法。③ 序列化成纯文本并声明“不要继续对话”,能防止摘要器被历史里的请求带偏。④ 阈值用“窗口减预留”而不是百分比,预留要覆盖摘要输出和下一次回复。</div>
+      <div class="caveat"><b>局限:</b>我读的是第三方对特定提交的分析和官方设计 issue 的摘录,不是自己读源码;两份分析对应不同版本,提示词细节请以现行源码为准。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Codex CLI:官方提示词很短,功夫在“训练 + 客户端约定”</h3>
+        <span class="lnk" contenteditable="false"><a href="https://github.com/openai/codex/blob/main/codex-rs/prompts/templates/compact/prompt.md" target="_blank" rel="noopener">官方 prompt.md</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手(提示词)</span><span class="tag t-sec">二手·源码分析与实验</span><span class="tag rd">第7轮</span>实现细节来自 <span class="lnk" contenteditable="false"><a href="https://gist.github.com/osolmaz/a38acf6e522df67530e3ed47c80fdcd5" target="_blank" rel="noopener">osolmaz 的分析 gist</a></span>(基于 2026-07-28 的提交 fa1d4c40d0e 与 2026-08 的实测,2026-09 更新),未经 OpenAI 确认 · 另参考 <span class="lnk" contenteditable="false"><a href="https://gist.github.com/badlogic/cd2ef65b0697c4dbe2d13fbecb0a0a5f" target="_blank" rel="noopener">badlogic 的调研</a></span></p>
+      <p><span class="one">官方给其他供应商用的后备提示词只有一小段;OpenAI 自家模型走的是“服务端压缩”,摘要由专门训练过的模型写成加密块。</span>最值得学的是它围绕压缩做的那些客户端约定。</p>
+      <h4>官方后备提示词(其他供应商走这条)</h4>
+      <ul class="pts">
+        <li>让模型为“接手任务的另一个 LLM”写一份交接摘要,只列四项:当前进展与关键决策;重要的上下文、约束或用户偏好;还剩什么要做(明确的下一步);继续所需的关键数据、示例或引用;要求简洁、有结构。摘要作为用户消息放回历史,前面加一句固定前缀(“另一个模型开始解决这个问题并写了摘要……”),后接上一条助手消息;保留的用户消息预算约 2 万 token;压缩请求自己溢出时,丢掉最老的条目重试。</li>
+      </ul>
+      <h4>三种实现,默认是 v2</h4>
+      <ul class="pts">
+        <li><b>远程 v2(OpenAI / Azure 默认)</b>:发一个普通请求(同模型、同指令、同工具、完整历史),末尾追加一个“压缩触发”项;服务端只返回一个加密的 compaction 项。客户端把历史重建为:<b>真实用户消息原样保留</b>(从新到旧,最多 6.4 万 token,丢掉 developer 消息)+ <b>重新注入的最新指令</b>(开发者指令、AGENTS.md、环境上下文)+ compaction 项放在最后(代码注释称模型被训练成在回合中段压缩后,把它当作历史的最后一项)。</li>
+        <li>远程 v1:一次非流式的 POST 到压缩端点。本地后备:上面那条提示词。另有一种 token_budget 模式:根本不摘要,直接开新窗口,可先让模型把笔记写到磁盘。</li>
+        <li>压缩前先处理过大的工具输出:如果估算的历史超过窗口,从后往前把工具输出的正文原地换成一句“输出超出可用上下文,已截断”,直到估算能放进去。</li>
+      </ul>
+      <h4>触发</h4>
+      <ul class="pts">
+        <li>默认为“解析后窗口”的 90%(解析后窗口本身约为原始窗口的 95%);配置只能调低。时机有三种:回合前(包括换到更小窗口的模型,或模型的压缩兼容性变了)、<b>回合中</b>(每次采样后如果还需要继续且达到上限,就在回合内压缩然后接着干,任务不会因“上下文满了”而中断)、手动。</li>
+      </ul>
+      <h4>实测与解密后的交接摘要(作者本机 1,087 次压缩 + 受控捕获)</h4>
+      <ul class="pts">
+        <li>加密块大小中位约 15.8k 字符;一次 174k token 会话的压缩耗时约 33.7 秒,压缩后上下文 174,871 → 3,368 token;另一例 226,661 → 19,537。连续压缩不会累积——每次是把上一份交接重写,块大小基本持平。</li>
+        <li>模型自述并经作者交叉验证的交接内容:约 1,000 词、助手角色、写给“后继的同一个 agent”的笔记,没有前言。包含当前生效的规则、<b>“我已经告诉过用户什么”</b>(避免重复播报)、<b>环境状态</b>(git 提交号、分支、未提交文件、绝对路径、日期)、一份细到命令和提交信息的可执行下一步清单,以及保留下来的自我提醒。</li>
+        <li>基础系统提示词里常驻一段说明(随模型配置发布):告诉模型上下文用完时对话会被自动摘要,但会保留所有之前的用户请求;把最后一条用户请求当成当前请求,更早的当作过时但有用的背景;不要从头重来、不要重做已完成的工作、不要重复已发出的进度说明,把跨越压缩的回合当成一条连续的链。</li>
+        <li>安全方面(单个研究者的实验,未经确认):加密块没有绑定账号或线程,50 天前的块仍能解密,另一账号也能读出其中只存在于助手消息里的内容。所以不要把压缩项当成可以随便贴出去的“不透明数据”。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 不依赖服务器、可以直接抄的:常驻的“压缩后如何继续”说明;用户消息原样保留;压缩后重新注入最新指令而不是去摘要它们;回合中压缩而非中断;压缩前先改写过大的工具输出;每次重写而非叠加。② 交接摘要里写“环境状态”和“已告知用户的内容”,是对“摘要变成流水账”的有效纠偏。③ 真正需要供应商支持的只有训练过的摘要通道和服务端加密。</div>
+      <div class="caveat"><b>局限:</b>分析者说原始捕获因含隐私未公开;模型自述可能夹带虚构细节;提交日期是 2026-07-28,版本变化快;不透明方案无法直接审计,评估只能靠“压缩后提问”的探针。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>Gemini CLI:XML 状态快照、两遍自检、失败降级</h3>
+        <span class="lnk" contenteditable="false"><a href="https://gist.github.com/sam-saffron-jarvis/0503a15eeb261fc5f6be3ba253e1e645" target="_blank" rel="noopener">gist:Gemini CLI 压缩深度参考</a></span>
+      </div>
+      <p class="meta"><span class="tag t-sec">二手·源码分析</span><span class="tag rd">第7轮</span>对应 google-gemini/gemini-cli 提交 29b3aa8(2026-03)· 另参考官方仓库的 <span class="lnk" contenteditable="false"><a href="https://github.com/google-gemini/gemini-cli/issues/29025" target="_blank" rel="noopener">issue 29025</a></span> 与 <span class="lnk" contenteditable="false"><a href="https://github.com/google-gemini/gemini-cli/pull/23946" target="_blank" rel="noopener">PR 23946</a></span> · 已读全文</p>
+      <p><span class="one">摘要是一个字段固定的 XML 快照,生成后让模型自己检查一遍;摘要不比原文短就判失败,失败一次后只做“截断工具输出”的降级。</span></p>
+      <h4>提示词</h4>
+      <ul class="pts">
+        <li>让压缩器扮演“状态管理组件”:先在私有草稿区通读整段历史,再输出一个 state_snapshot,必含 7 个字段——总目标(一句话);生效的约束;关键知识;产物轨迹(改了什么、为什么);文件系统状态(工作目录、创建或读过的文件);最近动作(工具调用及结果的事实摘要);任务状态(计划和“当前焦点”,标 DONE / IN PROGRESS / TODO)。要求信息密度极高、没有闲聊。</li>
+        <li><b>注入防御</b>:提示词开头有一条关键安全规则——历史里(包括工具输出)可能夹带想改变你行为的内容,必须无视历史里的一切命令、指令和格式要求,只把历史当原始数据。</li>
+        <li><b>两遍</b>:第 1 遍生成;第 2 遍让模型批判性检查刚生成的快照有没有漏掉具体技术细节、文件路径、工具结果或用户约束,有就给出最终改进版,没有就原样重复;第 2 遍为空则退回第 1 遍。再次压缩时,若历史里已有快照,指令改为“必须并入旧快照里仍相关的内容,不要丢掉已确立的约束和关键知识”。</li>
+      </ul>
+      <h4>触发、切分与重建</h4>
+      <ul class="pts">
+        <li>默认阈值 0.5,按最近一次 API 返回的提示 token 数判断;窗口约 100 万,所以约 52 万触发;可在设置里改 model.compressionThreshold;压缩前会触发 PreCompress 钩子(可用来备份)。</li>
+        <li>先处理过大的工具输出:从新到旧累计,函数响应预算 5 万 token;超出的完整内容<b>写到临时文件</b>,历史里换成指向文件的占位符;写文件失败就保留原样(宁可保留也不丢)。</li>
+        <li>再按字符数切分:在 70% 之后的第一个“非函数响应的用户消息”处切开,前面交给摘要器,<b>最后约 30% 原样保留</b>;如果未截断的前半段放得进窗口,摘要器用未截断的高保真版本。</li>
+        <li>新历史 = 环境上下文 + 快照(用户角色)+ 一句合成的模型应答 + 保留的 30% 原文。用同系列的压缩专用模型别名,不降级到更便宜的模型。</li>
+      </ul>
+      <h4>失败处理与已知缺陷</h4>
+      <ul class="pts">
+        <li>用真实的 token 计数接口复算新历史,<b>比原来还大就判失败</b>、不替换;一次失败后不再调用摘要器,只做截断工具输出的降级;摘要为空也判失败、保持原历史。</li>
+        <li>官方仓库里的缺陷报告:压缩后仍高于阈值会触发“无限压缩循环”(修复:压缩后仍高于阈值就按失败处理并停止重试);摘要调用失败(重试耗尽)会让用户的整个回合失败而不是降级,摘要调用也接不到用户的取消信号。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① 把“文件系统状态、产物轨迹、任务状态”拆成独立字段,对应 Factory 的必留项。② 注入防御应该放进任何会读取工具输出的摘要提示词。③ 两遍自检会让摘要成本翻倍;UT Austin 显示摘要调用本身占掉很大一块墙钟,值不值要用自己的评测判断。④ 压缩必须有失败降级路径,并且不能拖垮用户的回合。</div>
+      <div class="caveat"><b>局限:</b>第三方对特定提交的分析;“两遍自检”的收益没有公开评测;0.5 的默认值对应 100 万窗口。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>OpenCode 与 Amp:先裁剪再压缩,以及“不自动压缩”</h3>
+        <span class="lnk" contenteditable="false"><a href="https://gist.github.com/badlogic/cd2ef65b0697c4dbe2d13fbecb0a0a5f" target="_blank" rel="noopener">gist:压缩调研(Pi 作者)</a></span>
+      </div>
+      <p class="meta"><span class="tag t-sec">二手·调研笔记</span><span class="tag rd">第7轮</span>2025-12 · 引用了各仓库的文件路径 · 已读全文;其中 Claude Code 部分用的是社区提取的提示词,本卡不采用</p>
+      <p><span class="one">OpenCode 把“裁剪旧工具输出”和“摘要”做成两个机制;Amp 则干脆不自动压缩,让用户用“交接”换新线程。</span></p>
+      <ul class="pts">
+        <li><b>OpenCode</b>:溢出判断是 token 超过(上下文上限 − 输出上限);自动压缩后追加一句“如果还有后续步骤就继续”的消息。独立的<b>裁剪</b>机制:从后往前扫工具调用,<b>保护最近 4 万 token 的工具输出</b>,更早的部分只有当可裁剪量超过 2 万 token 时才动手。摘要提示词偏通用:做了什么、正在做什么、改了哪些文件、下一步、必须保留的用户要求 / 约束 / 偏好、重要技术决策及原因。给界面看的会话标题摘要(最多两句)与压缩摘要是分开的。可用环境变量关闭自动压缩。</li>
+        <li><b>Amp</b>:没有自动压缩。提供手动的“交接(handoff)”:你说明下一个任务的目标,辅助模型从当前线程抽取相关信息,写成新线程的开场消息;另有分叉、编辑 / 回退,以及按需引用其他线程。理念是保持对话短而聚焦,因为上下文里的每样东西都会影响输出。</li>
+        <li>调研者的建议:阈值 85%–90%(95% 往往太晚);先裁剪旧工具输出再压缩;压缩发生后提示用户质量可能下降;允许关闭;支持带自定义指令的手动压缩。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① “保护最近 N token、超过最小量才裁”能防止频繁的小动作破坏缓存,和 Anthropic 的 clear_at_least 同理。② Amp 的交接是“按目标抽取”而不是“概括全部”,换任务时很合适。③ “不自动压缩”也是合法选择:用清空、分叉和交接把控制权交给用户。</div>
+      <div class="caveat"><b>局限:</b>是调研笔记不是源码直读;时间是 2025-12,之后可能已变。</div>
+    </article>
+
+    <article class="sheet src">
+      <div class="src-head">
+        <h3>LangChain SummarizationMiddleware:触发条件可组合</h3>
+        <span class="lnk" contenteditable="false"><a href="https://reference.langchain.com/python/langchain/agents/middleware/summarization/SummarizationMiddleware" target="_blank" rel="noopener">reference.langchain.com/…/SummarizationMiddleware</a></span>
+      </div>
+      <p class="meta"><span class="tag t-prim">一手</span><span class="tag rd">第7轮</span>LangChain 官方文档与 API 参考 · 读了文档摘录 · 另见 <span class="lnk" contenteditable="false"><a href="https://docs.langchain.com/oss/python/langchain/middleware/built-in.md" target="_blank" rel="noopener">内置中间件文档</a></span></p>
+      <p><span class="one">触发和保留条件都可以按 token 数、消息数或占窗口的比例配置,还能用“与 / 或”组合。</span></p>
+      <ul class="pts">
+        <li>触发:单个条件、多个条件(任一满足)、或同时满足(例如 token ≥ 4000 且消息 ≥ 10),也可以混合。保留条件三选一:最近 N 条消息(默认 20)、最近 N token、或占上下文的比例。文档示例有“token 达 4000 触发、保留 20 条”和“80% 触发、保留 30%”;Deep Agents 的示例用 85% 触发。</li>
+        <li>默认用近似的 token 计数函数,可替换;保证 AI 消息和工具消息成对一起保留(不拆开调用与结果);送去摘要的消息也有输入上限(参考页写的是摘要调用准备消息时的 token 上限,文档摘录显示默认 4000);可自定义摘要提示词。</li>
+      </ul>
+      <div class="take"><b>我的批注</b>① “token 数且消息数”的组合能避免短历史里几条超长消息就误触发。② “给摘要器的输入也要设上限”是容易忽略的一环。③ “成对保留”就是切点规则。</div>
+      <div class="caveat"><b>局限:</b>文档摘录;默认值取自当前版本文档,可能随版本变化。</div>
+    </article>
+
+    <!--MARK_NOTES-->
+    </div>
+
+    <div class="sticky">
+      <h3>阶段性发现(第 1 轮后)</h3>
+      <ul>
+        <li>压缩手段有天然的梯度:先用便宜、可逆的(遮蔽、落盘留指针),最后才动有损的摘要。JetBrains 的混合策略和 Manus 的“可恢复”方向一致。</li>
+        <li>摘要要有结构,最好增量合并,而不是每次从头重写(Factory 的数据)。</li>
+        <li>评测靠“压缩后问问题”的探针,不靠文本相似度。</li>
+        <li>文件轨迹是公认薄弱点,应由代码维护,不要寄希望于摘要。</li>
+        <li>压缩率不是目标。真正的目标是整个任务的总成本和完成率。</li>
+      </ul>
+    </div>
+    <div class="sticky">
+      <h3>阶段性发现(第 2 轮后)</h3>
+      <ul>
+        <li>压缩是三个旋钮:压什么、何时压、压多深。要分开调,别只盯压缩率(UT Austin 近 3.5 万次运行)。</li>
+        <li>省 token 不等于省钱:改写历史会破坏提示缓存前缀,账要按“缓存后的真实计费 + 调用次数 + 耗时”来算。</li>
+        <li>目前证据最一致的分层:先清旧工具结果 → 保留近期原文,只摘要旧部分 → 摘要用固定分区的结构化格式 → 关键事实另存到窗口外。</li>
+        <li>默认偏晚触发:测试里晚压的成功率和成本都更好;阈值要按自己轨迹的分布标定。</li>
+        <li>摘要擅长留实质、不擅长留逐字细节(精确数值、标识符),要在摘要提示词里点名。</li>
+        <li>逐 token 压缩(LLMLingua 类)会破坏 agent 动作的语法,不适合压 agent 轨迹。</li>
+        <li>策略不跨模型通用:换模型要重新验证。</li>
+      </ul>
+    </div>
+    <div class="sticky">
+      <h3>阶段性发现(第 3 轮后)</h3>
+      <ul>
+        <li>两家官方 API 路线明显不同:Anthropic 的摘要是人能读的明文(带签名),OpenAI 的压缩项是加密不透明的。想要可审计、可跨供应商,就自己保存可读摘要。</li>
+        <li>官方推荐的控制权在应用:自己决定何时压、保留最近几轮原文、需要时在后台压,别让对话停下来等摘要。</li>
+        <li>压缩前后有一串工程细节:不能有悬空的工具调用;图片、文档、网页内容和 system 指令不会被摘要带走;压缩请求自己也要放得进窗口,所以要趁早压。</li>
+        <li>摘要提示词要自己写:官方的默认提示只说“写下能让你继续的状态、下一步、经验”,没有任何领域针对性。</li>
+        <li>Anthropic 原文给的选择规则:来回对话多 → 压缩;里程碑清晰的迭代 → 笔记;并行探索的研究 → 子 agent。</li>
+      </ul>
+    </div>
+    <div class="sticky">
+      <h3>阶段性发现(第 4 轮后)</h3>
+      <ul>
+        <li>实现层面几家一致:大结果先落盘、上下文里留指针,摘要是兜底(Manus 的可恢复压缩、Deep Agents 的 2 万 token 阈值、Claude Code 钩子输出超过 1 万字符存文件)。</li>
+        <li>压缩有“触发线”和“回落线”两个阈值,两线间隔决定压缩频率和缓存失效次数。</li>
+        <li>摘要模板要有固定字段:会话意图、产物 / 文件、决策与理由、下一步、面包屑(路径、标识符)。</li>
+        <li>压缩后要重建状态:稳定指令从磁盘重载;近期文件重读(数量有限,大文件只给路径);后台任务要告诉模型“还在跑”;必须持久的规则不要放在按需加载的位置。</li>
+        <li>评估套路成型:压缩后探针(Factory)+ 强制高频压缩放大信号(LangChain)+ 找回“针”事实 + 目标漂移监控 + 用失败案例自动改指南(ACON)。</li>
+        <li>为什么要压:输入越长越不稳(Chroma);目标是提高信噪比。但逐 token 压缩不适合 agent 轨迹。</li>
+        <li>还没覆盖的:CoACT、Copilot 生产追踪、Cursor / Cognition / OpenHands 的具体实现细节。</li>
+      </ul>
+    </div>
+    <div class="sticky">
+      <h3>阶段性发现(第 6 轮后)</h3>
+      <ul>
+        <li>压缩的真实代价有了生产数据:触发过压缩的会话只占 7.8%,却占 44.2% 的 token;一次压缩中位去掉约 73% 的上下文、缓存命中率中位下降约 66%,压缩本身占所在回合约 22% 的时间(Copilot 追踪)。</li>
+        <li>摘要会让 agent 失去“位置感”:更难正确收尾、更多被阻塞和重复的动作、跨次运行更不稳定;预算宽松时,简单截断不一定比摘要差(TRACE)。摘要里要显式写“已完成什么、现在能做什么、是否可以结束”。</li>
+        <li>压缩会悄悄吃掉规则:只存在于上下文里的约束,压缩后违规率从 0% 升到 30%(最高 59%);把约束钉在压缩范围之外、每次重新注入,约 47 个 token 就能恢复(Governance Decay)。</li>
+        <li>入口压缩有了验收标准:压缩后的观察要让 agent 做出同样的下一步动作(CoACT);同时它不改历史,保住缓存。</li>
+        <li>“有损摘要的保险是留下原始记录”有了第三个独立来源:Cursor 摘要前把聊天历史写成文件,和 Deep Agents、Manus 一致。</li>
+        <li>OpenHands 的“保头、保尾、摘要中间”和“超过阈值才压、让缓存重建成本摊到多个回合”是最朴素的稳妥结构。</li>
+      </ul>
+    </div>
+    <div class="sticky">
+      <h3>阶段性发现(第 7 轮后)</h3>
+      <ul>
+        <li>开源 agent 的摘要提示词骨架很一致:目标与约束、进展、关键决策、下一步、关键数据;差别在于 Codex 极简(靠模型训练和常驻说明),Pi 是固定 Markdown 分区,Gemini CLI 是 7 字段 XML 快照。</li>
+        <li>文件轨迹的几种解法:Pi 由代码从工具调用历史里累计清单并追加;Gemini CLI 单列“产物轨迹”和“文件系统状态”字段;Gemini CLI 还把超出预算的工具输出写成临时文件、留下指针。</li>
+        <li>再次压缩:Pi 用“更新”提示词合并旧摘要;Gemini CLI 检测到旧快照就改指令;Codex 每次重写。三家都不是简单叠加。</li>
+        <li>触发线有两派:“窗口减预留”(Pi、OpenCode)和“窗口百分比”(Codex 90%、Gemini CLI 50%、Deep Agents 85%、Copilot CLI 80%、Cline 90%)。</li>
+        <li>Gemini CLI 有完整的失败降级:摘要不比原文短就判失败、失败一次后只截断工具输出、摘要为空不替换;同时它的缺陷报告也暴露了反面教材(无限压缩循环、压缩失败拖垮整个回合)。</li>
+        <li>Codex 值得抄的客户端约定:常驻的“压缩后如何继续”说明、用户消息原样保留、压缩后重新注入最新指令、回合中压缩而不中断;交接摘要里写环境状态和“已告知用户的内容”。</li>
+        <li>压缩前先把状态落盘:OpenClaw 的“软阈值记忆冲刷”,Codex 的 token_budget 模式。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= 第二步 ================= -->
+  <section class="stage" id="stage2">
+    <h2>第二步 · 逐篇小结</h2>
+    <p class="sub">资料收齐后,每份资料一句话:它说了什么、可信度如何、我从中带走什么。</p>
+    <div id="summaries">
+      <p class="sub">每份资料四行:说了什么、可信度、带走什么。按资料类型分四组,不按搜索顺序。</p>
+
+      <div class="group"><h3>甲 · 官方文档与官方工程文章(5 份)</h3></div>
+
+      <div class="mini">
+        <h4>1. Anthropic 博客原文《有效的上下文工程》 <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>上下文是有限的“注意力预算”,目标是找到最小的高信号 token 集合;长任务用压缩、结构化笔记、子 agent 三件套,检索上偏向即时加载。</p>
+        <p><span class="w">可信度</span>高(官方),但是概念框架,没有定量实验。</p>
+        <p><span class="k">带走</span>压缩是第一杠杆,最轻的一档是清工具结果;摘要提示词要拿真实轨迹调,先召回后精度;按任务形态选压缩 / 笔记 / 子 agent。</p>
+      </div>
+
+      <div class="mini">
+        <h4>2. Anthropic cookbook(压缩 / 清理 / 记忆) <span class="tag t-prim">一手</span><span class="tag t-vendor">厂商示例</span></h4>
+        <p><span class="k">说了什么</span>三个官方原语分别管什么、有哪些参数、怎么叠加;用研究型 agent 的玩具实验展示轨迹变化和摘要保留了什么。</p>
+        <p><span class="w">可信度</span>中高:参数可靠;实验是单任务合成语料,探针只有 3+3 题。</p>
+        <p><span class="k">带走</span>先清理、再压缩、关键事实进记忆;清理要用 clear_at_least 保护缓存;自定义摘要指令是整体替换;摘要留实质、丢冷门数值,要点名保留。</p>
+      </div>
+
+      <div class="mini">
+        <h4>3. Anthropic 官方文档:按需压缩 / 保留近期轮次 <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>最新的压缩 API 形态:应用决定何时压、近期几轮保留原文、可在后台压,以及失败处理和“摘要带不走的东西”。</p>
+        <p><span class="w">可信度</span>高(官方文档);beta,参数可能变;无质量数据。</p>
+        <p><span class="k">带走</span>自己掌握时机;切点不拆工具调用;图片 / 文档 / 网页内容 / system 指令不会被摘要带走,要另行处理;压缩请求自己也得放得进窗口,要趁早。</p>
+      </div>
+
+      <div class="mini">
+        <h4>4. OpenAI 压缩指南 <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>服务端压缩(设阈值自动触发)与无状态的独立压缩端点,结果是加密、不透明的压缩项。</p>
+        <p><span class="w">可信度</span>高(官方);只讲用法,没有质量或成本数据。</p>
+        <p><span class="k">带走</span>省事,但不可读、无法审计、不能跨供应商;需要评估时只能靠“压缩后提问”的探针间接测。</p>
+      </div>
+
+      <div class="mini">
+        <h4>5. Claude Code 官方说明:压缩后什么会留下 <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>把压缩后的状态逐项列清:什么从磁盘重载、什么重读、什么被摘要吞掉,以及可用的手动干预命令。</p>
+        <p><span class="w">可信度</span>高(产品文档);演示里的 token 数是示意值。</p>
+        <p><span class="k">带走</span>一份“压缩后重建清单”:稳定指令放磁盘重载;近期文件有限重读(最多 5 个,大文件只给路径);持久规则别放在按需加载的位置;后台任务要提醒模型。</p>
+      </div>
+
+      <div class="group"><h3>乙 · 受控实验与论文(13 份)</h3></div>
+
+      <div class="mini">
+        <h4>6. UT Austin《Beyond Token Savings》 <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>把压缩拆成“压什么 / 何时压 / 压多深”三个旋钮,近 3.5 万次运行:省 token 不等于省钱、省时间或更准;策略因模型、任务而异。</p>
+        <p><span class="w">可信度</span>中高:设计干净、样本大;只用三个 24B–35B 开源模型和编码任务;预印本。</p>
+        <p><span class="k">带走</span>触发偏晚;保留近期原文、只摘要旧部分;先清工具输出再做结构化摘要;四件套指标;按自己的轨迹分布标定阈值;换模型就重测。</p>
+      </div>
+
+      <div class="mini">
+        <h4>7. JetBrains《The Complexity Trap》 <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>观察遮蔽(旧工具输出换占位符)与 LLM 摘要的成本都比不管理省一半以上,遮蔽常常不输;摘要会拉长轨迹;先遮蔽后摘要的混合策略最好。</p>
+        <p><span class="w">可信度</span>中高:数据与代码公开;场景是 SWE-bench 编码。</p>
+        <p><span class="k">带走</span>先遮蔽、后兜底摘要;遮蔽窗口按脚手架调;算摘要账时要把摘要调用本身和缓存损失算进去;摘要里别把“该停手”的信号抹掉。</p>
+      </div>
+
+      <div class="mini">
+        <h4>8. Factory 压缩评测 <span class="tag t-vendor">厂商自评</span></h4>
+        <p><span class="k">说了什么</span>用“压缩后提问”的探针评价压缩质量;结构化 + 锚定式增量摘要优于不透明压缩和每次整体重写。</p>
+        <p><span class="w">可信度</span>中:厂商自评、LLM 裁判、分差只有 0.26–0.35;但评测方法本身很值得用。</p>
+        <p><span class="k">带走</span>探针四类题 + 六维评分;摘要固定分区;文件轨迹是共同弱项,应由代码维护而不靠摘要;目标是每任务总 token。</p>
+      </div>
+
+      <div class="mini">
+        <h4>9. ACON <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>用“完整上下文成功、压缩后失败”的成对轨迹,让模型分析丢了什么并自动改压缩指南,再蒸馏到小模型。</p>
+        <p><span class="w">可信度</span>中(ICML 2026,只读了摘要)。</p>
+        <p><span class="k">带走</span>有评测集时可自动迭代摘要提示词;没有时先手工看失败案例改模板。</p>
+      </div>
+
+      <div class="mini">
+        <h4>10. AGORA(逐 token 压缩的失败) <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>LLMLingua-2、Selective Context 在 agent 场景的 17 个组合里全部崩溃,原因是破坏了动作语法。</p>
+        <p><span class="w">可信度</span>中(只读摘录),但与直觉和其他材料一致。</p>
+        <p><span class="k">带走</span>不要对 agent 轨迹做逐 token 压缩。</p>
+      </div>
+
+      <div class="mini">
+        <h4>11. Focus(自主压缩) <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>让 agent 自己决定何时压缩;需要激进提示才会压,5 个任务省 22.7% token 且准确率持平。</p>
+        <p><span class="w">可信度</span>低到中:样本只有 5 题,只读摘录。</p>
+        <p><span class="k">带走</span>想让模型主动压缩,要在脚手架里强推;只当线索,不当结论。</p>
+      </div>
+
+      <div class="mini">
+        <h4>12. TokenPilot(保护缓存的压缩) <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>压缩会破坏提示缓存;办法是在入口处裁剪、规范化,并把驱逐攒成批做;成本降 56%–87%。</p>
+        <p><span class="w">可信度</span>中:预印本、基准较新;只读摘要和摘录。</p>
+        <p><span class="k">带走</span>能在入口裁掉的别等进了历史再清;驱逐成批做,别每轮都改历史。</p>
+      </div>
+
+      <div class="mini">
+        <h4>13. LLMLingua 系列 <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>逐 token 的提示压缩,在文档和 RAG 类任务上能做到 2–20 倍压缩、损失很小。</p>
+        <p><span class="w">可信度</span>中高(学术基准);我读的是项目页和摘要。</p>
+        <p><span class="k">带走</span>可用于长文档、会议记录、检索片段;不用于 agent 动作轨迹。</p>
+      </div>
+
+      <div class="mini">
+        <h4>14. Chroma《Context Rot》 <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>18 个模型在控制难度的实验里,输入越长表现越不稳;只给相关的 300 token 明显好于混在 11.3 万 token 里。</p>
+        <p><span class="w">可信度</span>中高:受控实验;测的是 2025 年中那一代模型。</p>
+        <p><span class="k">带走</span>压缩的目的包括提高信噪比,不只是省钱;摘要里别并排留下多个“看起来像答案”的旧版本(我的推论)。</p>
+      </div>
+
+      <div class="mini">
+        <h4>15. Copilot 生产追踪 <span class="tag t-paper">论文</span><span class="tag t-sec">二手细节</span></h4>
+        <p><span class="k">说了什么</span>2026 年 6 月一周的 Copilot 追踪(约 1300 万会话)里压缩事件的实况:触发过压缩的会话只占 7.8%,却占 44.2% 的 token;一次压缩中位去掉约 73% 的上下文,缓存命中率中位下降约 66%,压缩本身约占回合时间的 22%。</p>
+        <p><span class="w">可信度</span>中高:生产规模;只来自一个产品,详细数字读的是第三方逐图解读。</p>
+        <p><span class="k">带走</span>压缩集中在重会话、一次就毁掉大半缓存,所以触发线要标定、压缩尽量不放在关键路径上(后台做);“没有通用阈值”——各产品触发点多峰分布。</p>
+      </div>
+
+      <div class="mini">
+        <h4>16. TRACE(压缩造成的执行不稳定) <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>压缩不只丢信息,还让 agent 失去“位置感”:更难正确收尾、更多被阻塞和重复的动作、跨次运行更不稳;预算宽松时简单截断不一定比摘要差。提出在压缩边界上用成对续跑来评估并优化压缩提示词。</p>
+        <p><span class="w">可信度</span>中:作者自称初步研究;只在 AppWorld;预印本。但诊断实验设计细致。</p>
+        <p><span class="k">带走</span>摘要要显式写“已完成的动作、现在可执行的下一步、是否可以结束”;保留近期原文;评估看多次运行的一致性;摘要提示词必须与系统提示词对齐。</p>
+      </div>
+
+      <div class="mini">
+        <h4>17. Governance Decay(压缩吃掉约束) <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>只存在于上下文里的规则会在压缩后被丢掉:违规率从 0% 升到 30%(最高 59%),软性组织规则比硬性安全规范衰减大 8.3 倍;把约束钉在压缩范围之外、每次重新注入,约 47 个 token 就能恢复。</p>
+        <p><span class="w">可信度</span>中:预印本,只读了摘要和摘录;基准是构造场景。</p>
+        <p><span class="k">带走</span>必须遵守的规则不要放在可压缩区;系统提示词或固定注入区才是它们的家;评测里加一类“约束违反率”。</p>
+      </div>
+
+      <div class="mini">
+        <h4>18. CoACT(动作保持的观察压缩) <span class="tag t-paper">论文</span></h4>
+        <p><span class="k">说了什么</span>观察压缩的合格标准是“压缩后 agent 的下一步动作与原始观察一致”;用动作保持和长度缩减两种奖励训练轻量压缩器;SWE-bench Verified 上平均总 token 降低 33.0%,效果接近不压缩。</p>
+        <p><span class="w">可信度</span>中:预印本,只在一个基准,需要训练压缩器。</p>
+        <p><span class="k">带走</span>给入口压缩一个可操作的验收标准;压缩发生在写入时,不改历史,保住缓存。</p>
+      </div>
+
+      <div class="group"><h3>丙 · 工程实践与厂商文章(13 份)</h3></div>
+
+      <div class="mini">
+        <h4>19. Manus《上下文工程经验》 <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>压缩要可恢复(留 URL / 路径);文件系统当终极上下文;围绕 KV 缓存设计(稳定前缀、只追加);用 todo 复述全局目标;把失败留在上下文里。</p>
+        <p><span class="w">可信度</span>中:来自大量真实使用,但没有对照实验。</p>
+        <p><span class="k">带走</span>“落盘 + 留指针”优先于摘要;历史只追加;压缩时别把失败轨迹洗干净。</p>
+      </div>
+
+      <div class="mini">
+        <h4>20. Factory《Compressing Context》 <span class="tag t-vendor">厂商设计</span></h4>
+        <p><span class="k">说了什么</span>触发线 / 回落线两个阈值;只摘要新截掉的部分并并入持久摘要;摘要必留四项:意图、经过、产物轨迹、面包屑。</p>
+        <p><span class="w">可信度</span>中:设计文章,无定量对照。</p>
+        <p><span class="k">带走</span>用滞回的两阈值控制频率;摘要用固定字段;压得太狠是假经济。</p>
+      </div>
+
+      <div class="mini">
+        <h4>21. LangChain Deep Agents 的上下文管理 <span class="tag t-prim">一手</span><span class="tag t-vendor">框架方</span></h4>
+        <p><span class="k">说了什么</span>三层:大结果落盘、大输入在 85% 时落盘、都不够才摘要(同时把原始对话存盘);还给了一套实用的评估思路。</p>
+        <p><span class="w">可信度</span>中高:开源可查;没有给提升幅度的数字。</p>
+        <p><span class="k">带走</span>摘要的同时保存原始记录;强制高频压缩来放大信号;测“找回针事实”;监控压缩后的目标漂移。</p>
+      </div>
+
+      <div class="mini">
+        <h4>22. OpenClaw 会话裁剪 + Trigger.dev 可移植检查点 <span class="tag t-sec">二手</span></h4>
+        <p><span class="k">说了什么</span>裁剪工具结果和摘要整段对话是两个互补的层;各家原生压缩是供应商私有的,换供应商就不能沿用。</p>
+        <p><span class="w">可信度</span>低到中:产品文档摘录。</p>
+        <p><span class="k">带走</span>要做多供应商容灾,就自存一份可读、可移植的摘要。</p>
+      </div>
+
+      <div class="mini">
+        <h4>23. MorphLLM 压缩三分法 <span class="tag t-sec">二手</span><span class="tag t-vendor">厂商</span></h4>
+        <p><span class="k">说了什么</span>把压缩分成 LLM 摘要、不透明压缩、逐字压缩(只删不改写)。</p>
+        <p><span class="w">可信度</span>低:营销性质,只读到搜索摘录。</p>
+        <p><span class="k">带走</span>只借用它的分类法,不采信它的数据。</p>
+      </div>
+
+      <div class="mini">
+        <h4>24. OpenHands 压缩器 <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>默认摘要压缩器:事件数超过阈值才压;开头几条永远保留原文;近期事件保留;中间压成一条摘要;只在长到一定程度才压,让缓存重建的成本摊到多个回合。厂商自测 SWE-bench Verified 子集 54% 对基线 53%,单轮成本降到不到一半。</p>
+        <p><span class="w">可信度</span>中:厂商博客;默认值取自架构页摘录。</p>
+        <p><span class="k">带走</span>“保头、保尾、摘要中间”是最朴素也稳妥的结构;头里放系统提示词和最初任务,尾里放近期原文。</p>
+      </div>
+
+      <div class="mini">
+        <h4>25. Cursor 动态上下文发现 <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>长工具输出、聊天历史、终端输出、技能和 MCP 工具描述都落成文件,让 agent 自己搜;摘要前先把完整聊天历史存成文件,摘要掉的细节之后可以找回;涉及 MCP 工具的内部测试里 token 降 46.9%。</p>
+        <p><span class="w">可信度</span>中:厂商博客,数字是内部实验;读的是摘录与转述。</p>
+        <p><span class="k">带走</span>“有损摘要的保险是保留可搜索的原始记录”,这是第三个独立来源(Deep Agents、Manus、Cursor)。</p>
+      </div>
+
+      <div class="mini">
+        <h4>26. Cognition 专门的压缩模型 <span class="tag t-sec">二手</span></h4>
+        <p><span class="k">说了什么</span>转述称:对真正长时间的任务,应引入专门的压缩模型,把动作和决策的历史提炼成关键细节;Cognition 为此微调了一个较小的模型;并强调“动作里带着隐含的决策”。</p>
+        <p><span class="w">可信度</span>低:只读到转述,没读到原文,也没有定量数据。</p>
+        <p><span class="k">带走</span>交接 / 压缩摘要里要写“决策”,不只写事实;大规模、高要求场景可以评估微调小模型做压缩,否则先用现成模型加好模板和评测。</p>
+      </div>
+      <div class="mini">
+        <h4>27. Pi 压缩实现 <span class="tag t-sec">二手·源码分析</span></h4>
+        <p><span class="k">说了什么</span>触发是“窗口减预留(默认 16,384)”,保留约 2 万 token 近期原文;摘要用固定 Markdown 分区,再次压缩用“更新”提示词合并旧摘要;读写文件清单由代码从工具调用历史累计、追加到摘要末尾;摘要明文存会话文件,扩展可接管。</p>
+        <p><span class="w">可信度</span>中:第三方对特定提交的分析加官方设计 issue 摘录,没自己读源码。</p>
+        <p><span class="k">带走</span>文件清单交给代码;首次 / 更新两套提示词;序列化成纯文本并声明“不要继续对话”;OpenClaw 在软阈值先冲刷记忆。</p>
+      </div>
+
+      <div class="mini">
+        <h4>28. Codex CLI 压缩实现 <span class="tag t-prim">一手(提示词)</span><span class="tag t-sec">二手·源码分析</span></h4>
+        <p><span class="k">说了什么</span>官方后备提示词只有四项要点;OpenAI 自家模型走服务端压缩,摘要是加密块;客户端约定:用户消息原样保留、压缩后重新注入最新指令、回合中压缩、压缩前先改写过大的工具输出;基础提示词常驻“压缩后如何继续”的说明;实测一次 174k 会话压缩后只剩约 3.4k token。</p>
+        <p><span class="w">可信度</span>中:提示词是官方文件;其余来自单个分析者对提交的阅读和实测,未经 OpenAI 确认。</p>
+        <p><span class="k">带走</span>常驻说明、用户消息保留、指令重注入、回合中压缩都可以不依赖供应商直接借用;交接摘要里写环境状态和已告知用户的内容。</p>
+      </div>
+
+      <div class="mini">
+        <h4>29. Gemini CLI 压缩实现 <span class="tag t-sec">二手·源码分析</span></h4>
+        <p><span class="k">说了什么</span>7 字段 XML 状态快照 + 私有草稿区 + 注入防御 + 第二遍自检;默认 0.5 阈值,保留最后约 30% 原文,超出 5 万 token 预算的工具输出写临时文件;复算 token,摘要不比原文短就判失败,失败后只做截断。</p>
+        <p><span class="w">可信度</span>中:第三方对提交 29b3aa8 的分析加官方仓库 issue/PR;自检的收益没有公开评测。</p>
+        <p><span class="k">带走</span>摘要拆成独立字段;加注入防御;失败降级路径必须有,且不能拖垮用户的回合;压缩后仍高于阈值要判失败避免死循环。</p>
+      </div>
+
+      <div class="mini">
+        <h4>30. OpenCode 与 Amp <span class="tag t-sec">二手·调研笔记</span></h4>
+        <p><span class="k">说了什么</span>OpenCode 把裁剪旧工具输出(保护最近 4 万 token、可裁量超过 2 万才动手)和摘要分成两个机制;Amp 不自动压缩,提供按目标抽取的“交接”、分叉和线程引用。</p>
+        <p><span class="w">可信度</span>中低:2025-12 的调研笔记,不是源码直读,之后可能已变。</p>
+        <p><span class="k">带走</span>“保护最近 N、超过最小量才裁”防止频繁小动作破坏缓存;“交接”适合换任务;不自动压缩也是合法选择。</p>
+      </div>
+
+      <div class="mini">
+        <h4>31. LangChain SummarizationMiddleware <span class="tag t-prim">一手</span></h4>
+        <p><span class="k">说了什么</span>触发和保留条件可按 token 数、消息数、窗口比例配置并用与 / 或组合;保留默认最近 20 条消息;AI 与工具消息成对保留;送去摘要的输入也有上限;可自定义摘要提示词。</p>
+        <p><span class="w">可信度</span>中高:官方文档,但只读了摘录。</p>
+        <p><span class="k">带走</span>触发条件可组合避免误触发;给摘要器的输入设上限;切点要成对保留工具调用与结果。</p>
+      </div>
+      <!--MARK_SUMMARIES-->
+    </div>
+  </section>
+
+  <!-- ================= 第三步 ================= -->
+  <section class="stage" id="stage3">
+    <h2>第三步 · 最佳实践全文</h2>
+    <p class="sub">把证据串成一篇能落地的文章。</p>
+    <div id="article">
+      <p class="sub">基于前面 31 份资料。凡是“我的建议”,都是我从证据里推出来的起点,不是任何一份资料的原话;凡是标了出处的,都能在上面的卡片里找到来源。</p>
+
+      <div class="sheet art">
+
+        <h3>先说结论</h3>
+        <ul class="pts">
+          <li><b>压缩不是“一次摘要”,而是分层流水线。</b>先做便宜、可还原的(入口裁剪、工具结果落盘或清理),再做有损的摘要,最后才动更重的手段(窗口外记忆、子 agent)。JetBrains 的混合策略、Manus、Anthropic、UT Austin 的实验方向一致。</li>
+          <li><b>大头永远是工具结果。</b>编码 agent 里环境观察占上下文的大部分(JetBrains);Anthropic cookbook 的演示里约 96% 是文件读取结果。先收缩这一块,常常一步就解决大半问题。</li>
+          <li><b>收缩工具结果也有讲究:</b>可重取的才能清;清的时候保留动作和推理,占位符写清怎么重取;不可重取或很贵的先落盘或先提炼进笔记。</li>
+          <li><b>摘要要结构化、固定分区。</b>否则会悄悄丢文件路径和决策(Factory)。同时要点名“必须逐字保留的细节”,因为摘要天然擅长留实质、不擅长留冷门数值(Anthropic cookbook 的探针:高层事实 3/3 保留,冷门数值 0/3)。</li>
+          <li><b>压缩时保留最近几轮原文,只摘要旧部分。</b>UT Austin 在三个模型上都有效(成功率提高 6.7 到 9.7 个百分点)。先清工具输出、再做结构化摘要,同样三个模型都有效。</li>
+          <li><b>触发要晚一点,并且用“触发线 + 回落线”两个阈值。</b>阈值按自己的轨迹分布标定,不要抄默认值(UT Austin、Factory)。</li>
+          <li><b>省 token 不等于省钱。</b>每次改写历史都会破坏提示缓存,摘要调用本身也花钱花时间。要按“缓存后的真实账单 + 调用次数 + 墙钟 + 成功率”四项一起评估(UT Austin、TokenPilot、JetBrains)。</li>
+          <li><b>摘要的同时把原始对话存到磁盘,摘要里写“面包屑”</b>(路径、标识符、怎么重取)。摘要写错了还能回头查(Deep Agents、Factory、Manus)。</li>
+          <li><b>压缩之后要重建状态:</b>稳定指令从磁盘重载,近期关键文件有限重读,后台任务要提醒,必须持久的规则别放在按需加载的位置(Claude Code)。</li>
+          <li><b>评估靠“压缩后提问”的探针,不靠文本相似度或压缩率。</b>再加:强制高频压缩来放大信号、找回“针事实”、监控目标漂移(Factory、LangChain)。</li>
+          <li><b>不要对 agent 的动作轨迹做逐 token 压缩。</b>AGORA 在 17 个组合里全部崩溃;LLMLingua 类只适合长文档和检索片段。</li>
+          <li><b>策略不跨模型、不跨工作负载通用。</b>同一个策略(每步清理)对 Devstral 把成功率拉到 38.7%,对 Qwen 却不错(UT Austin)。换模型就重新验证。</li>
+          <li><b>摘要要写“位置感”。</b>压缩后 agent 更难正确收尾、更多被阻塞和重复的动作、跨次运行更不稳;所以摘要里要显式写“已完成什么、现在能做什么、是否可以结束”,并保留近期原文(TRACE)。</li>
+          <li><b>必须遵守的规则不要只放在可压缩区。</b>只存在于上下文里的约束,压缩后违规率从 0% 升到 30%(最高 59%);把它们钉在压缩范围之外、每次重新注入,约 47 个 token 就能恢复(Governance Decay)。</li>
+          <li><b>压缩在生产里集中而且昂贵。</b>Copilot 追踪里,触发过压缩的会话只占 7.8%,却占 44.2% 的 token;一次压缩中位去掉约 73% 的上下文、缓存命中率中位下降约 66%、本身占回合约 22% 的时间。所以触发线要标定,压缩尽量别放在用户等待的路径上。</li>
+          <li><b>开源 agent 的实现里反复出现的做法,都不依赖供应商,可以直接借用:</b>文件清单由代码追加(Pi);用户消息原样保留、压缩后重新注入最新指令、常驻一段“压缩后如何继续”的说明(Codex);XML 状态快照加注入防御加失败降级(Gemini CLI);压缩前先把状态冲刷到磁盘(OpenClaw)。(这些细节来自第三方对特定提交的源码分析,请以现行源码为准。)</li>
+        </ul>
+
+        <h3>一、先看清上下文里装的是什么</h3>
+        <p>一次 agent 调用的上下文大致由四块组成:<b>稳定前缀</b>(系统提示词、工具定义、CLAUDE.md 一类的持久指令和记忆文件)、<b>对话与推理</b>、<b>工具调用及其结果</b>、<b>压缩后留下的摘要</b>。增长几乎全来自第三块。</p>
+        <ul class="pts">
+          <li>JetBrains 的论文指出,软件工程 agent 的轨迹里,环境观察(文件内容、测试日志)的 token 占主导。</li>
+          <li>Anthropic cookbook 的演示:无管理时上下文涨到约 33.5 万 token,其中约 96% 是文件读取结果,而且多半是 agent 已经处理并记过笔记的内容。</li>
+          <li>Claude Code 文档同样提示文件读取是上下文的大头(演示里的示意数字)。</li>
+          <li>Copilot 的生产追踪:提示词里约 48% 是对话历史、约 28% 是工具调用及结果、约 14% 是系统提示词、约 10% 是仓库指令;工具只占约 4.7% 的墙钟时间,却贡献约 28% 的提示 token。</li>
+        </ul>
+        <p>压缩有三个目标,它们并不总一致,所以要先想清楚主要目标:</p>
+        <ul class="pts">
+          <li><b>不超窗口。</b>最底线的要求。</li>
+          <li><b>提高信噪比。</b>Chroma 的实验里,同样的问题,只给约 300 token 的相关内容和混在约 11.3 万 token 里给,所有模型都明显下降。输入越长越不稳,不是只有“塞满”才坏。</li>
+          <li><b>降成本。</b>但压缩会破坏缓存,摘要自己也花钱,有时省 token 反而更贵(第六节)。</li>
+        </ul>
+        <p>大窗口不是替代品。Anthropic 原文说,等更大的窗口不是办法;cookbook 的实验显示,1M 窗口下陈旧工具结果填满窗口的速度和 200K 窗口一样快,上下文腐烂随“实际装了多少”增长,与上限在哪无关。</p>
+
+        <h3>二、手段谱系:从轻到重、从可还原到有损</h3>
+        <div class="scroll">
+        <table>
+          <tr><th>层</th><th>做什么</th><th>能还原吗</th><th>对缓存</th><th>代表做法</th></tr>
+          <tr><td>L0 入口裁剪</td><td>工具输出进入上下文之前就按规则裁剪、规范化</td><td>最好把原文落盘</td><td>友好(不改历史)</td><td>TokenPilot;CoACT(用“下一步动作是否一致”验收的轻量压缩器);Claude Code 钩子输出超过 1 万字符存文件只给预览</td></tr>
+          <tr><td>L1 落盘留指针</td><td>大结果写文件,上下文里放路径加预览</td><td>能</td><td>友好</td><td>Manus(网页留 URL、文档留路径);Deep Agents(超过 2 万 token 落盘,留前 10 行预览);Cursor(长输出、聊天历史、终端输出都落成文件);Gemini CLI(超出 5 万 token 预算的工具输出写临时文件,历史里留指向文件的占位符)</td></tr>
+          <tr><td>L2 清理 / 遮蔽旧工具结果</td><td>旧结果换占位符,保留动作和推理</td><td>重新调用工具即可(前提是可重取)</td><td>清理那一刻前缀失效</td><td>Anthropic clear_tool_uses(默认保留最近 3 次);JetBrains 观察遮蔽(最佳窗口 10 轮);OpenCode 裁剪(保护最近 4 万 token 的工具输出,可裁剪量超过 2 万才动手)</td></tr>
+          <tr><td>L3 大输入落盘</td><td>旧的“写 / 编辑文件”调用里的完整内容换成磁盘指针</td><td>能(内容本来就在磁盘上)</td><td>失效一次</td><td>Deep Agents(上下文超过 85% 时触发)</td></tr>
+          <tr><td>L4 摘要旧部分 + 保留近期原文</td><td>近几轮原样保留,更早的摘要成结构化摘要</td><td>有损</td><td>失效</td><td>UT Austin 的 SS-p;Anthropic 的保留近期轮次;Factory 的增量锚定摘要;OpenHands(保头、保尾、摘要中间);Pi(保留约 2 万 token 近期原文);Gemini CLI(保留最后约 30%)</td></tr>
+          <tr><td>L5 整段摘要 / 不透明压缩</td><td>全部历史换成一份摘要或加密项</td><td>有损,不透明方案还读不了</td><td>失效</td><td>Anthropic 阈值压缩;OpenAI 服务端压缩</td></tr>
+          <tr><td>L6 窗口外记忆 / 笔记</td><td>agent 自己把要点写到文件,之后读回</td><td>能(取决于写得好不好)</td><td>基本无关</td><td>Anthropic 记忆工具、NOTES.md;Manus 的 todo.md</td></tr>
+          <tr><td>L7 子 agent 隔离</td><td>重活放进独立窗口,只回传提炼结果</td><td>主窗口里不可还原,子窗口里完整</td><td>无关</td><td>Anthropic(回传约 1,000–2,000 token);Claude Code 示例(读约 6,100 token,回 420)</td></tr>
+        </table>
+        </div>
+        <p>越往下越重。L0 到 L3 基本不丢信息,所以应该先用;摘要是兜底,不是起点。</p>
+
+        <h3>三、推荐的默认流水线</h3>
+        <ol class="steps">
+          <li><b>划账:</b>先把上下文分成“必须稳定”(系统提示词、工具定义、持久指令)和“可压缩”(对话、推理、工具结果)两块。稳定部分永远放在最前、不改动、序列化要确定(Manus:不要在提示词开头放精确到秒的时间戳,JSON 键序要稳定)。同时列出“压缩后要重建的东西”清单(第 6 步)。</li>
+          <li><b>入口裁剪 + 落盘:</b>给单个工具结果设上限。参考值:Deep Agents 是超过 2 万 token 就落盘,Claude Code 钩子是超过 1 万字符。超出就写文件,返回“路径 + 前 N 行预览 + 怎么继续读”。<span class="one">我的建议:预览里同时写总大小和总行数</span>,让模型自己判断要不要读更多。</li>
+          <li><b>清理旧工具结果:</b>把“较旧的、可重取的”结果换成占位符。保留最近若干个(Anthropic 默认 3,UT Austin 的 TRC 也保留最近 3 个);保留工具调用记录和模型的推理;占位符里写明“已清除,需要时重新调用 X”;把记忆类工具排除在清理之外;一次清够(clear_at_least),避免频繁破坏缓存。遮蔽窗口要按脚手架调:SWE-agent 上 10 轮最好,OpenHands 因为把失败重试都留着,要更大(JetBrains)。不可重取或很贵的结果,先提炼进笔记再清。</li>
+          <li><b>设触发线和回落线:</b>方法见第五节。</li>
+          <li><b>压缩动作:</b>切点之前的消息送去摘要,切点之后的原样保留(官方示例保留 2 轮,可以从这里起步)。开头那几条(系统提示词、最初的任务)也始终保留原文:OpenHands 的做法是“保头、保尾、摘要中间”。切点不能拆开“工具调用和它的结果”,也不能落在还没有结果的工具调用上(否则 Anthropic 的压缩请求会被拒)。摘要写入的同时,把被摘要的原始消息写到磁盘并记下路径(Deep Agents)。再次压缩有两种做法:Anthropic 是把旧摘要连同之后的内容一起再摘要;Factory 是增量合并(只摘要新截掉的部分并入持久摘要)。后者在 Factory 自己的评测里更稳,但那是厂商自评,建议在你自己的评测里对比。</li>
+          <li><b>摘要提示词:</b>用固定分区的模板,见第四节。</li>
+          <li><b>压缩之后重建状态:</b>按 Claude Code 的清单:稳定指令从磁盘重载;重新读最近改过的少量关键文件(大文件只给路径引用);列出仍在运行的后台任务,避免重复启动;把“下一步”放在摘要末尾;摘要范围里的 system 指令会被概括,要时用一条新的 system 消息重述(Anthropic);图片、文档、抓取的网页内容不会被摘要带走,需要就重新上传或重述(Anthropic)。</li>
+          <li><b>窗口外手段:</b>把必须在压缩后存活的信息写进记忆 / 笔记;大量读取的研究活交给子 agent(第八节)。</li>
+        </ol>
+
+        <h4>来自开源实现的工程细节</h4>
+        <ul class="pts">
+          <li><b>token 计数的来源要可靠:</b>Pi 和 Gemini CLI 都用最近一次 API 返回的真实用量,没有才退回按字符估算。Codex 仓库里有用户报告“溢出之后计数失真、压缩不再触发”(用户报告,未经确认)。</li>
+          <li><b>两个触发点:</b>回合结束后的阈值检查,加上发送前发现“上一次已经溢出”时的紧急压缩(压缩后重试失败的请求)。给后者加护栏:只重试一次;忽略换模型之前的溢出错误;忽略早于最近一次压缩的溢出错误(Pi)。</li>
+          <li><b>摘要必须真的变短:</b>用计数接口复算,新历史比旧的还大就判失败并保持原样;压缩后仍高于阈值也算失败,避免无限压缩循环;一次失败后别再反复调用摘要器,退回到只截断工具输出;压缩失败不能让用户的整个回合失败(以上来自 Gemini CLI 的实现和它的缺陷报告)。</li>
+          <li><b>回合中压缩:</b>Codex 在每次采样之后,如果还需要继续且达到上限,就在回合内压缩然后接着干;Pi 则是中止当前运行、压缩、重试。前者对长任务更顺。</li>
+          <li><b>压缩前先冲刷记忆:</b>OpenClaw 在越过一个比压缩阈值更低的“软阈值”时,先跑一个安静的回合让 agent 把持久状态写到磁盘(第八节)。</li>
+          <li><b>钩子:</b>Gemini CLI 有 PreCompress(可用来备份原始记录),Pi 有 session_before_compact(可整体替换压缩逻辑)。</li>
+        </ul>
+
+        <h3>四、摘要提示词怎么写</h3>
+        <h4>原则</h4>
+        <ul class="pts">
+          <li><b>告诉摘要器:写完之后原始历史就看不到了,你要靠它继续干活。</b>这是 Anthropic 默认提示词的核心思路;默认提示只要求写“状态、下一步、经验”,没有任何领域针对性,所以值得自己写。</li>
+          <li><b>固定分区,每个分区必须填写或写“无”。</b>结构强制保留:分区像清单,摘要器不会悄悄丢掉文件路径和决策(Factory)。Deep Agents 在摘要提示词里加了“会话意图”和“下一步”两个专用字段后效果变好。</li>
+          <li><b>点名保留最容易丢的东西:</b>精确数值、标识符、报错原文、配置值,以及用户的原始约束(逐条,不要概括)。Anthropic 的探针里,这类冷门细节 0/3 保留。研究型任务还要写“已读 / 未读清单”,并让每个数值带来源(cookbook 的示例)。</li>
+          <li><b>留一行“失败了什么、为什么”,别留整段栈。</b>Manus 主张把失败留在上下文里,模型会据此调整;JetBrains 发现摘要可能抹平“该停手了”的信号,让 agent 多跑 13%–15% 的步数。折中是:摘要里记“试过什么、为什么没成”。</li>
+          <li><b>删什么:</b>冗余的工具输出、已被推翻的旧方案细节、过程性流水账。留结论,不留过程。<span class="one">我的推论:</span>别并排留下多个“看起来都像答案”的旧版本——Chroma 的实验里干扰项会随长度放大影响。</li>
+          <li><b>限长。</b>Factory 对单份摘要设了最大 token 上限;Anthropic 的演示里摘要约 2.8k token;Factory 评测里 Anthropic SDK 的摘要通常是 7–12k 字符。没有一个通用数,按自己的任务试。</li>
+          <li><b>写“执行位置”,不只写事实。</b>TRACE 发现,摘要后 agent 更难正确收尾、更容易重复动作或被阻塞。所以要写清:已完成的动作(避免重做)、现在可执行的下一步、是否已满足终止条件(若已满足,下一步只需给最终答复)。</li>
+          <li><b>摘要里不要出现与系统提示词矛盾的规则。</b>TRACE 的自动提议者就曾写出“之前会话的变量不保留”这样与系统提示词相反的规则;写摘要提示词时要把下游系统提示词放在手边核对。</li>
+          <li><b>必须遵守的规则不要只靠摘要保存。</b>把它们放进系统提示词或每次重新注入的固定区域(Governance Decay 的“约束钉住”,约 47 个 token);我的建议:摘要里再逐条抄一遍原文作为双保险。</li>
+          <li><b>指令里禁止调用工具,并要求只输出摘要</b>(Anthropic 文档:摘要调用若发起了工具调用,就产不出摘要)。需要的话让它包进 <code>&lt;summary&gt;</code> 标签。</li>
+          <li><b>怎么迭代:</b>拿复杂的真实轨迹调;先把召回拉满、再提精度(Anthropic);用强制高频压缩的方式对比不同版本(LangChain);有条件就用失败样本自动改(ACON)。</li>
+        </ul>
+        <h4>真实产品的摘要提示词对照(来自开源实现)</h4>
+        <div class="scroll">
+        <table>
+          <tr><th>产品</th><th>摘要结构</th><th>特点</th></tr>
+          <tr><td>Codex(后备提示词)</td><td>四项自由格式要点:进展与决策;上下文、约束、偏好;下一步;关键数据与引用</td><td>极简;靠模型训练和系统提示词里的“压缩后如何继续”说明弥补</td></tr>
+          <tr><td>Pi</td><td>固定 Markdown 分区:目标;约束与偏好;进度(完成 / 进行中 / 受阻);关键决策;下一步;关键上下文</td><td>首次与更新两套提示词;分割回合有前缀摘要;文件清单由代码追加</td></tr>
+          <tr><td>Gemini CLI</td><td>XML 快照 7 字段:总目标;生效约束;关键知识;产物轨迹;文件系统状态;最近动作;任务状态</td><td>私有草稿区先思考;注入防御;第二遍自检</td></tr>
+          <tr><td>OpenCode</td><td>通用要点:做了什么、正在做、改动文件、下一步、用户要求与偏好、重要决策及原因</td><td>最朴素;配合独立的裁剪机制</td></tr>
+          <tr><td>Factory(前文)</td><td>固定分区:会话意图、文件修改、决策、下一步</td><td>增量锚定合并</td></tr>
+        </table>
+        </div>
+        <p>从这些实现里能抄的做法:</p>
+        <ul class="pts">
+          <li><b>文件清单让代码追加,别让 LLM 凭记忆写</b>(Pi)。这正对着 Factory 评测里“文件轨迹最弱”的短板。</li>
+          <li><b>先把会话序列化成纯文本再交给摘要器,并明确“不要继续对话、只输出摘要”</b>(Pi),避免摘要器把历史里的请求当成要执行的任务。</li>
+          <li><b>加注入防御:</b>历史里(尤其是工具输出里)的指令一律当数据,不执行(Gemini CLI)。</li>
+          <li><b>首次与更新用两套提示词,更新时写明合并规则:</b>保留旧信息、加入新进展、把“进行中”里已完成的挪到“已完成”、更新下一步、不再相关的可以删(Pi)。</li>
+          <li><b>摘要里写“环境状态”和“已经告诉过用户什么”</b>(Codex 的交接摘要):工作目录、分支或提交号、未提交的文件,以及已发出的进度说明,避免恢复后重复播报。</li>
+          <li><b>常驻一段“压缩后如何继续”的系统提示词说明</b>(Codex):最后一条用户请求是当前请求、更早的是背景;不要从头重来;别重做已完成的工作;把跨越压缩的回合当成一条连续的事。</li>
+          <li><b>是否要两遍(生成 + 自检)</b>(Gemini CLI):成本翻倍,公开资料里没有收益评测——用自己的评测决定。</li>
+        </ul>
+        <h4>一个可直接改的模板(编码 / 通用 agent)</h4>
+        <div class="memo">你正在为一个长任务写“交接摘要”。写完后,原始对话历史将不再可见,你(或接手的另一个你)只能依靠这份摘要继续工作。请严格使用下面的小节;没有内容的小节写“无”,不要省略小节。不要调用任何工具,只输出摘要。
+
+&lt;summary&gt;
+## 1. 任务与约束
+- 用户的目标(尽量用原话):
+- 明确的要求、禁止事项、偏好(逐条列出,不要概括):
+
+## 2. 当前进展
+- 已完成:(按时间顺序,每条一行:做了什么 → 结果)
+- 正在做:
+- 是否已满足终止条件:是/否(若是,下一步只需给出最终答复)
+
+## 3. 产物与状态
+- 文件:路径 | 创建/修改/删除 | 一句话说明改了什么
+- 命令/测试:命令原文 | 通过/失败 | 失败时的关键报错原文
+
+## 4. 决策与理由
+- 选了什么、为什么;被否决的方案及原因
+
+## 5. 未解决的问题与已试过的办法
+- 问题 | 已试过什么 | 为什么没成
+
+## 6. 必须逐字保留的细节
+- 数值、ID、URL、函数名、报错原文、配置值(原样抄写,不要改写)
+
+## 7. 可重新获取的内容(面包屑)
+- 内容 | 存放位置或重新获取的方法(路径、命令、链接)
+
+## 8. 环境状态与后台任务
+- 工作目录、分支 / 提交号、未提交的文件、仍在运行的后台任务:
+- 已经告诉过用户的内容(避免重复播报):
+
+## 9. 下一步
+- 第一步具体做什么;之后的计划
+&lt;/summary&gt;
+
+要求:优先写状态和结论,不要写“用户让我……我回答了……”这样的流水账。</div>
+        <p>模板第 3、4、7、9 节对应 Factory 的四个必留项(产物轨迹、高层经过与决策、面包屑、意图与下一步);第 6 节专门对付 cookbook 探针暴露的“冷门细节丢失”;第 5 节专门对付“摘要抹平失败信号”;第 8 节来自 Claude Code 对后台任务的处理,以及 Codex 交接摘要里的环境状态和“已告知用户的内容”;第 2 节的“终止条件”来自 TRACE 的发现;第 1 节的约束要同时钉在系统提示词里(Governance Decay)。研究型任务可把第 3 节改成“已读 / 未读文档清单 + 每个数值及来源”。</p>
+
+        <h3>五、触发时机与参数怎么定</h3>
+        <h4>各家的默认值,当参照而不是答案</h4>
+        <div class="scroll">
+        <table>
+          <tr><th>来源</th><th>默认值 / 做法</th></tr>
+          <tr><td>Anthropic 阈值压缩</td><td>服务端按输入 token 触发,最小 5 万,默认 15 万</td></tr>
+          <tr><td>Anthropic 工具结果清理</td><td>默认 10 万触发,保留最近 3 次工具使用</td></tr>
+          <tr><td>OpenAI 服务端压缩</td><td>用 compact_threshold 设阈值;文档示例是 20 万(示例值)</td></tr>
+          <tr><td>LangChain Deep Agents</td><td>工具结果超过 2 万 token 落盘;上下文超过窗口的 85% 时落盘旧输入并开始摘要</td></tr>
+          <tr><td>Cline</td><td>窗口的 90%</td></tr>
+          <tr><td>Codex</td><td>默认为解析后窗口的 90%(解析后窗口约为原始窗口的 95%),配置只能调低;用户消息原样保留(远程 v2 最多 6.4 万 token,本地后备约 2 万)</td></tr>
+          <tr><td>Copilot CLI</td><td>80%,并写检查点文件</td></tr>
+          <tr><td>Gemini CLI</td><td>默认阈值 0.5(按 API 返回的提示 token 数判断);在 70% 字符之后的第一个用户消息处切开,最后约 30% 原样保留;工具输出预算 5 万 token</td></tr>
+          <tr><td>OpenHands</td><td>事件数超过 max_size(架构页写默认 120)才压缩;开头 4 个事件原样保留,近期保留到约 max_size 的一半,中间摘要</td></tr>
+          <tr><td>Pi</td><td>token 超过“窗口 − 16,384 预留”触发(200K 窗口约在 184K,≈92%);保留约 2 万 token 近期原文</td></tr>
+          <tr><td>OpenCode</td><td>token 超过(上下文上限 − 输出上限)就压缩;另有裁剪:保护最近 4 万 token 的工具输出,可裁剪量超过 2 万才动手</td></tr>
+          <tr><td>LangChain 中间件</td><td>触发可按 token / 消息数 / 窗口比例组合;保留默认最近 20 条消息;示例有“80% 触发、保留 30%”</td></tr>
+          <tr><td>实际产品里的触发点(Copilot 追踪)</td><td>多峰分布:约 50%、65%–66%、80%、接近 100%,中位数 66%</td></tr>
+          <tr><td>JetBrains 实验</td><td>遮蔽窗口 10 轮;摘要每次 21 轮、保留最近 10 轮</td></tr>
+        </table>
+        </div>
+        <h4>证据</h4>
+        <ul class="pts">
+          <li><b>晚一点压更好</b>(UT Austin,Qwen / SWE-bench,25 题):阈值从 1 万提到 2 万 token,每次尝试的压缩次数从 4.85 降到 1.15,所有原语成功率都升;整段摘要从 50.7% 升到 62.7%,输入成本从 1.10 倍降到 0.92 倍。</li>
+          <li><b>压多深取决于原语:</b>截断压得越深越差(61.3% 到 50.7%);摘要压得越深反而更好(50.7% 到 60.0%,因为触发次数少了)。15 个原语 × 阈值组合里,浅压的成功率最高占 8 个,深压的成本最低占 8 个、延迟最低占 7 个。</li>
+          <li><b>两线间隔决定频率</b>(Factory):间隔窄,压缩频繁,摘要开销和缓存失效多,但近期上下文保留好;间隔宽,压缩少,但每次砍得狠。调试这类状态依赖复杂的会话适合更高阈值,简单问答可以更激进。</li>
+          <li><b>别每步都清:</b>每步触发的清理要多出 10%–27% 的模型调用,而且对 Devstral 的成功率少了 14.3 个百分点(UT Austin)。</li>
+          <li><b>压缩请求自己也要放得进窗口</b>(Anthropic 文档):所以不能等到撑爆才压。</li>
+        </ul>
+        <h4>怎么标定(UT Austin 的方法,可以直接用)</h4>
+        <ol class="steps">
+          <li>先在你的任务集上跑<b>不压缩</b>的基线,记录每条轨迹的峰值上下文大小。</li>
+          <li>取这个分布的第 5、15、25 百分位,作为“紧 / 主 / 松”三档触发线,而不是所有模型共用一个 token 数。</li>
+          <li>每档再配两三个压缩深度(目标 token = 当前 token 的 30%、50%、70% 左右),比较四件套指标。</li>
+          <li>每个配置对每个任务至少重复 3 次,否则分不清是策略还是运气。</li>
+        </ol>
+        <h4>我的起步建议(推导,不是定论)</h4>
+        <ul class="pts">
+          <li>触发线放在<b>有效窗口</b>的约 70%–85% 起步。各家默认多在 80%–90%,Anthropic 又提醒压缩请求自己要放得进窗口。这里的“有效窗口”指你<b>能验证质量的长度</b>,而不是标称窗口——JetBrains 引用的研究认为 agent 的有效上下文其实比标称小得多,Chroma 也显示长输入下不稳。</li>
+          <li>阈值有两种写法:“窗口减预留”(Pi、OpenCode)和“窗口百分比”(Codex、Gemini CLI、Cline、Copilot CLI 等)。我的判断:前者在不同大小的窗口下更稳健,因为预留量要覆盖的是摘要输出和下一次回复,这两样不随窗口变大。</li>
+          <li>压缩后目标占用约为压缩前的一半(UT Austin 的规范设置 D=0.5),再按评测调整。</li>
+          <li>保留最近 2 轮原文起步(Anthropic 示例);遮蔽型窗口从 10 轮起步(JetBrains),然后按脚手架调。</li>
+          <li>被动阈值是底线;如果你的 agent 有清晰的阶段边界(刚调通一个难 bug、刚完成一个子任务),可以在断点上主动压缩(Factory 的方向)。Focus 的结果提示模型默认不太会主动压缩,要在脚手架里强推,而且只在探索密集的任务里有收益,样本只有 5 题,只能当线索。</li>
+        </ul>
+
+        <h3>六、缓存与真实成本</h3>
+        <ul class="pts">
+          <li><b>价格差一个数量级:</b>Manus 以 Claude Sonnet 为例,缓存命中的输入价是未命中的十分之一;UT Austin 的计费也按 1/10 假设;其引用的 Anthropic 文档说缓存读取是基础输入价的 0.1 倍。</li>
+          <li><b>压缩会破坏缓存:</b>UT Austin 发现,Terminal-Bench 上用约三分之一 token 的策略,耗时是全上下文的 1.2–1.8 倍,有的账单比不压缩还高,因为更多 token 按“新鲜价”计费、调用次数还变多。该论文还引用 Copilot 生产追踪:压缩事件周围缓存复用下降。</li>
+          <li><b>生产数据:</b>Copilot 追踪里,回合内部缓存命中率约 87%–91%,跨回合降到约 55%;一次压缩让命中率中位再降约 66%,34.3% 的压缩事件让它下降 90% 以上;压缩本身是一次完整的模型调用,中位占所在回合约 22% 的时间。</li>
+          <li><b>摘要自己的成本:</b>JetBrains 测得摘要调用可占单题成本的 7% 以上,且每次要处理的历史片段不同,几乎吃不到缓存;UT Austin 测得摘要调用占已解决任务墙钟时间的 28%–46%。</li>
+        </ul>
+        <p>由此推出的规则(来自 Manus、UT Austin、TokenPilot、Anthropic、Factory):</p>
+        <ol class="steps">
+          <li><b>稳定前缀:</b>系统提示词和工具定义放最前,别动;确定性序列化。</li>
+          <li><b>历史只追加:</b>能不改旧消息就不改。</li>
+          <li><b>成批、一次清够,不要每步小动作:</b>Anthropic 的 clear_at_least、TokenPilot 的批量驱逐、UT Austin 里每步清理多出的调用,都指向同一件事。</li>
+          <li><b>能在入口处裁剪的,别等进了历史再清。</b>TokenPilot 的做法,在其基准上成本降 56%–87%(预印本)。</li>
+          <li><b>缓存断点放在稳定边界后面。</b>Anthropic 的压缩块上可以放 cache_control 断点。</li>
+        </ol>
+        <p><b>记账口径:</b>每个任务的总输入 token,拆成“缓存读取 / 新鲜 / 缓存写入”三类;模型调用总数;墙钟时间;摘要调用单列(Anthropic 的 usage.iterations 里有单独的 compaction 项);任务成功率。不要把压缩率当 KPI——Factory 里压缩率最高的方案质量反而最低。</p>
+
+        <h3>七、怎么评估:知道自己压得好不好</h3>
+        <h4>不要用什么</h4>
+        <p>压缩率、ROUGE、嵌入相似度。摘要可以字面很像,却恰好丢了 agent 继续干活唯一需要的那个文件路径(Factory)。</p>
+        <h4>要用什么</h4>
+        <ul class="pts">
+          <li><b>压缩后探针</b>(Factory):压缩之后向 agent 提四类问题——回忆(原始报错是什么)、文件轨迹(改过哪些文件、各改了什么)、续作(下一步做什么)、决策(之前的方案选了哪个);六个维度打分(准确性、上下文感知、文件轨迹、完整性、连续性、指令遵循),让评审模型盲评。</li>
+          <li><b>强制高频压缩来放大信号</b>(LangChain):先在真实任务上跑出基线,再把触发线人为拉到窗口的 10%–20%,这样一次运行里有很多次压缩,摘要提示词的细小改动才看得出差别。</li>
+          <li><b>靶向小测试</b>(LangChain):① 目标保持:任务中途强制摘要,看 agent 是否继续原任务;② 找回:在早期对话埋一条“针”事实,强制摘要,要求 agent 靠搜索原始记录找回;③ 漂移监控:压缩后的下一轮是不是去问澄清、或错误宣布任务完成。</li>
+          <li><b>任务级比较与重复</b>(UT Austin):总成功率相同不代表解的是同一批题。TRC+SU 总共解 52 题(全上下文 53),但新解 7 题、丢 8 题;每个配置重复 3 次;按模型分别评。</li>
+          <li><b>边界局部评估</b>(TRACE):在同一个环境状态,分别用“压缩前”和“压缩后”的上下文做成对的闭环续跑,数“被阻塞或重复的动作”多出多少,把压缩造成的退化和 agent 自身的随机性分开。</li>
+          <li><b>多次运行的一致性</b>(TRACE):看“每次都成功”(Pass^k)和“至少成功一次”(Pass@k)的差距;压缩越狠,差距越大。</li>
+          <li><b>约束违反率</b>(Governance Decay):在上下文里放几条必须遵守的规则,压缩后看 agent 还守不守。</li>
+          <li><b>下一步动作一致性</b>(CoACT):评价入口压缩时,把同一份上下文里的原始观察换成压缩后的,看 agent 的下一步动作变不变。</li>
+          <li><b>四件套指标:</b>成功率、调用次数、墙钟时间、按缓存计费的账单。</li>
+          <li><b>自动优化</b>(ACON):用“完整上下文成功、压缩后失败”的成对轨迹,让模型分析丢了什么并改压缩指南。需要有评测集和参照轨迹。</li>
+        </ul>
+        <h4>一个最小可行的评测流程(我的建议)</h4>
+        <ol class="steps">
+          <li>收集十几到几十条有代表性的真实轨迹(含长的、含失败重试的)。</li>
+          <li>跑不压缩的基线,记录四件套。</li>
+          <li>在每条轨迹的中段强制压缩一次,压缩后问四类探针题,并让 agent 继续任务,看是否漂移;再放几条必须遵守的约束,看压缩后还守不守。</li>
+          <li>同一批轨迹上对比两版摘要提示词(或两种触发线)。</li>
+          <li>回看失败案例:丢了什么?是被概括掉的细节,还是被抹平的失败信号?改模板。</li>
+          <li>换一个模型再来一遍,不要默认结果能迁移。</li>
+        </ol>
+
+        <h3>八、窗口外的手段:笔记、记忆与子 agent</h3>
+        <ul class="pts">
+          <li><b>笔记 / 待办复述:</b>Manus 的一个典型任务约 50 次工具调用,它不断重写 todo.md,把全局目标顶到上下文末尾,避免“中间遗忘”。Anthropic 原文同样把 NOTES.md 式笔记列为长任务的三件套之一,例子是跨越上下文重置仍能持续数千步的统计与策略。</li>
+          <li><b>记忆工具:</b>由模型自己决定何时存取,存储后端由你实现。官方的使用要点:和清理一起用时,用 exclude_tools 把记忆读写排除在清理之外;可以用系统提示词限定“只记与某主题相关的内容”,并要求保持目录整洁、不要乱建文件;多会话任务可以先开一个“初始化会话”,建立进度日志和检查清单这类固定结构。官方还说:压缩让活跃上下文保持精简,记忆保存必须在摘要后仍然存活的信息。</li>
+          <li><b>压缩前先冲刷记忆:</b>OpenClaw 在上下文越过一个比压缩阈值更低的“软阈值”时,先运行一个安静的 agent 回合,让它把需要长期保留的状态写进磁盘(例如按天的记忆文件),这样压缩就抹不掉关键信息。Codex 的 token_budget 模式更彻底:不摘要,直接开新窗口,可先让模型把笔记写到磁盘。Amp 则把“交接”交给用户:说明下一个任务的目标,由辅助模型抽取相关信息写成新线程的开场消息。</li>
+          <li><b>人写的 + 模型写的:</b>Claude Code 同时用 CLAUDE.md(人写、可入库)和自动记忆(模型自己写)两套,压缩后都从磁盘重载。</li>
+          <li><b>子 agent:</b>各自在干净的窗口里深入探索,只回传提炼结果(Anthropic 说通常 1,000–2,000 token)。Claude Code 的示例里,子 agent 读了约 6,100 token 的文件,只回了 420 token(示意数字)。子 agent 不继承主会话的历史。</li>
+          <li><b>怎么选</b>(Anthropic 原文):需要大量来回对话 → 压缩;有明确里程碑的迭代开发 → 笔记;复杂研究、能并行探索 → 多 agent。</li>
+        </ul>
+
+        <h3>九、坑清单</h3>
+        <h4>触发与切点</h4>
+        <ul class="pts">
+          <li>把压缩率当目标(Factory:压缩率最高的质量最低)。</li>
+          <li>等到撑爆才压,压缩请求自己放不进窗口(Anthropic)。</li>
+          <li>切点落在没有结果的工具调用上,或把工具调用和它的结果拆到两边(Anthropic)。</li>
+          <li>每次都把整段前缀重新摘要一遍,成本随对话线性上涨(Factory 描述的朴素做法)。</li>
+          <li>每步都清理(UT Austin:多 10%–27% 的调用;对 Devstral 掉 14.3 个百分点)。</li>
+          <li>压缩失败拖垮用户的整个回合,或压缩后仍高于阈值导致无限压缩循环(Gemini CLI 的缺陷报告与修复)。</li>
+          <li>摘要比原文还长却照样替换(Gemini CLI 会复算 token,发现更大就判失败)。</li>
+          <li>触发判断依赖陈旧或失真的 token 计数(Pi 的做法是用最近一次 API 返回的用量,缺失才按字符估算;Codex 仓库里有未经确认的用户报告)。</li>
+        </ul>
+        <h4>摘要内容</h4>
+        <ul class="pts">
+          <li>摘要提示词没有固定分区,文件路径、决策悄悄丢失(Factory)。</li>
+          <li>没点名保留精确数值和标识符(cookbook:冷门数值 0/3 保留)。</li>
+          <li>摘要把失败信号抹平,agent 多走冤枉路(JetBrains:轨迹拉长约 13%–15%)。</li>
+          <li>摘要只写事实和进度,没写“已完成什么 / 现在能做什么 / 是否可以结束”,压缩后 agent 更难正确收尾、更多重复动作(TRACE)。</li>
+          <li>摘要提示词里的规则与系统提示词矛盾(TRACE 里的自动提议者就写过)。</li>
+          <li>摘要里留下多个互相矛盾的旧版本(Chroma 的干扰项,我的推论)。</li>
+          <li>把文件列表交给摘要维护:三家方法在文件轨迹上都只有 2.19–2.45 分(满分 5),应由脚手架单独维护(Factory);Pi 就是由代码从工具调用历史里累计读写文件清单、追加到摘要末尾。</li>
+          <li>摘要器被历史里的指令带偏(把工具输出里的“请做 X”当成要执行的命令)——缺少注入防御和“不要继续对话”的约束(Gemini CLI、Pi 都专门处理了)。</li>
+          <li>清掉了不可重取或很贵的工具结果(cookbook:先提炼进笔记再清)。</li>
+        </ul>
+        <h4>压缩之后</h4>
+        <ul class="pts">
+          <li>图片、文档、抓取的网页内容被摘要吞掉而没发觉(Anthropic)。</li>
+          <li>摘要范围内的 system 指令被概括,不再按原文生效(Anthropic)。</li>
+          <li>带路径限定的规则、子目录里的 CLAUDE.md 压缩后消失,因为它们只在读到相关文件时才按需加载(Claude Code)。</li>
+          <li>技能正文被截断且保留的是开头,重要指令写在了末尾(Claude Code)。</li>
+          <li>忘了告诉模型后台任务还在跑,结果重复启动(Claude Code)。</li>
+          <li>必须遵守的规则只放在上下文里,压缩后被悄悄丢掉(Governance Decay:违规率 0% 升到 30%,最高 59%)。</li>
+          <li>压缩后目标漂移:下一轮去问澄清,或错误宣布完成(LangChain)。</li>
+        </ul>
+        <h4>成本、评估与环境</h4>
+        <ul class="pts">
+          <li>只看 token 不看账单和耗时(UT Austin)。</li>
+          <li>只评单次成功率,看不到压缩让结果变得“时好时坏”(TRACE:至少成功一次与每次都成功之间的差距变大)。</li>
+          <li>把压缩放在用户等待的关键路径上同步做(Copilot 追踪:压缩约占回合时间 22%)。</li>
+          <li>用文本相似度评估摘要(Factory)。</li>
+          <li>对 agent 轨迹做逐 token 压缩(AGORA)。</li>
+          <li>把一个模型上调好的策略直接搬到另一个模型(UT Austin)。</li>
+          <li>在多供应商场景里只依赖不透明的原生压缩项,切换供应商后无法沿用(Trigger.dev、OpenAI 文档)。</li>
+          <li>总成功率没变就认为没问题,实际上丢了一批原本能解的题(UT Austin:新解 7、丢 8)。</li>
+        </ul>
+
+        <h3>十、按场景选方案,以及落地路线</h3>
+        <p>下面这张表是我的综合判断,每行都标了依据;请当作起点,用第七节的方法验证。</p>
+        <div class="scroll">
+        <table>
+          <tr><th>场景</th><th>优先做什么</th><th>依据</th></tr>
+          <tr><td>编码 / 命令行 agent</td><td>L0–L2 先上;摘要含产物轨迹和测试状态;文件索引由代码维护;晚触发 + 保留近期原文</td><td>JetBrains、Factory、UT Austin、Claude Code</td></tr>
+          <tr><td>研究 / 检索 agent</td><td>清理 + 笔记(每个数值带来源);摘要含已读 / 未读清单;可并行探索的部分交给子 agent</td><td>Anthropic cookbook、Anthropic 原文</td></tr>
+          <tr><td>来回对话多、工具少的助手</td><td>以压缩为主,摘要重点写用户约束、偏好和未解决的诉求;长期偏好进记忆</td><td>Anthropic 原文的选择规则(其余是我的推导)</td></tr>
+          <tr><td>多供应商 / 要容灾</td><td>自存一份可读、可移植的摘要;别只依赖不透明的原生压缩项</td><td>Trigger.dev、OpenAI 文档</td></tr>
+          <tr><td>成本敏感 / 高吞吐</td><td>稳定前缀、入口裁剪、成批操作;按缓存后的账单评估</td><td>Manus、TokenPilot、UT Austin</td></tr>
+          <tr><td>自建 agent、要可审计可定制</td><td>参考 Pi:可读摘要 + 增量更新 + 文件清单由代码追加 + 压缩钩子可替换;再加 Codex 的“压缩后如何继续”常驻说明</td><td>Pi、Codex 的第三方源码分析</td></tr>
+          <tr><td>有合规 / 安全约束的 agent</td><td>把约束钉在压缩范围之外、每次重新注入;摘要里不要引入矛盾指令;评测里加约束违反率</td><td>Governance Decay、TRACE</td></tr>
+          <tr><td>要审计 / 要合规</td><td>选可读摘要(Anthropic 的摘要是明文);避免不透明方案作为唯一记录</td><td>Factory、Anthropic 文档</td></tr>
+        </table>
+        </div>
+        <h4>三档落地路线</h4>
+        <ul class="pts">
+          <li><b>最小可用:</b>旧工具结果清理(保留最近 3 个)+ 一条触发线的摘要压缩 + 上面的固定分区模板 + 四类探针题手工测。</li>
+          <li><b>标准:</b>在最小可用基础上加:大结果落盘留指针;保留近期原文、只摘要旧部分;摘要同时存档原始记录;压缩后重建清单;一套自动跑的评测(含找回针和漂移监控);触发线 / 回落线按轨迹分布标定。</li>
+          <li><b>进阶:</b>在标准基础上加:入口侧规则裁剪和成批驱逐(保护缓存);按模型分别调参;在自然断点主动压缩;用失败案例自动优化摘要指南(ACON 思路);多供应商时的可移植检查点。</li>
+        </ul>
+
+        <h3>十一、这些结论有多可靠</h3>
+        <ul class="pts">
+          <li><b>证据较强</b>(多个来源一致):工具结果是大头;先清再摘;摘要结构化;保留近期原文;触发偏晚;压缩会破坏缓存、省 token 不等于省钱;评估用探针。</li>
+          <li><b>证据中等:</b>具体阈值和深度(因模型和任务而异);“增量合并优于每次重写”(只有 Factory 一家,且是自评);“先遮蔽后摘要的混合最好”(JetBrains 一个基准);TRACE 的“位置感”诊断和 Governance Decay 的“约束被吃掉”(都是预印本,各自只在一个基准或构造场景上)。</li>
+          <li><b>证据偏弱 / 待验证:</b>自主压缩(Focus 只有 5 个任务);AGORA、ACON、TokenPilot、CoACT、Governance Decay、Cursor 的数字(我只读了摘要或摘录,Cursor 的 46.9% 是厂商内部实验);Cognition 只有转述;所有“我的起步建议”里的数字都是推导。</li>
+          <li><b>覆盖局限:</b>证据主要来自编码类 agent 和英文资料;UT Austin 只用了三个 24B–35B 的开源模型;大多数结论针对 2025–2026 年的模型。仍没覆盖的:Cognition 的原文;Claude Code(闭源,只有官方文档)、Cline、Hermes、OpenClaw 的压缩源码;TRACE 的后续工作只读到摘录;非编码场景和中文资料。Copilot、Pi、Codex、Gemini CLI 的实现细节读的是第三方对特定提交的分析(沙箱没有联网,没能自己克隆源码),具体数值和提示词请以现行源码为准。</li>
+          <li><b>时效:</b>Anthropic 的压缩接口在 2026 年 9 月新增了按需压缩(beta),参数名可能还会变;动手前请再看一遍官方文档。</li>
+        </ul>
+
+        <h3>十二、参考资料</h3>
+        <ul class="pts">
+          <li contenteditable="false"><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank" rel="noopener">Anthropic · Effective context engineering for AI agents(2025-09-29)</a></li>
+          <li contenteditable="false"><a href="https://platform.claude.com/cookbook/tool-use-context-engineering-context-engineering-tools" target="_blank" rel="noopener">Anthropic cookbook · Context engineering: memory, compaction, and tool clearing(2026-03-20)</a></li>
+          <li contenteditable="false"><a href="https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand" target="_blank" rel="noopener">Claude Platform Docs · Compaction on demand</a> · <a href="https://platform.claude.com/docs/en/build-with-claude/compaction-keep-recent-turns" target="_blank" rel="noopener">Compaction that keeps recent turns</a> · <a href="https://platform.claude.com/docs/en/build-with-claude/compaction" target="_blank" rel="noopener">Compaction overview</a></li>
+          <li contenteditable="false"><a href="https://developers.openai.com/api/docs/guides/compaction" target="_blank" rel="noopener">OpenAI API · Compaction</a></li>
+          <li contenteditable="false"><a href="https://code.claude.com/docs/en/context-window" target="_blank" rel="noopener">Claude Code Docs · Explore the context window</a></li>
+          <li contenteditable="false"><a href="https://arxiv.org/abs/2609.32961" target="_blank" rel="noopener">Satish 等 · Beyond Token Savings: A Systematic Study of Context Compression in LLM Agents(arXiv 2609.32961)</a></li>
+          <li contenteditable="false"><a href="https://blog.jetbrains.com/research/2025/12/efficient-context-management/" target="_blank" rel="noopener">JetBrains Research · Cutting Through the Noise</a> · <a href="https://arxiv.org/html/2508.21433v3" target="_blank" rel="noopener">The Complexity Trap(arXiv 2508.21433)</a></li>
+          <li contenteditable="false"><a href="https://factory.ai/news/evaluating-compression" target="_blank" rel="noopener">Factory · Evaluating Context Compression for AI Agents(2025-12-16)</a> · <a href="https://www.factory.ai/news/compressing-context" target="_blank" rel="noopener">Compressing Context(2025-07-21)</a></li>
+          <li contenteditable="false"><a href="https://arxiv.org/abs/2510.00615v2" target="_blank" rel="noopener">Kang 等 · ACON(arXiv 2510.00615,ICML 2026)</a></li>
+          <li contenteditable="false"><a href="https://arxiv.org/pdf/2605.26596" target="_blank" rel="noopener">AGORA(arXiv 2605.26596)</a> · <a href="https://arxiv.org/html/2601.07190v1" target="_blank" rel="noopener">Active Context Compression / Focus(arXiv 2601.07190)</a> · <a href="https://arxiv.org/abs/2606.17016" target="_blank" rel="noopener">TokenPilot(arXiv 2606.17016)</a></li>
+          <li contenteditable="false"><a href="https://www.microsoft.com/en-us/research/project/llmlingua/" target="_blank" rel="noopener">Microsoft · LLMLingua 项目页</a> · <a href="https://arxiv.org/pdf/2403.12968" target="_blank" rel="noopener">LLMLingua-2(arXiv 2403.12968)</a></li>
+          <li contenteditable="false"><a href="https://research.trychroma.com/context-rot" target="_blank" rel="noopener">Chroma · Context Rot(2025-07-14)</a></li>
+          <li contenteditable="false"><a href="https://manus.im/en/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus" target="_blank" rel="noopener">Manus · Context Engineering for AI Agents: Lessons from Building Manus(2025-07-18)</a></li>
+          <li contenteditable="false"><a href="https://blog.langchain.com/context-management-for-deepagents" target="_blank" rel="noopener">LangChain · Context Management for Deep Agents(2026-01-28)</a> · <a href="https://docs.langchain.com/oss/python/deepagents/context-engineering" target="_blank" rel="noopener">文档</a></li>
+          <li contenteditable="false"><a href="https://docs.openclaw.ai/concepts/session-pruning?ref=aiworkflowpro.com" target="_blank" rel="noopener">OpenClaw · Session pruning</a> · <a href="https://trigger.dev/docs/ai-chat/patterns/native-compaction" target="_blank" rel="noopener">Trigger.dev · Native compaction</a></li>
+          <li contenteditable="false"><a href="https://www.morphllm.com/compaction-vs-summarization" target="_blank" rel="noopener">MorphLLM · Compaction vs Summarization(厂商文章,仅借用分类法)</a></li>
+          <li contenteditable="false"><a href="https://arxiv.org/abs/2608.00101" target="_blank" rel="noopener">Liu 等 · Agentic Coding in the Wild: Characterizing GitHub Copilot Traces at Production Scale(arXiv 2608.00101)</a> · <a href="https://kstark007.github.io/blog/agentic-coding-in-the-wild/" target="_blank" rel="noopener">逐图解读博客</a></li>
+          <li contenteditable="false"><a href="https://arxiv.org/abs/2608.06503" target="_blank" rel="noopener">Min 等 · Toward Reliable Context Compression for Long-Horizon Agents(TRACE,arXiv 2608.06503)</a></li>
+          <li contenteditable="false"><a href="https://arxiv.org/pdf/2606.22528" target="_blank" rel="noopener">Chen · Governance Decay(arXiv 2606.22528)</a></li>
+          <li contenteditable="false"><a href="https://arxiv.org/html/2607.02911v1" target="_blank" rel="noopener">Chen 等 · CoACT(arXiv 2607.02911)</a> · <a href="https://github.com/THU-Agent/CoACT" target="_blank" rel="noopener">仓库</a></li>
+          <li contenteditable="false"><a href="https://docs.openhands.dev/sdk/arch/condenser" target="_blank" rel="noopener">OpenHands SDK · Condenser 架构</a> · <a href="https://www.openhands.dev/blog/openhands-context-condensensation-for-more-efficient-ai-agents" target="_blank" rel="noopener">博客(2025-04)</a></li>
+          <li contenteditable="false"><a href="https://cursor.com/blog/dynamic-context-discovery" target="_blank" rel="noopener">Cursor · Dynamic context discovery(2026-01)</a></li>
+          <li contenteditable="false"><a href="https://agentic-ai.readthedocs.io/en/latest/ContextEngineering/devin/" target="_blank" rel="noopener">Cognition《Don't Build Multi-Agents》的转述(二手)</a></li>
+          <li contenteditable="false"><a href="https://github.com/openai/codex/blob/main/codex-rs/prompts/templates/compact/prompt.md" target="_blank" rel="noopener">Codex · 压缩提示词(官方文件)</a> · <a href="https://gist.github.com/osolmaz/a38acf6e522df67530e3ed47c80fdcd5" target="_blank" rel="noopener">osolmaz · Codex 压缩实现分析(二手)</a></li>
+          <li contenteditable="false"><a href="https://gist.github.com/sam-saffron-jarvis/8128d9838cc947c17c531f81c3619e1a" target="_blank" rel="noopener">Pi 压缩深度分析(二手,提交 f430dce)</a> · <a href="https://github.com/earendil-works/pi/issues/92" target="_blank" rel="noopener">Pi 设计 issue</a></li>
+          <li contenteditable="false"><a href="https://gist.github.com/sam-saffron-jarvis/0503a15eeb261fc5f6be3ba253e1e645" target="_blank" rel="noopener">Gemini CLI 压缩深度参考(二手,提交 29b3aa8)</a> · <a href="https://github.com/google-gemini/gemini-cli/issues/29025" target="_blank" rel="noopener">issue 29025</a> · <a href="https://github.com/google-gemini/gemini-cli/pull/23946" target="_blank" rel="noopener">PR 23946</a></li>
+          <li contenteditable="false"><a href="https://gist.github.com/badlogic/cd2ef65b0697c4dbe2d13fbecb0a0a5f" target="_blank" rel="noopener">badlogic · 压缩调研:Codex、OpenCode、Amp(二手)</a></li>
+          <li contenteditable="false"><a href="https://reference.langchain.com/python/langchain/agents/middleware/summarization/SummarizationMiddleware" target="_blank" rel="noopener">LangChain · SummarizationMiddleware</a></li>
+          <li contenteditable="false"><a href="https://docs.openclaw.ai/reference/session-management-compaction" target="_blank" rel="noopener">OpenClaw · 会话管理与压缩(含压缩前记忆冲刷)</a></li>
+        </ul>
+
+      </div>
+
+      <!--MARK_ARTICLE-->
+    </div>
+  </section>
+
+</main>
+
+<script>
+(function(){
+  var FILENAME = '上下文压缩-研究笔记.html';
+  var paper = document.getElementById('paper');
+  var bar = document.getElementById('bar');
+  var statusEl = document.getElementById('status');
+  var fontSel = document.getElementById('fontSel');
+  var dirty = false, fileHandle = null;
+
+  fontSel.value = document.documentElement.getAttribute('data-font') || 'long';
+
+  function setStatus(txt, isDirty){ statusEl.textContent = txt; statusEl.classList.toggle('dirty', !!isDirty); }
+  function markDirty(){ if(!dirty){ dirty = true; setStatus('有未保存的修改', true); } }
+
+  paper.addEventListener('input', markDirty);
+  paper.addEventListener('paste', function(e){
+    e.preventDefault();
+    var t = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, t);
+  });
+
+  // 点击工具条按钮时不要让选区丢失
+  bar.addEventListener('mousedown', function(e){
+    if(e.target.closest('button')) e.preventDefault();
+  });
+
+  function exec(cmd, val){ paper.focus(); try{ return document.execCommand(cmd, false, val); }catch(err){ return false; } }
+
+  function changeSize(delta){
+    var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fs')) || 22;
+    var next = Math.max(14, Math.min(34, cur + delta));
+    document.documentElement.style.setProperty('--fs', next + 'px');
+    markDirty();
+  }
+
+  async function saveDoc(){
+    var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    try{
+      if(window.showSaveFilePicker){
+        if(!fileHandle){
+          fileHandle = await window.showSaveFilePicker({
+            suggestedName: FILENAME,
+            types: [{description:'HTML 文件', accept:{'text/html':['.html']}}]
+          });
+        }
+        var w = await fileHandle.createWritable();
+        await w.write(html);
+        await w.close();
+        dirty = false; setStatus('已保存(覆盖到你选的文件)', false);
+        return;
+      }
+    }catch(err){
+      if(err && err.name === 'AbortError') return;
+      fileHandle = null; // 权限或环境不支持,退回下载
+    }
+    var blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = FILENAME;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1500);
+    dirty = false; setStatus('已下载修改后的文件', false);
+  }
+
+  bar.addEventListener('click', function(e){
+    var btn = e.target.closest('button'); if(!btn) return;
+    switch(btn.getAttribute('data-act')){
+      case 'save': saveDoc(); break;
+      case 'hl': if(!exec('hiliteColor','#ffe45e')) exec('backColor','#ffe45e'); markDirty(); break;
+      case 'red': exec('foreColor','#c93a33'); markDirty(); break;
+      case 'bold': exec('bold'); markDirty(); break;
+      case 'clear': exec('removeFormat'); markDirty(); break;
+      case 'undo': exec('undo'); break;
+      case 'toc': toggleToc(); break;
+      case 'smaller': changeSize(-1); break;
+      case 'larger': changeSize(1); break;
+    }
+  });
+
+  fontSel.addEventListener('change', function(){
+    document.documentElement.setAttribute('data-font', fontSel.value);
+    markDirty();
+  });
+
+  document.addEventListener('keydown', function(e){
+    if((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')){ e.preventDefault(); saveDoc(); }
+  });
+
+  window.addEventListener('beforeunload', function(e){
+    if(dirty){ e.preventDefault(); e.returnValue = ''; }
+  });
+
+  /* ---------- 目录(与正文双向同步) ---------- */
+  var toc = document.getElementById('toc');
+  var root = document.documentElement;
+  var items = [], lastSig = '', ticking = false;
+  var activeIdx = -1, curL1 = -1, openL1 = {};
+  var pinnedIdx = -1, pinnedY = 0, lockUntil = 0, hashTimer = null;
+  root.removeAttribute('data-toc-open');
+
+  function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function isWide(){ return window.matchMedia('(min-width:1100px)').matches; }
+  function setBarH(){ root.style.setProperty('--bar-h', bar.offsetHeight + 'px'); }
+  function reduceMotion(){ return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+  function titleOf(h){
+    var c = h.cloneNode(true);
+    var junk = c.querySelectorAll('.tag, .lnk');
+    for(var i = 0; i < junk.length; i++) junk[i].parentNode.removeChild(junk[i]);
+    return (c.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+  function levelOf(h){
+    if(h.tagName === 'H1' || h.tagName === 'H2') return 1;
+    if(h.tagName === 'H4') return 3;
+    return 2;
+  }
+
+  function buildToc(force){
+    var list = paper.querySelectorAll('h1, h2, .sheet > h3, .src h3, .group h3, .art > h3, .sticky h3, .mini h4');
+    var seen = {}, arr = [], sig = '', p1 = -1, p2 = -1;
+    for(var i = 0; i < list.length; i++){
+      var h = list[i], level = levelOf(h);
+      if(!h.id || seen[h.id]){
+        var base = 't' + i, id = base, k = 0;
+        while(document.getElementById(id) || seen[id]){ k++; id = base + '-' + k; }
+        h.id = id;
+      }
+      seen[h.id] = 1;
+      var text = titleOf(h), idx = arr.length, it = {el:h, level:level, id:h.id, text:text, parent:-1, l1:-1, l2:-1};
+      if(level === 1){ p1 = idx; p2 = -1; it.l1 = idx; }
+      else if(level === 2){ it.parent = p1; it.l1 = p1; it.l2 = idx; p2 = idx; }
+      else { it.parent = (p2 >= 0 ? p2 : p1); it.l1 = p1; it.l2 = p2; }
+      arr.push(it);
+      sig += h.id + '|' + text + ';';
+    }
+    if(!force && sig === lastSig) return;
+    lastSig = sig; items = arr;
+    var st = toc.scrollTop, html = '<div class="toc-title">目录</div>';
+    arr.forEach(function(it, i){
+      var a = '<a data-i="' + i + '" class="l' + it.level + '" href="#' + it.id + '" title="' + esc(it.text) + '">' + esc(it.text) + '</a>';
+      if(it.level === 1){
+        html += '<div class="row" data-i="' + i + '"><button type="button" class="tg" data-i="' + i + '" aria-label="展开或收起本章">▸</button>' + a + '</div>';
+      }else{
+        html += a;
+      }
+    });
+    toc.innerHTML = html;
+    toc.scrollTop = st;
+    activeIdx = -1; curL1 = -1; openL1 = {}; pinnedIdx = -1;
+    syncFromScroll(true);
+  }
+
+  function applyVisibility(){
+    var links = toc.querySelectorAll('a'), rows = toc.querySelectorAll('.row');
+    var act = activeIdx >= 0 ? items[activeIdx] : null;
+    for(var i = 0; i < links.length; i++){
+      var it = items[i], a = links[i], show = true, anc = false;
+      if(it.level === 2) show = !!openL1[it.l1];
+      else if(it.level === 3) show = !!(act && act.l2 === it.l2 && it.l2 >= 0);
+      if(act && i !== activeIdx && (i === act.l1 || i === act.l2)) anc = true;
+      a.classList.toggle('hid', !show);
+      a.classList.toggle('anc', anc);
+      a.classList.toggle('on', i === activeIdx);
+    }
+    for(var r = 0; r < rows.length; r++){
+      rows[r].classList.toggle('open', !!openL1[+rows[r].getAttribute('data-i')]);
+    }
+  }
+
+  function revealInToc(){
+    var a = toc.querySelector('a.on');
+    if(!a || toc.offsetHeight === 0) return;
+    var top = a.offsetTop, h = toc.clientHeight;
+    if(top < toc.scrollTop + 60 || top + a.offsetHeight > toc.scrollTop + h - 40){
+      toc.scrollTop = Math.max(0, top - h / 3);
+    }
+  }
+
+  function setActive(idx){
+    if(idx === activeIdx || idx < 0) return;
+    activeIdx = idx;
+    var l1 = items[idx].l1;
+    if(l1 !== curL1){ curL1 = l1; openL1 = {}; if(l1 >= 0) openL1[l1] = true; }
+    applyVisibility();
+    revealInToc();
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(function(){
+      try{ history.replaceState(null, '', '#' + items[activeIdx].id); }catch(e){}
+    }, 250);
+  }
+
+  function computeActive(){
+    if(!items.length) return -1;
+    if(window.innerHeight + window.scrollY >= root.scrollHeight - 3) return items.length - 1;
+    var line = bar.offsetHeight + Math.min(180, window.innerHeight * 0.22), cur = 0;
+    for(var i = 0; i < items.length; i++){
+      if(items[i].el.getBoundingClientRect().top <= line) cur = i; else break;
+    }
+    return cur;
+  }
+
+  function syncFromScroll(force){
+    ticking = false;
+    if(!items.length) return;
+    if(pinnedIdx >= 0){
+      if(Date.now() < lockUntil || Math.abs(window.scrollY - pinnedY) <= 120){ setActive(pinnedIdx); return; }
+      pinnedIdx = -1;
+    }
+    var idx = computeActive();
+    if(force && idx === activeIdx){ applyVisibility(); revealInToc(); return; }
+    setActive(idx);
+  }
+
+  function flash(el){
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    setTimeout(function(){ el.classList.remove('flash'); }, 1500);
+  }
+
+  function jumpTo(i){
+    var el = items[i].el;
+    pinnedIdx = i; lockUntil = Date.now() + 1000;
+    setActive(i);
+    el.scrollIntoView({behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start'});
+    flash(el);
+    setTimeout(function(){ pinnedY = window.scrollY; lockUntil = 0; }, 1050);
+    if(!isWide()) root.removeAttribute('data-toc-open');
+  }
+
+  function toggleToc(){
+    if(isWide()){
+      root.setAttribute('data-toc', root.getAttribute('data-toc') === 'off' ? 'on' : 'off');
+    }else{
+      if(root.getAttribute('data-toc-open') === '1') root.removeAttribute('data-toc-open');
+      else root.setAttribute('data-toc-open', '1');
+    }
+    setBarH(); revealInToc();
+  }
+
+  toc.addEventListener('click', function(e){
+    var tg = e.target.closest('.tg');
+    if(tg){
+      var gi = +tg.getAttribute('data-i');
+      if(openL1[gi]) delete openL1[gi]; else openL1[gi] = true;
+      applyVisibility();
+      return;
+    }
+    var a = e.target.closest('a');
+    if(!a) return;
+    e.preventDefault();
+    jumpTo(+a.getAttribute('data-i'));
+  });
+
+  window.addEventListener('scroll', function(){
+    if(!ticking){ ticking = true; window.requestAnimationFrame(function(){ syncFromScroll(false); }); }
+  }, {passive:true});
+  window.addEventListener('resize', function(){ setBarH(); syncFromScroll(true); });
+
+  var tocTimer = null;
+  paper.addEventListener('input', function(){
+    clearTimeout(tocTimer);
+    tocTimer = setTimeout(function(){ buildToc(false); }, 900);
+  });
+
+  function restoreHash(){
+    if(!location.hash || location.hash.length < 2) return;
+    var t = null;
+    try{ t = document.getElementById(decodeURIComponent(location.hash.slice(1))); }catch(e){}
+    if(t && paper.contains(t)){ try{ t.scrollIntoView({block:'start', behavior:'instant'}); }catch(e){ t.scrollIntoView(true); } }
+  }
+
+  setBarH();
+  buildToc(true);
+  restoreHash();
+  syncFromScroll(true);
+  if(document.fonts && document.fonts.ready){
+    document.fonts.ready.then(function(){ setBarH(); restoreHash(); syncFromScroll(true); });
+  }
+})();
+</script>
+</body>
+</html>
