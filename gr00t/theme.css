@@ -99,3 +99,8 @@ code{background:var(--red-soft);color:var(--ink)}
 .paper-original .scroll{background:white}
 .paper-original img{display:block;width:100%;min-width:680px;max-width:none;height:auto}
 .paper-original figcaption a{font-family:var(--f-body);font-size:15px}
+
+.processor-primer{font:inherit;color:var(--ink)}
+.processor-primer h4{margin-top:28px;color:var(--blue);scroll-margin-top:28px}
+.processor-primer .eq{white-space:normal}
+.processor-primer pre{font-size:13px}

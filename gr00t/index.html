@@ -806,11 +806,77 @@ next_action = arm_action[:, 0, :]     # 取第 1 步去执行</pre>
   <dl>
     <dt>为什么需要</dt><dd>模型只吃张量。不同机器人的原始数据在单位、数值范围、相机数量上都不同，必须先统一。</dd>
     <dt>输入</dt><dd>原始观测字典（多路 <code>uint8</code> 图像、<code>float32</code> 状态、任务字符串）+ 该 embodiment 的 modality config <b class="tg o">S5</b>。</dd>
-    <dt>内部怎么算</dt><dd>按 modality config 取对应时间偏移的帧与状态；图像交给 VLM 的图像处理器（N1.7 支持原生长宽比，无需 padding <b class="tg o">S4</b>）；文本套对话模板后分词（N1 论文：以 VLM 训练时的 chat 格式输入 <b class="tg o">S1</b>）；状态按统计量归一化。具体的补零、掩码细节见 9.5。</dd>
-    <dt>输出</dt><dd>VLM 的输入张量 + 归一化后的状态 + embodiment id。推理结束后，反向把动作<b>反归一化</b>成物理单位 <b class="tg o">S5</b>。</dd>
+    <dt>内部怎么算</dt><dd>先按 <a href="#processor-modality">modality config（数据读取与表示配置）</a>取指定字段；按 <a href="#processor-time">delta_indices（相对当前采样步的偏移）</a>准备需要的观测。图像交给 VLM 图像处理器，文本套对话模板后分词；状态按训练统计量做<a href="#processor-normalization">逐维归一化或指定编码</a>。训练样本的时间采样通常由数据加载器完成，在线调用需提供配置要求的观测。下方用具体例子展开；补零、掩码另见 <a href="#s9-5">9.5</a>。</dd>
+    <dt>输出</dt><dd>VLM 的输入张量 + 处理后的状态数组 + <a href="#processor-embodiment">embodiment id（本体专属参数的整数索引）</a>。推理结束后按对应动作统计量反归一化；相对动作再按配置还原成接口所需的绝对目标 <b class="tg o">S5</b>。</dd>
     <dt>为什么这样设计</dt><dd>预处理配置与权重一起保存，部署时就不用手写数据管线，也保证<b>训练与推理的处理一致</b>。</dd>
     <dt>不这样会怎样</dt><dd>训练 / 推理预处理不一致，是真机部署里最常见的隐蔽 bug：模型输出看起来「合理」，但数值尺度错了，机械臂乱动。官方甚至提供了「回放数据集动作」的 ReplayPolicy，专门用来先验证你的环境与观测格式是否正确 <b class="tg o">S5</b>。</dd>
   </dl>
+</div>
+
+<div class="note processor-primer" id="processor-quickstart">
+  <span class="lab">先补四个概念：这一步到底在处理什么？</span>
+  <p>把 Processor 想成“模型输入输出的翻译器”：先按约定取出正确的数据，把数值变成模型训练时熟悉的尺度；模型输出后，再按相同约定还原。下面的数值与四步动作块均为<b>教学示例</b>。</p>
+
+  <h4 id="processor-modality">① modality config：取哪些数据、怎么解释数据的配置表</h4>
+  <p><b>modality</b> 是“数据模态”，这里包括图像、机器人状态、动作、语言。<b>config</b> 是配置。合起来就是：这类机器人使用哪几路相机、哪些状态字段、各字段取哪些时间步，以及动作采用什么表示方式。</p>
+  <p>例如，两台机器人都可能有名叫“状态”的数组，但一台是机械臂关节角，另一台是双手位姿。模型需要知道每个字段的含义与顺序，不能只看到一串数字。</p>
+  <pre># 阅读用的简化示例，不是完整可运行配置；动作示例只取 4 步
+video:  modality_keys = ["front", "wrist"],       delta_indices = [0]
+state:  modality_keys = ["single_arm", "gripper"], delta_indices = [0]
+action: modality_keys = ["single_arm", "gripper"], delta_indices = [0, 1, 2, 3]</pre>
+  <ul>
+    <li><code>front / wrist</code>：读取前方相机与腕部相机。</li>
+    <li><code>single_arm / gripper</code>：读取机械臂与夹爪字段。</li>
+    <li><code>delta_indices</code>：说明每种数据在时间上取哪些位置，见下一小节。</li>
+  </ul>
+  <p><code>meta/modality.json</code> 更像<b>数据的字段说明书</b>：某个名字对应哪个视频、拼接数组中的哪一段。Python 中的 <code>ModalityConfig</code> 更像<b>本次模型的数据读取与处理规则</b>：选哪些字段、取哪些步、怎样处理动作。字段名必须互相匹配。<a href="#processor-sources">官方配置文档 ↗</a></p>
+
+  <h4 id="processor-time">② “对应时间偏移”：以当前 t 为起点，取 t + δ 的数据</h4>
+  <p><code>delta_indices</code> 的单位是<b>采样步</b>。在时间对齐后的序列上，以当前样本 t 为基准，偏移 δ 就对应 t + δ。换算成多少毫秒，要看采样率。</p>
+  <div class="tw"><table>
+    <thead><tr><th>配置</th><th>t = 100 时取什么</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>[0]</code></td><td>第 100 步</td><td>当前图像或当前状态。</td></tr>
+      <tr><td><code>[-2, -1, 0]</code></td><td>第 98、99、100 步</td><td>历史两步 + 当前步，用于提供历史信息。</td></tr>
+      <tr><td><code>[0, 1, 2, 3]</code></td><td>第 100、101、102、103 步的动作</td><td>训练时作为四步动作块的监督目标；推理时由模型预测。</td></tr>
+    </tbody>
+  </table></div>
+  <p>例如，<b>假设</b>序列是 20 Hz，一步为 50 ms，那么偏移 −2 表示当前前面的 100 ms。这里的 20 Hz 只是换算示例，不是 GR00T 的固定频率。</p>
+  <p><b>为什么需要偏移？</b>一次预测通常要输出一段动作，而不是只输出一个时刻的动作；有些模型还需要历史观测来判断运动趋势。用偏移列表，就能统一描述“看哪些时刻、预测哪些时刻”。它也<b>不等于传感器延迟</b>：相机与状态的时间戳对齐是另一个数据准备问题。</p>
+  <p>所核对的官方 N1.7 文档建议图像与状态使用 <code>[0]</code>，并说明当前本体配置没有使用负偏移。<code>[-2,-1,0]</code> 在此仅用于解释历史采样语法，不能直接改到已有 checkpoint 上就假定兼容。在线推理时要提供配置要求的当前/历史观测，<b>不会提前知道未来图像、状态或真实动作</b>。</p>
+  <p class="small">实现分工补充：训练数据加载器通常按这些偏移组装样本；在线调用 Policy 时，调用方要提供匹配的观测形状。不能理解成把一帧数据交给 Processor，它就会自动找来缺失的历史。</p>
+
+  <h4 id="processor-normalization">③ 状态归一化成什么：逐维缩放后的、无量纲的浮点数组</h4>
+  <p>原状态可能混有角度、位置和夹爪开度，数值尺度不同。常见的 <b>min-max</b> 路径会使用训练数据预先计算的统计量，对<b>每一维分别</b>进行线性变换：</p>
+  <div class="eq">归一化值 x̃ = 2 × (x − m) / (M − m) − 1</div>
+  <p>其中 m、M 是该字段对应维度的统计下界、上界；采用分位数模式时会换用 q01、q99。它们不一定等于机器人的机械极限，也不是临时拿当前这一帧重新计算。</p>
+  <div class="tw"><table>
+    <thead><tr><th>维度（假设数据）</th><th>训练统计范围</th><th>当前读数</th><th>归一化结果</th></tr></thead>
+    <tbody>
+      <tr><td>一个关节的角度</td><td>−90° 到 +90°</td><td>45°</td><td>2 × (45 + 90) / 180 − 1 = <b>0.5</b></td></tr>
+      <tr><td>夹爪开度</td><td>0 到 80 mm</td><td>20 mm</td><td>2 × 20 / 80 − 1 = <b>−0.5</b></td></tr>
+    </tbody>
+  </table></div>
+  <p>只看这两个维度，<code>[45°, 20 mm]</code> 就对应 <code>[0.5, -0.5]</code>。这是<b>缩放后的状态数值</b>，还没有变成 State encoder 输出的高维 token；补零与 MLP 投影属于后续步骤。这里为直观用角度演算，实际数据若使用弧度，读数和统计量必须都用弧度。</p>
+  <p>min-max 会把统计区间内的值映射到 [−1,1]；启用 <code>clip_outliers</code> 时越界值会被截断。部分字段也可按配置采用 <code>(x − mean) / std</code> 或启用角度 sin/cos 编码，所以<b>不能把所有状态处理都理解为同一种 [−1,1] 缩放</b>。最终以 checkpoint 的处理配置和统计量为准。<a href="#processor-sources">归一化源码 ↗</a></p>
+  <p>动作输出也要反向还原：例如夹爪动作的归一化值为 −0.5、对应统计区间为 0–80 mm，反归一化得到 20 mm。如果动作采用“相对当前状态”的表示，还要按动作配置将它还原成所需的绝对目标。<b>状态统计量与动作统计量分别使用，不能混用。</b></p>
+
+  <h4 id="processor-embodiment">④ embodiment id：告诉模型“使用哪套本体专属参数”的整数索引</h4>
+  <p><b>embodiment</b> 可以直观理解为“机器人身体及其状态/动作接口”。不同身体的关节、末端执行器、控制量可能不同，因此共享模型里的部分编码器、解码器需要选择对应的一组参数。</p>
+  <p>先区分两个名字：</p>
+  <ul>
+    <li><b>embodiment tag</b>：人可读的配置标签，例如 <code>libero_sim</code>。处理器用它找到对应的模态配置和统计量。</li>
+    <li><b>embodiment id</b>：由 tag 映射得到的整数，送给模型，用于选择相应的本体专属编码/解码参数。VLM 与 DiT 主干仍然共享。</li>
+  </ul>
+  <pre># 所核对源码默认映射中的一个例子；实际以 checkpoint 为准
+embodiment_tag = "libero_sim"
+embodiment_id_mapping[embodiment_tag] = 2
+
+# 可把其作用理解为：使用第 2 套本体专属入口/出口参数
+# 这不表示“2 个关节”，也不是给语言指令加上一个数字 token。</pre>
+  <p>这个整数<b>不是每台实物机器人的序列号</b>，也不是模型自动看图识别出的机器人编号。相同物理本体的不同数据标签可以有意共享一个 id；新机器人需要匹配的配置、统计量和训练过的参数，不能随便填个新数字就获得适配。<a href="#processor-sources">官方 tag→id 映射 ↗</a></p>
+  <div class="take"><b>串起来：</b>选 tag → 找到字段与时间配置 → 取匹配的观测 → 按统计量变换状态 → 把状态与 tag 映射的 id 送给模型 → 生成动作 → 后处理还原成机器人接口需要的量。</div>
+  <p class="small" id="processor-sources">核对来源（2026-10-19，官方仓库 <code>dac54b3</code>）：<a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/getting_started/data_config.md">数据与 ModalityConfig</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/getting_started/policy.md">Policy 输入约定</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/data/state_action/state_action_processor.py">状态/动作处理</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/data/utils.py">归一化函数</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/model/gr00t_n1d7/processing_gr00t_n1d7.py">tag→id 与观测处理</a>。教学例子用于理解配置，不是可直接套用的机器人参数。</p>
 </div>
 
 <div class="mod">
