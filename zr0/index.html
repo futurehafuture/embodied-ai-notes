@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ZR-0 · 密集具身思维链与连续动作｜研究笔记</title>
+<meta name="description" content="ZR-0 中文深度研究笔记：原论文图片、中文架构图、ECoT 六类监督、prompt-only 注意力、训练梯度、Flow Matching、实验完整数表与源码核对。">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Long+Cang&family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css"><link rel="stylesheet" href="../notebook-theme.css"><link rel="stylesheet" href="style.css"><script src="app.js" defer></script>
+</head><body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><filter id="rough"><feTurbulence type="fractalNoise" baseFrequency=".025" numOctaves="1" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale=".8"/></filter></defs></svg>
+<div class="progress" aria-hidden="true"><span id="read-progress"></span><em id="read-percent">0%</em></div>
+<nav class="toc" id="toc-panel" aria-label="章节目录"><a class="brand-link" href="#top">ZR-0 研究笔记</a><p class="sub">推理用于训练，动作留给控制</p><div class="tools"><a href="../">← 总目录</a><button type="button" id="theme-toggle" aria-label="切换明暗主题">切换明暗</button></div><ol id="toc-list"></ol><p class="ver">16 章 · 原图 / 公式 / 源码<br>论文 v2 · 代码 b1440d4<br><a href="#ch16">来源与版本说明 ↗</a></p></nav>
+<button type="button" class="toc-btn" id="toc-button" aria-controls="toc-panel" aria-expanded="false">目录</button>
+<main id="top"><header class="cover"><a class="back-index" href="../">← 返回研究笔记总目录</a><span class="kicker">第四本 · 论文精读 / VLA</span><h1>ZR-0<span class="subtitle">密集具身思维链<br>如何训练一个直接行动的模型</span></h1><p class="meta">中国人民大学 × 智谱相关团队 · 2026<br>Training Vision-Language-Action Models with Dense Embodied Chain-of-Thought Supervision</p>
+<div class="meta-grid"><div><b>模型</b>2.6B · Qwen3-VL + DiT</div><div><b>主线</b>ECoT 监督与跨本体表征</div><div><b>原始资料</b>论文 v2 + 固定提交源码</div><div><b>阅读方式</b>原图、图解、公式与证据对照</div></div>
+<p class="tldr">训练时要求模型说清“看到了什么、做到哪里、接着干什么”；推理时不必把这些话生成出来，动作专家直接读取输入表征。<span class="hl">关键不是思维链写得多长，而是它如何改变训练出来的表示。</span></p>
+<div class="read-route"><b>按问题读：</b><br><a href="#ch2">先看架构与原图</a><a href="#ch4">为什么能跳过 ECoT</a><a href="#ch7">公式与梯度</a><a href="#ch9">实验结果</a><a href="#ch10">证据边界</a><a href="#ch12">论文与代码差异</a></div>
+<p class="small">约 60–90 分钟精读。正文区分论文报告、源码行为与教学推导；可用左侧目录或手机底部目录跳转。</p></header>
+<section id="ch1"><h2><span class="num" aria-hidden="true"></span>先知道它在解决什么</h2>
+<h3 id="s1-1">1.1 一句话：把推理写进训练信号，把动作留给连续控制</h3>
+<p>ZR-0 是中国人民大学与智谱相关团队的 <b>2.6B 参数 VLA</b>。它接收相机图像、任务指令与机器人状态，输出一段连续动作。核心做法不是让机器人每次先写一长段思维链再行动，而是<b>在预训练时让 VLM 学会解释场景、任务进度、下一步与目标位置，再让动作模型读取被这种监督训练过的输入表征</b>。<a class="source" href="#src-paper">论文 §1、§3</a></p>
+<p>研究假设是：Franka 和 xArm 的关节角不能直接互换，但“杯子还没拿起 → 抓住杯子 → 放入篮子”的高层结构可以共享。自然语言与视觉定位为异构机器人提供共同的监督坐标系；连续动作仍要在具体接口上学习。</p>
+<div class="sticky"><h4>这篇最值得记住的三个问题</h4><p>① 为什么状态和动作补零，仍然不等于语义对齐？<br>② 训练时监督 ECoT，推理时为什么可以完全不生成它？<br>③ 结果支持“预训练有效”，还是已经证明“六个 ECoT 组件各自有效”？</p></div>
+<h3 id="s1-2">1.2 格式统一与语义统一，差在哪里</h3>
+<p>将六维、七维动作都补成 64 维，只解决了“张量能放进同一批次”的问题。两台机器人的第一个关节可能有不同旋转轴；同样的数值还可能分别代表关节目标、末端位置或增量。因此，共享模型仍可能记住每个数据源的局部规律，并没有真正学到可迁移的操作理解。</p>
+<p>ZR-0 增加的监督要求模型明确回答：看到了什么、做到哪里、还需什么、操作哪个区域。作者希望这种中间监督能让不同身体的数据围绕相似的任务语义组织起来。<b>这是方法的设计动机；不能仅凭总分提升，就断言表示空间已经实现完美对齐。</b></p>
+<h3 id="s1-3">1.3 模型、语料和训练阶段，先分开</h3>
+<div class="tw"><table><thead><tr><th>名字</th><th>是什么</th><th>别混淆</th></tr></thead><tbody>
+<tr><td>ZR-0</td><td>从图像/语言/状态到动作块的策略模型。</td><td>不是奖励模型，也不是仿真环境。</td></tr>
+<tr><td>ProcCorpus-60M</td><td>约 60M 帧、400K+ 轨迹、约 1,000 小时的机器人语料；ECoT 覆盖率 96.8%。</td><td>60M 是帧数，不是 60M 条独立演示。</td></tr>
+<tr><td>ProcVLM</td><td>相关工作中的过程理解与进度奖励模型，也提供语料构造背景。</td><td>ZR-0 借用语料，不等于用奖励模型做在线强化学习。</td></tr>
+<tr><td>预训练 / 后训练</td><td>先用多源数据联合训练，再用各目标 benchmark 的演示分别适配。</td><td>不同 benchmark 的结果不是同一份最终权重零样本直接获得。</td></tr>
+</tbody></table></div>
+<p class="source-row">依据：论文 §3–4；ProcVLM 官方项目页。<a href="#src-proc">P2 ↗</a></p>
+<h3 id="s1-4">1.4 阅读地图与证据标记</h3>
+<p>本文把三种内容分开：<b>论文报告</b>是作者给出的配置或结果；<b>代码核对</b>是固定提交的实际行为；<b>教学推导 / 评论</b>是为理解而做的演算或证据分析。自绘图都标明“教学示意”，原图保留出处。没有公开数值的训练总步数、预算、标注准确率，不自行补全。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch2"><h2><span class="num" aria-hidden="true"></span>先读原图，再看中文数据流</h2>
+<h3 id="s2-1">2.1 原论文 Figure 1：左边负责表征，右边生成动作</h3>
+<p>先看左下角：多路图像与任务文本进入 VLM。左上角有两类用途：输入位置的最后层隐状态送到右侧动作专家；ECoT 文本承担训练监督。右侧从状态和带噪动作出发，经注意力层与动作解码器，多次迭代得到动作块。<b>图中的一块不是一次控制周期，更不是所有箭头都表示文本生成。</b></p>
+<figure class="figure original"><div class="scroll"><img src="assets/paper-fig1-architecture.png" alt="ZR-0 原论文 Figure 1：VLM 与 DiT 动作专家的双流架构" loading="lazy" decoding="async" width="1282" height="579"></div><figcaption>原图 1｜论文 Figure 1。注意 ECoT 文本输出与送入动作专家的 prompt 隐状态是两条不同用途的路径。</figcaption><div class="figure-meta"><span>作者原图 · 可横向滚动</span><button type="button" data-zoom="assets/paper-fig1-architecture.png" data-caption="ZR-0 原论文 Figure 1：VLM 与 DiT 动作专家的双流架构">放大查看</button><a href="https://arxiv.org/html/2606.30552v2#S3.F1">原始出处 ↗</a></div></figure>
+<h3 id="s2-2">2.2 中文重画：把前向依赖和训练监督分开</h3>
+<figure class="figure"><div class="scroll">
+<svg viewBox="0 0 940 580" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
+<title id="arch-title">ZR-0 中文训练与推理数据流</title><desc id="arch-desc">图像和任务经过VLM得到prompt特征，作为交叉注意力K和V。状态和带噪动作经过MLP成为Q。ECoT只通过训练损失监督VLM，不送给动作专家。Euler将速度场更新回动作编码器。</desc>
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#24324a"/></marker><marker id="bluearr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10Z" fill="#2f5d9e"/></marker></defs>
+<g font-family="sans-serif" fill="#24324a" font-size="17" text-anchor="middle">
+<rect x="25" y="30" width="235" height="70" rx="5" fill="#f0e6c8" stroke="#24324a"/><text x="142" y="58">多路图像 + 任务指令</text><text x="142" y="83" font-size="14">模型看到的 prompt</text>
+<rect x="25" y="145" width="235" height="75" rx="5" fill="#e5eaf5" stroke="#24324a"/><text x="142" y="176">Qwen3-VL-2B</text><text x="142" y="202" font-size="14">取 prompt 位置最后层隐状态</text>
+<rect x="25" y="280" width="235" height="80" rx="5" fill="#f7e4df" stroke="#c7362f" stroke-dasharray="6 4"/><text x="142" y="311">ECoT 下一 token 预测损失</text><text x="142" y="340" font-size="14">仅训练监督，不是动作前向输入</text>
+<rect x="330" y="30" width="225" height="70" rx="5" fill="#edf1e3" stroke="#24324a"/><text x="442" y="58">当前机器人状态 sₜ</text><text x="442" y="83" font-size="14">归一化 + 补齐后 → 状态 MLP</text>
+<rect x="635" y="30" width="265" height="70" rx="5" fill="#edf1e3" stroke="#24324a"/><text x="767" y="58">带噪动作 A<tspan baseline-shift="super" font-size="12">τ</tspan> + 流时间 τ</text><text x="767" y="83" font-size="14">动作 MLP → H 个动作 token</text>
+<rect x="410" y="145" width="410" height="70" rx="5" fill="#edf1e3" stroke="#24324a"/><text x="615" y="174">状态 / 动作 token 自注意力</text><text x="615" y="199" font-size="14">互相交换信息：Q、K、V 都来自本支路</text>
+<rect x="410" y="270" width="410" height="78" rx="5" fill="#e5eaf5" stroke="#2f5d9e"/><text x="615" y="301">交叉注意力：Q 来自状态 / 动作</text><text x="615" y="327" font-size="14">K、V 只来自 prompt 特征，屏蔽 ECoT 位置</text>
+<rect x="410" y="405" width="410" height="55" rx="5" fill="#f0e6c8" stroke="#24324a"/><text x="615" y="439">动作解码器 → 预测速度场 vθ</text>
+<rect x="410" y="500" width="410" height="55" rx="5" fill="#f0e6c8" stroke="#24324a"/><text x="615" y="534">Euler：A ← A + Δτ · vθ；迭代后还原动作</text>
+</g>
+<g fill="none" stroke="#24324a" stroke-width="2" marker-end="url(#arr)"><path d="M142 100 V145"/><path d="M142 220 V280" stroke-dasharray="5 4"/><path d="M442 100 V130 H550 V145"/><path d="M767 100 V130 H690 V145"/><path d="M615 215 V270"/><path d="M615 348 V405"/><path d="M615 460 V500"/></g>
+<path d="M260 184 H330 V309 H410" fill="none" stroke="#2f5d9e" stroke-width="3" marker-end="url(#bluearr)"/><text x="280" y="254" font-family="sans-serif" font-size="16" fill="#2f5d9e">K / V</text>
+<path d="M820 528 H924 V65 H900" fill="none" stroke="#24324a" stroke-width="2" marker-end="url(#arr)"/><text x="916" y="383" transform="rotate(-90 916 383)" font-family="sans-serif" font-size="15" fill="#24324a">更新后的动作重新编码；VLM 特征复用</text>
+<text x="300" y="389" font-family="sans-serif" font-size="14" fill="#c7362f">教学示意：注意力组重复，非逐层拓扑</text>
+</svg></div><figcaption>自绘图 1｜蓝箭头只进入交叉注意力的 K/V；右侧回路是动作去噪迭代，不是重新生成语言。</figcaption></figure>
+<h3 id="s2-3">2.3 输入、输出与张量形状</h3>
+<div class="tw"><table><thead><tr><th>量</th><th>典型形状 / 含义</th><th>易混点</th></tr></thead><tbody>
+<tr><td>图像 oₜ</td><td>当前时刻的多个相机视角；论文统一 resize 到 224×224。</td><td>多个视角不等于多个历史时间步。</td></tr>
+<tr><td>VLM 特征 fₜ</td><td>B×L×dᵥ；L 是多模态序列长度。</td><td>连续隐状态，不是解码后的中文或英文句子。</td></tr>
+<tr><td>状态 sₜ</td><td>B×1×64（当前代码路径）；有效维数由数据接口决定。</td><td>64 包含补零，不表示 64 个关节。</td></tr>
+<tr><td>动作 Aₜ</td><td>B×H×64，H 是预测的未来动作步数。</td><td>H 与 DiT 迭代次数 N 不同。</td></tr>
+<tr><td>状态/动作 token</td><td>B×(1+H)×d；由 MLP 投影。</td><td>一个动作步通常是一个高维 token，而不是一个数值维度一个 token。</td></tr>
+</tbody></table></div>
+<p class="source-row">论文 §3.1、§4.1；代码 <a href="#src-head">动作头 C2</a>。形状以所核对实现为例，B 为批次大小。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch3"><h2><span class="num" aria-hidden="true"></span>六个模块逐个拆：每一步干什么</h2>
+<h3 id="s3-1">3.1 数据接口：模型不会自动猜字段含义</h3>
+<div class="module"><header>模块 0 · 预处理与后处理</header><dl><dt>为什么</dt><dd>不同数据源的相机名称、控制量、单位和状态维数不同，需要明确约定。</dd><dt>输入</dt><dd>图像、任务字符串、状态向量，以及 dataset entry 对应的字段配置和统计量。</dd><dt>处理</dt><dd>按相机与字段映射取数据；图像 resize；状态按训练统计量逐维缩放并补到 64 维；同时保留有效动作维度掩码。</dd><dt>输出</dt><dd>VLM 输入张量、状态张量和 action mask。动作生成后，按动作统计量反归一化并裁出有效维度。</dd><dt>关键边界</dt><dd>补零与缩放不能替代标定、控制模式匹配或动作语义对齐。</dd></dl></div>
+<p>这与 GR00T 的 Processor 在职责上相似，但 ZR-0 仓库用 <code>dataset2feature.yaml</code> 和 dataset entry 组织接口，不能把 GR00T 的配置文件名与 embodiment id 映射照搬过来。<a class="source" href="#src-data">接口 / 归一化</a></p>
+<h3 id="s3-2">3.2 VLM：训练“看懂”，输出给动作模型的是向量</h3>
+<div class="module"><header>模块 1 · Qwen3-VL-2B-Instruct</header><dl><dt>输入</dt><dd>多路相机图像与任务指令；预训练时还提供 ECoT 标签用于语言预测。</dd><dt>计算</dt><dd>视觉编码与文本 token 进入多模态模型，提取最后层 hidden states。</dd><dt>输出</dt><dd>输入 prompt 位置的特征供动作专家读取；语言输出位置计算下一 token 损失。</dd><dt>意义</dt><dd>同一个“杯子”在不同相机、机器人和背景下，应仍能形成对任务有用的表征。ECoT 给这个过程增加显式监督。</dd><dt>别误读</dt><dd>System 2 是架构比喻，不代表推理时一直运行一个独立、缓慢、显式的规划代理。</dd></dl></div>
+<h3 id="s3-3">3.3 状态编码器：把传感器数字变成 token</h3>
+<p>归一化后的状态仍是数字数组。MLP 将 64 维状态映射到注意力模型需要的嵌入维数，作为状态 token。它告诉动作模型“身体当前在哪里”，用于决定动作幅度与方向。看到同一张图，如果末端位置不同，需要的动作也不同。</p>
+<p>编码器并非正运动学求解器；除非另外写入结构，它是在训练中学习数值与动作之间的关系。状态错序、角度单位错用、夹爪开合方向相反，都可能产生形状正确但语义错误的输入。</p>
+<h3 id="s3-4">3.4 动作编码器：处理的是候选动作，不是实际执行结果</h3>
+<p>训练时输入由真实动作和噪声混合而成的 A<sup>τ</sup>，推理时从高斯噪声开始。动作 MLP 将每个未来动作步编码为 token，并加入流时间 τ 的编码。模型因而知道当前输入是“还很随机”还是“已经接近目标动作”。</p>
+<p>动作序列位置还需要区分：块中第一步与第十步不能任意互换。公开实现可添加 action-position embedding。<b>序列位置 i、环境时间 t、流时间 τ 是三种不同坐标。</b></p>
+<h3 id="s3-5">3.5 DiT：状态/动作内部交流，再向视觉语言取信息</h3>
+<p>自注意力中，Q/K/V 都来自状态与动作 token，因此能在一个动作块内协调多个未来时刻。交叉注意力中，状态/动作作为 Query，VLM prompt 特征作为 Key 与 Value：动作 token 据当前任务从视觉语言序列中读取需要的信息。</p>
+<div class="formula"><span class="tag">交叉注意力的数学接口</span><div class="eq">Q = ZW<sub>Q</sub>，K = FW<sub>K</sub>，V = FW<sub>V</sub><br>Attention = softmax(QKᵀ / √d + M)V</div><p class="why">Z：状态/动作 token；F：VLM 特征；M：允许读取哪些 token 的掩码。禁止的位置加 −∞，softmax 后权重为 0。</p></div>
+<p>论文描述每组按 <b>1 层自注意力 + 3 层交叉注意力</b>重复，相比其引用的 GR00T N1 的 1:1 模式，增加了跨模态交互比例。这是架构选择；<b>没有对应的比例消融，就不能独立断言 1:3 必然优于 1:1。</b>实际层数要查看 checkpoint，代码默认截断组的问题见第 12 章。</p>
+<h3 id="s3-6">3.6 解码器：输出速度场，再积分成连续动作</h3>
+<p>动作解码 MLP 将 DiT 输出投回动作维数。训练与每次去噪时得到的是<b>对动作空间路径的速度场估计</b>，不是直接要发送给电机的速度命令。Euler 用它更新候选动作；迭代完成后，动作向量的意义由接口决定，例如关节位置目标或末端位姿。</p>
+<p class="note inline-note">“速度场”是对生成路径的导数，不自动等于机器人实际关节速度。两者的时间轴不同。</p>
+<p class="source-row">本章依据：论文 §3.1–3.4；<a href="#src-backbone">VLM C1</a>、<a href="#src-head">动作头 C2</a>、<a href="#src-dit">DiT C3</a>。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch4"><h2><span class="num" aria-hidden="true"></span>为什么不生成思维链也能行动</h2>
+<h3 id="s4-1">4.1 训练序列里有 ECoT，动作分支却不读取它</h3>
+<p>记 P 为图像与指令构成的 prompt，R 为 ECoT 标签。训练时 VLM 处理串接序列 <code>[P, R]</code>，用 teacher forcing 预测 R 的下一个 token；动作专家仅可读取 P 位置的最后层隐状态。<b>R 是监督目标，不是动作条件中必须出现的中间答案。</b></p>
+<p>这避开了一种训练部署落差：如果训练时动作分支总能看到完美的真实 ECoT，部署时却要依赖可能错误、耗时的自生成 ECoT，动作条件分布就发生变化。ZR-0 主路径从设计上排除了这条依赖。</p>
+<h3 id="s4-2">4.2 只屏蔽交叉注意力，为什么还不够</h3>
+<p>还需要 VLM 的注意力因果性。在论文的自回归设定下，prompt 位置的隐状态不能读取后面才出现的 ECoT 目标。于是，ECoT 虽然影响参数学习，却不会通过训练样本中的未来 token 泄漏进 prompt 特征。</p>
+<div class="tw"><table class="mask-grid"><thead><tr><th>Query \ Key/Value</th><th>prompt P</th><th>ECoT R</th></tr></thead><tbody><tr><td>VLM 的 prompt 位置</td><td class="allowed">按模型的前缀 / 图像注意力规则</td><td class="blocked">不能看未来答案</td></tr><tr><td>VLM 的 ECoT 位置</td><td class="allowed">可以读</td><td class="allowed">只能读此前的 R token</td></tr><tr><td>动作专家的交叉注意力</td><td class="allowed">可以读</td><td class="blocked">全部屏蔽</td></tr></tbody></table></div>
+<p>这里是块级教学表，不等同于所有图像 patch 都采用简单的文本三角掩码。关键不变量是 <b>P → R 的未来信息不可逆流，动作分支 → R 的读取被禁止</b>。</p>
+<h3 id="s4-3">4.3 监督如何改变“看不见答案”的 prompt 特征</h3>
+<p>想象学生看图答题：训练时要求他说清“杯子在哪里、还剩哪一步”，会迫使理解图像与指令的参数变得更有用。虽然部署时不再要求他把解释写出来，学到的参数仍保留。这里没有神秘的“推理文本缓存”：<b>保留下来的是权重与表征能力，不是当前帧那段没有生成的文字。</b></p>
+<p>数学上可写成 <code>F = hθ(P)</code>。语言损失训练 θ，使 F 支持 ECoT 预测；动作损失也训练 θ，使 F 支持控制。推理时动作模型只需要 F。这说明为何删除文本解码路径在依赖关系上成立，并不保证任意删掉训练监督都不影响性能。</p>
+<div class="calculator" id="mask-lab"><h4>动手看：切换训练 / 推理，哪些路径还在？</h4><p class="small">教学依赖图，演示论文主路径；不是运行 ZR-0。</p><div class="control-row"><label>阶段 <select id="mask-stage"><option value="train">预训练</option><option value="infer">直接动作推理</option></select></label></div><div class="tw"><table class="mask-grid"><thead><tr><th>路径</th><th>prompt 特征</th><th class="ecot-col">ECoT 输出位置</th></tr></thead><tbody><tr><td>动作专家读取</td><td class="allowed">✓ 允许</td><td class="blocked ecot-col">✕ 禁止</td></tr><tr><td>下一 token 监督</td><td>学习产生有用特征</td><td class="allowed ecot-col" id="lm-status">✓ 计算语言损失</td></tr></tbody></table></div><output id="mask-output" aria-live="polite"></output></div>
+<h3 id="s4-4">4.4 能省掉什么，不能声称省掉什么</h3>
+<p>省掉的是 ECoT 的逐 token 自回归解码。仍需要图像处理、VLM 的一次 prompt 前向，以及动作专家的 N 次迭代。单次 prompt 前向会同时产生多个输入位置的特征，不是只生成一个文字 token。动作迭代时可复用这一批视觉语言特征。</p>
+<p><b>“无需生成 ECoT”是网络依赖关系的结论；“各种模式下完全无性能损失”需要专门实验。</b>论文主结果证明这条直接动作路径能取得较好成绩，正文没有提供完整的 direct-action 与生成完整 ECoT 后行动的受控对照曲线，不将摘要中的表述扩写为普遍保证。</p>
+<p class="source-row">依据：论文 §3.1、§3.3、§3.4；公开仓库另有 subtask 模式，见第 12 章。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch5"><h2><span class="num" aria-hidden="true"></span>ECoT 不是一句“想一想”：六类标签</h2>
+<h3 id="s5-1">5.1 官方示例：同一帧被要求回答多个问题</h3>
+<p>下面是官方仓库的 ECoT 示例。它不是把六个组件都作为独立神经网络模块，而是将这些信息组织成结构化的生成监督。论文说明包含离散动作 token；图中的目标框、完成标记和待办步骤分别承担不同作用。</p>
+<figure class="figure original"><div class="scroll"><img src="assets/official-ecot-example.png" alt="ZR-0 官方 ECoT 示例：场景、完成判断、未来计划、待办动作、目标框与离散动作" loading="lazy" decoding="async" width="2270" height="498"></div><figcaption>官方示例｜来自仓库 README，并非另一张编号论文图。请对照下表阅读每类监督的用途。</figcaption><div class="figure-meta"><span>作者原图 · 可横向滚动</span><button type="button" data-zoom="assets/official-ecot-example.png" data-caption="ZR-0 官方 ECoT 示例：场景、完成判断、未来计划、待办动作、目标框与离散动作">放大查看</button><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/images/embodied_cot.png">原始出处 ↗</a></div></figure>
+<h3 id="s5-2">5.2 场景描述与进度判断：看见了什么，已经做了什么</h3>
+<p><b>Scene Description</b> 描述对象、空间关系与环境。它让“图中有一个蓝盘子”成为可监督的语义输出，而不只从最终动作误差间接学习视觉。<b>Progress Assessment</b> 解释当前完成情况，并给出 Yes/No 完成标记。完成与否取决于视觉状态及任务，不等于时间经过了百分之几。</p>
+<p>教学例子：任务是“把杯子放进篮子”，杯子已抓起但仍在篮子外。场景描述关注杯子与篮子的位置；进度判断应指出仍未完成。这个二元完成标记不是 ProcVLM 的连续进度奖励值，也不是直接用于 ZR-0 强化学习的回报。</p>
+<h3 id="s5-3">5.3 未来计划与原子待办：意图如何逐级变细</h3>
+<p><b>Future Plan</b> 是自然语言说明剩余目标，例如“把杯子移到篮子上方并放下”。<b>To-Do Actions</b> 将它拆成动词加对象的原子子任务，例如“抓住杯子”“移动到篮子上方”“放入篮子”。这种步骤语义可以跨本体复用。</p>
+<p>两者相近但不完全相同：前者保留整体意图与时序解释，后者提供清晰、可重复的子目标边界。动作专家并不因此接收到一个符号规划器逐项下发的命令，论文主路径仍是读取当前 prompt 特征预测连续动作。</p>
+<h3 id="s5-4">5.4 目标框：监督“该关注哪个对象”</h3>
+<p><b>Target Objects</b> 用框坐标将对象名称落到图像区域上。它让“绿色苹果”不只是一串语言符号，还关联到当前相机里的具体位置。不同视角应各自解释坐标，图像 resize 后也需要保持一致。</p>
+<p>不要把框坐标直接当作机器人末端坐标：2D 框既不提供完整深度，也没有自动完成相机到机器人基座坐标系的变换。公开数据示例使用按相机组织的 bbox 字段；论文中的通用 JSON 示例与具体存储格式不必逐字符一致。</p>
+<h3 id="s5-5">5.5 FAST 离散动作：监督桥梁，不是部署动作头</h3>
+<p>第六项 <b>Discrete Actions</b> 使用 FAST tokenizer 将动作压缩为离散 token，加入 VLM 的语言建模监督。这些 token 保留本体相关的动作信息，不能把六项 ECoT 一概叫作“完全与身体无关”。</p>
+<div class="tw"><table><thead><tr><th>两种动作表示</th><th>出现在什么位置</th><th>用途</th></tr></thead><tbody><tr><td>FAST 离散 token</td><td>ECoT 文本监督流。</td><td>让 VLM 学习动作相关表征。</td></tr><tr><td>连续动作块</td><td>DiT + MLP 的 flow-matching 分支。</td><td>推理时迭代生成，后处理后交给环境。</td></tr></tbody></table></div>
+<p class="note inline-note">“训练序列里有动作 token”不代表推理一定通过自回归 token 解码输出动作。</p>
+<h3 id="s5-6">5.6 密集监督有什么收益，也有什么代价</h3>
+<p>轨迹级标签只说整段成功与否；帧级 ECoT 在抓取前、抓取后、移动途中分别描述状态与剩余步骤，提供更细的语义锚点。但相邻帧高度相关，60M 帧不等于同量级的独立场景。自动标注也可能误认物体、过早判断完成或编造计划。</p>
+<p><b>96.8% 是标注覆盖率，不是标注准确率，更不是策略成功率。</b>标注 VLM 的质量、轨迹采样、遮挡与动作歧义会影响监督。论文讨论关键帧选择以降低标注成本；不能把这个未来方向写成 ZR-0 已经验证的方法。</p>
+<p class="source-row">依据：论文 §3.2、§5；<a href="#src-advanced">官方数据扩展说明 C6</a>；<a href="#src-proc">ProcVLM P2</a>。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch6"><h2><span class="num" aria-hidden="true"></span>数据怎样混，训练分几个阶段</h2>
+<h3 id="s6-1">6.1 三类训练样本，两条损失支路</h3>
+<div class="tw"><table><thead><tr><th>样本</th><th>提供什么</th><th>更新什么</th></tr></thead><tbody>
+<tr><td>带 ECoT 的机器人轨迹</td><td>图像、任务、状态、真实动作、ECoT 标签。</td><td>语言损失训练 VLM；动作损失训练动作专家并经特征回传 VLM。</td></tr>
+<tr><td>一般视觉语言数据</td><td>图像与问答、描述、定位等文本目标。</td><td>只计算 VLM 语言建模损失，没有机器人动作监督。</td></tr>
+<tr><td>benchmark 后训练演示</td><td>该环境的观测与动作。</td><td>论文采用不含 ECoT 和一般 VL 混训的标准适配协议。</td></tr>
+</tbody></table></div>
+<p>一般 VL 数据与机器人 ECoT 的作用不同：前者帮助保留通用视觉语言能力，后者把监督绑定到操作过程。论文提到 CapsFusion、Pixmo；官方 README 另报告 5M 一般 VQA 样本。精确混合权重、去重与每类数据总训练量不能仅从这几个数字推出。</p>
+<h3 id="s6-2">6.2 归一化：数值尺度相近，物理意义仍不同</h3>
+<p>论文采用每维训练数据的 q01/q99 做 min-max 缩放，再把状态和动作补到 64 维。q01/q99 分别是第 1 与第 99 百分位，不是机械限位。状态统计量与动作统计量分别使用；训练与推理要沿用同一约定。</p>
+<div class="formula"><span class="tag">逐维缩放 · 区间内对应 [−1,1]</span><div class="eq">x̃ = 2(x − q₀₁) / (q₀₉₉ − q₀₁) − 1</div><p class="why">同一公式用于每个有效维度。超出统计区间时可超出 [−1,1]，最终截断行为由实现决定，不能把区间映射误读成所有值必然被夹到 [−1,1]。</p></div>
+<p>教学例子：夹爪统计范围为 0–80 mm 时，20 mm 映射到 −0.5。关节维度可能用弧度与另一组统计量，因此不能把所有维度统一除以一个最大值。公开实现额外将归一化值夹到 [−15,15]，详见第 12 章。</p>
+<h3 id="s6-3">6.3 补零与掩码：为什么需要两者</h3>
+<p>一条 7 维动作补到 64 维后，多出的 57 维只是占位。若把占位维也当作真实目标，模型可能花大量损失预算学习无意义的零。因此需要有效维度 mask，损失只聚合真实动作维度。</p>
+<p>公开动作头不只在损失上乘 mask，还在训练噪声、带噪轨迹、推理初始噪声和 Euler 更新上使用它。这样补零维不会随着迭代被噪声带起来。<b>掩码用来说明哪些维度有效，不会告诉网络该维是哪一种关节或控制量。</b></p>
+<h3 id="s6-4">6.4 预训练与后训练参数对照</h3>
+<div class="tw"><table><thead><tr><th>项</th><th>预训练</th><th>论文 benchmark 后训练</th></tr></thead><tbody>
+<tr><td>模型规模</td><td>VLM 约 2.1B + 动作专家约 0.5B。</td><td>从共同预训练 checkpoint 分别适配。</td></tr>
+<tr><td>动作 horizon H</td><td>32。</td><td>LIBERO：10；RoboTwin / RoboCasa / xArm：16。</td></tr>
+<tr><td>batch size</td><td>global 1,024。</td><td>64。</td></tr>
+<tr><td>损失权重 α</td><td>5。</td><td>报告为 1；无 ECoT / 一般 VL 混训，不据此声称仍有同样的 ECoT 损失。</td></tr>
+<tr><td>优化器</td><td>AdamW，β=(0.9,0.95)，ε=10⁻⁸。</td><td>不要将仓库通用脚本的默认值自动视为每项实验的完整配方。</td></tr>
+<tr><td>学习率与数值</td><td>5% warmup；3×10⁻⁵ → 3×10⁻⁶ cosine；bf16；梯度裁剪 1.0。</td><td>目标环境协议决定适配过程。</td></tr>
+</tbody></table></div>
+<p class="source-row">配置来自论文 §4.1.3–4.1.4。DeepSpeed ZeRO、Flash-Attention 2、gradient checkpointing 用于训练效率，不是算法贡献本身。</p>
+<h3 id="s6-5">6.5 新本体到底用哪套 MLP：不能沿用 GR00T 的答案</h3>
+<p>论文只说明状态/动作编码与解码由 MLP 实现，没有在方法段定义 GR00T 式的多本体 id 路由表。所核对公开代码更明确：三个分支的 category 数量都设为 <code>1</code>，训练和推理都创建全零 <code>cat_ids</code>。因此它在这条实现路径上<b>共享同一槽位的 MLP</b>。</p>
+<p>共享入口不表示任意机器人即插即用。新的控制接口仍需要匹配的数据字段、统计量、mask 与训练适配。benchmark 的做法是从共同预训练模型分别后训练，而不是给每个未知机器人临时选一个“最像”的 MLP。代码中出现 <code>CategorySpecificMLP</code> 这个类名，也不能单凭名字断定实际启用了多个本体分支。</p>
+<p class="source-row">代码核对：<a href="#src-head">flow_matching_action_head.py C2</a> 的构造器、forward 与 get_action；与 <a href="../gr00t/#embodiment-training">GR00T 多分支解释</a>对照阅读。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch7"><h2><span class="num" aria-hidden="true"></span>训练目标与梯度：把公式算一遍</h2>
+<h3 id="s7-1">7.1 语言损失：让模型预测结构化的解释</h3>
+<div class="formula"><span class="tag">论文目标 1 · 下一 token 预测</span><div class="eq">L<sub>NTP</sub> = − E[ ∑ᵢ log p<sub>θᵥ</sub>(rᵢ | P, r&lt;ᵢ) ]</div><p class="why">P 是任务与图像 prompt，r 是 ECoT 序列。训练时提供此前的目标 token，预测下一 token；这不要求部署时仍生成整段 r。</p></div>
+<p>损失鼓励模型给正确解释更高概率。这里的“正确”指数据标签，不自动等于环境真相；自动标注错误会成为噪声监督。语言损失没有经过动作专家，所以它不会直接更新 DiT。</p>
+<h3 id="s7-2">7.2 Flow matching：不是拟合“噪声大小”，而是拟合方向</h3>
+<p>记真实动作块为 A，噪声为 ε，生成路径的时间为 τ。训练构造两者之间的一条直线路径，并预测它的导数：</p>
+<div class="formula"><span class="tag">论文目标 2 · 从噪声到数据的条件速度场</span><div class="eq">A<sup>τ</sup> = (1−τ)ε + τA<br>u* = dA<sup>τ</sup>/dτ = A−ε<br>L<sub>FM</sub> = E[ ‖v<sub>θ</sub>(P,s,A<sup>τ</sup>,τ) − (A−ε)‖² ]</div><p class="why">τ=0 是噪声端，τ=1 是真实动作端；状态、指令与图像共同决定条件分布。工程实现对有效动作维度使用 mask。</p></div>
+<p>教学例子：某个归一化动作维的真实目标 A=0.8，抽到 ε=−0.4。τ=0.25 时，输入为 −0.1；训练目标速度是 1.2。若网络预测 0.9，此维平方误差为 (0.9−1.2)²=0.09。<b>模型看到的是带噪输入，不是直接把真实动作拿来当推理输入。</b></p>
+<h3 id="s7-3">7.3 两个损失如何共同塑造 VLM</h3>
+<div class="formula"><span class="tag">联合目标与参数路径</span><div class="eq">L = L<sub>NTP</sub> + αL<sub>FM</sub><br>∇<sub>θᵥ</sub>L = ∇<sub>θᵥ</sub>L<sub>NTP</sub> + α∇<sub>θᵥ</sub>L<sub>FM</sub><br>∇<sub>θₐ</sub>L = α∇<sub>θₐ</sub>L<sub>FM</sub></div><p class="why">θᵥ 为 VLM 参数，θₐ 为动作专家参数。公式描述论文的联合训练；参数冻结或 detach 会改变实际更新路径。</p></div>
+<p>动作损失通过交叉注意力读到的 fₜ 回传 VLM：动作不对，也会推动视觉语言表征适应控制；ECoT 损失让表征保留可解释的任务与定位信息。α=5 不表示模型“80% 学动作、20% 学语言”，因为两个损失的原始尺度、token 数和梯度范数不同。</p>
+<p>公开仓库有 <code>detach_vlm_outputs_for_action_expert</code> 开关。打开后，动作损失不再通过 fₜ 回传 VLM；若同时冻结 VLM，语言损失也不能改变冻结权重。这些模式不能与论文的端到端联合训练一概而论。</p>
+<h3 id="s7-4">7.4 为什么动作分支没看 ECoT，ECoT 仍有用</h3>
+<p>信息流与学习流不同：一次前向中，动作模型没有读取当前样本的 ECoT；跨很多优化步后，ECoT 训练已经改变了 VLM 的权重。部署时读取的 prompt 特征来自这些更新过的权重。它是<b>通过共享参数发生的迁移</b>，不是将答案文字藏在后面的 token 里偷偷读取。</p>
+<p>一个合理检验是固定其余训练配方，只移除 ECoT 监督，比较结果与表征诊断。论文提供的消融更粗，跳过了整段预训练；证据能支持到哪里，见第 10 章。</p>
+<h3 id="s7-5">7.5 Beta 时间采样有一个需核对的符号问题</h3>
+<p>论文写 τ 从 Beta(1.5,1.0) 采样，并称强调较噪时刻。但在其公式 A<sup>τ</sup>=(1−τ)ε+τA 下，τ 越大反而越接近真实动作，Beta(1.5,1) 也更偏向较大的值。公开代码并非直接返回 Beta 样本，而是做 <code>(noise_s − sample) / noise_s</code> 的变换。</p>
+<p class="warning"><span class="label">复现时以同一时间约定贯穿全流程</span>这里记录论文措辞与代码时间参数化的差别，不自行替作者修改公式。采样分布、噪声/数据端点、训练目标符号和 Euler 方向必须一起核对，否则很容易把正确的公式用反。</p>
+<p class="source-row">依据：论文 §3.3；<a href="#src-model">联合模型 C4</a>、<a href="#src-head">sample_time / 损失 C2</a>。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch8"><h2><span class="num" aria-hidden="true"></span>推理闭环：从一帧观测到动作执行</h2>
+<h3 id="s8-1">8.1 一次决策的八个步骤</h3>
+<ol class="timeline"><li><b>收集观测。</b>获取当前相机视图、机器人状态与任务指令，保持时间和字段约定。</li><li><b>预处理。</b>图像 resize，状态归一化、补齐；准备有效动作维度 mask。</li><li><b>VLM 单次前向。</b>只处理 prompt，获取动作专家所需的输入位置特征。</li><li><b>初始化候选动作。</b>在有效维度抽取高斯噪声，形状为 H×64。</li><li><b>状态与候选动作编码。</b>加上 τ 信息，经自注意力与交叉注意力预测速度场。</li><li><b>Euler 更新。</b>按 Δτ=1/N 更新候选动作，重复 N 次；这不是把环境执行 N 次。</li><li><b>后处理与执行。</b>还原动作尺度、取有效维数，按环境接口执行指定数量的动作步。</li><li><b>重新观测。</b>执行后用最新输入再规划，形成观测—动作闭环。</li></ol>
+<h3 id="s8-2">8.2 三个时间轴，用一个表分开</h3>
+<div class="tw"><table><thead><tr><th>记号</th><th>发生在哪里</th><th>一个例子</th></tr></thead><tbody><tr><td>环境时间 t</td><td>真实或仿真的控制序列。</td><td>机器人在第 100 个观测步。</td></tr><tr><td>动作块索引 i</td><td>当前预测内的未来步。</td><td>H=16，对应 16 个未来动作目标。</td></tr><tr><td>流时间 τ / 迭代 N</td><td>单次动作生成内部的数值积分。</td><td>N=5，从 τ=0 经 5 次更新到 τ=1。</td></tr></tbody></table></div>
+<p>H=16、N=5 不等于“机器人只执行 5 步”，也不表示“每个动作运行 16 次去噪”。一次 DiT 前向同时处理整个候选动作块。推理执行多少步再观测，需要明确 execution horizon，不能默认等于 H。</p>
+<h3 id="s8-3">8.3 Euler 怎么算：用一个已知终点的教学实验</h3>
+<div class="formula"><span class="tag">论文推理更新</span><div class="eq">A<sup>τ+Δτ</sup> = A<sup>τ</sup> + Δτ · v<sub>θ</sub>(P,s,A<sup>τ</sup>,τ)<br>Δτ = 1/N，A⁰ ∼ N(0,I)</div><p class="why">最终 A¹ 为归一化动作块，再经过后处理。训练时可得到监督目标 A，部署时无法知道正确终点，只能靠网络预测速度场。</p></div>
+<div class="calculator" id="euler-lab"><h4>动手算：一步步从噪声走向目标</h4><p class="small">为解释积分，教学工具预先给定终点并使用理想恒定速度；不运行真实模型，也不模拟真实策略成功率。</p><div class="control-row"><label>噪声 ε <input id="euler-noise" type="number" value="-0.4" step="0.1" min="-10" max="10"></label><label>教学终点 A <input id="euler-target" type="number" value="0.8" step="0.1" min="-10" max="10"></label><label>积分步数 N <select id="euler-steps"><option>2</option><option selected>5</option><option>10</option></select></label></div><div class="control-row"><label>查看第 k 步 <input id="euler-k" type="range" min="0" max="5" value="1"></label><span id="euler-k-label"></span></div><output id="euler-output" aria-live="polite"></output></div>
+<p>真实网络的预测速度不是恒定真值，会随候选动作和 τ 改变；误差会影响积分结果。更多积分步可能改善数值近似，但增加延迟，也不保证动作更可靠。需要在目标硬件和任务上测试 N 与成功率的关系。</p>
+<h3 id="s8-4">8.4 90 ms 是什么频率，为什么不能直接写成机械臂 Hz</h3>
+<p>论文 §3.4 报告 A6000、bf16 下约 90 ms/动作块；仓库 README 的具体配置是单路 224×224 相机、5 次去噪、torch.compile，总计 88 ms，其中图像处理 4 ms、VLM 49 ms、动作专家 35 ms。对应约 11.37 次模型请求/秒，不是机械臂执行器的底层伺服频率。</p>
+<p>论文 xArm 数据控制频率为 5 Hz。一块含 16 个动作并不意味着每 90 ms 都能在物理世界执行完 16 步；端到端闭环还包括通信、环境推进、执行与重规划。多路相机、积分步数、网络负载改变后，原延迟不应直接沿用。</p>
+<p class="warning"><span class="label">论文内有不一致的延迟口径</span>§3.4 写约 90 ms / A6000，而结论写约 100 ms / H100。本文保留两处差异，以正文及 README 的可见配置解释 90 ms，不将其合成一个统一硬件测量，也不据此估算模型在你电脑上的速度。</p>
+<h3 id="s8-5">8.5 为什么动作块越长，反馈可能越迟</h3>
+<p>长块减少模型调用次数，能表达短期连贯运动；但如果整块执行后才重规划，期间目标移动、接触失败或夹爪打滑，策略不能立即纠正。只执行块的前 k 步再观察能提高反馈频率，却增加请求开销。这是控制闭环设计的问题，不能仅靠“语言推理更强”解决。</p>
+<p class="source-row">依据：论文 §3.4、§4.1；<a href="#src-readme">README S1</a>、<a href="#src-policy">Policy / server C5</a>。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch9"><h2><span class="num" aria-hidden="true"></span>实验结果：分数要连同协议一起读</h2>
+<h3 id="s9-1">9.1 先看训练数据和评测样本数</h3>
+<div class="tw"><table><thead><tr><th>环境</th><th>目标阶段训练</th><th>测试与指标</th></tr></thead><tbody>
+<tr><td>LIBERO / 单臂</td><td>40 个任务，共 1,693 条训练轨迹；一个模型覆盖全部任务。</td><td>每任务 50 个 episode；二元成功率。</td></tr>
+<tr><td>RoboTwin 2.0 / 双臂</td><td>50 任务，每任务 50 条 clean + 500 条 randomized；总计 27,500 条。</td><td>每任务、每种设置 100 个 episode；成功率。</td></tr>
+<tr><td>RoboCasa GR-1 Tabletop / 人形</td><td>一个模型学习 24 个桌面任务。</td><td>每任务 100 个 episode；成功率。</td></tr>
+<tr><td>xArm / 真机</td><td>2,000+ 遥操作轨迹、4 类任务、50+ 物体；采集控制 5 Hz。</td><td>每类 10 次；按任务子步骤定义 0–100 进度分数。</td></tr>
+</tbody></table></div>
+<p>“一个模型覆盖全部任务”发生在同一个 benchmark 内；三个仿真 benchmark 从共同预训练 checkpoint 分别后训练。模型在训练任务的变化场景、物体位置和指令改写下测试，与完全未训练过的新任务、新身体零样本迁移不是同一种主张。</p>
+<h3 id="s9-2">9.2 LIBERO：重点看长程子集，而不是只看总平均</h3>
+<div class="tw"><table class="paper-table">
+<thead>
+<tr>
+<th><span>Model</span></th>
+<th><span>LIBERO-Spatial</span></th>
+<th><span>LIBERO-Object</span></th>
+<th><span>LIBERO-Goal</span></th>
+<th><span>LIBERO-10</span></th>
+<th><span>Avg.</span></th></tr>
+</thead>
+<tbody>
+<tr>
+<th><span>OpenVLA </span></th>
+<td><span>84.7</span></td>
+<td><span>88.4</span></td>
+<td><span>79.2</span></td>
+<td><span>53.7</span></td>
+<td><span>76.5</span></td></tr>
+<tr>
+<th><span>CoT-VLA </span></th>
+<td><span>87.5</span></td>
+<td><span>91.6</span></td>
+<td><span>87.6</span></td>
+<td><span>69.0</span></td>
+<td><span>83.9</span></td></tr>
+<tr>
+<th>π₀<span> </span></th>
+<td><span>96.8</span></td>
+<td><span>98.8</span></td>
+<td><span>95.8</span></td>
+<td><span>85.2</span></td>
+<td><span>94.2</span></td></tr>
+<tr>
+<th><span>NORA-1.5 </span></th>
+<td><span>97.3</span></td>
+<td><span>96.4</span></td>
+<td><span>94.5</span></td>
+<td><span>89.6</span></td>
+<td><span>94.5</span></td></tr>
+<tr>
+<th>π₀.₅<span> </span></th>
+<td><span>98.8</span></td>
+<td><span>98.2</span></td>
+<td><span>98.0</span></td>
+<td><span>92.4</span></td>
+<td><span>96.9</span></td></tr>
+<tr>
+<th><span>GR00T-N1.7 </span></th>
+<td><span>97.7</span></td>
+<td><span>97.5</span></td>
+<td><span>98.5</span></td>
+<td><span>94.4</span></td>
+<td><span>97.0</span></td></tr>
+<tr>
+<th><span>DeepThinkVLA </span></th>
+<td><span>96.6</span></td>
+<td><span>99.0</span></td>
+<td><span>96.4</span></td>
+<td><span>96.2</span></td>
+<td><span>97.0</span></td></tr>
+<tr>
+<th><span>MolmoAct2 </span></th>
+<td><span>97.8</span></td>
+<td><span>100.0</span></td>
+<td><span>97.8</span></td>
+<td><span>93.2</span></td>
+<td><span>97.2</span></td></tr>
+<tr>
+<th><span>ZR-0</span></th>
+<td><span>97.4</span></td>
+<td><span>99.4</span></td>
+<td><span>98.0</span></td>
+<td><span>96.4</span></td>
+<td><span>97.8</span></td></tr>
+</tbody>
+</table></div>
+<p class="source-row">上表按论文 Table 1 转录，单位均为成功率 %；是该论文列出的比较，不是持续更新的排行榜。</p>
+<p>ZR-0 平均 97.8%，相比表中 GR00T-N1.7 的 97.0% 高 0.8 个百分点。差距更明显的是 LIBERO-10：ZR-0 为 96.4%，π₀.₅ 为 92.4%，相差 4.0 个百分点。Object 等子集已较饱和，平均数容易遮住长程任务差别。</p>
+<p>同时，ZR-0 并非每个子集都第一：例如表中的 π₀.₅ 在 Spatial 更高，MolmoAct2 在 Object 达到 100%。不能把总平均领先解释成所有能力均优于其他模型，更不能由这里的 0.8 点推出对 GR00T 的普遍优势。</p>
+<h3 id="s9-3">9.3 RoboCasa：均值更高，关柜门类却明显落后</h3>
+<div class="tw"><table><thead><tr><th>方法 / 任务</th><th>JoyAI-RA</th><th>ZR-0</th><th>如何读</th></tr></thead><tbody>
+<tr class="emphasis"><td>24 任务平均</td><td>63.2</td><td>69.3</td><td>ZR-0 高 6.1 个百分点。</td></tr>
+<tr><td>CuttingboardToTieredbasket</td><td>36.0</td><td>80.0</td><td>搬运放置强项，差 44.0 点。</td></tr>
+<tr><td>PlacematToPlate</td><td>38.0</td><td>88.0</td><td>物体—目标关系与放置。</td></tr>
+<tr><td>BottleToCabinetClose</td><td>84.0</td><td>39.0</td><td>放入后还要关门，多阶段接触操作。</td></tr>
+<tr><td>CanToDrawerClose</td><td>90.0</td><td>47.0</td><td>同样明显落后。</td></tr>
+</tbody></table></div>
+<p>作者将差别与预训练中 pick-and-place 更常见、关门类较少联系起来。这是合理的数据覆盖解释，但论文没有给出足够的逐技能数据统计与受控重采样实验，不能视为已经排除控制精度、动作表示、任务难度等因素的因果证明。完整 24 任务表在附录。</p>
+<h3 id="s9-4">9.4 RoboTwin：泛化差距小，但领先幅度也要看量级</h3>
+<div class="tw"><table><thead><tr><th>模型</th><th>Clean %</th><th>Randomized %</th><th>下降（百分点）</th></tr></thead><tbody>
+<tr><td>π₀</td><td>65.92</td><td>58.40</td><td>7.52</td></tr><tr><td>π₀.₅</td><td>82.74</td><td>76.76</td><td>5.98</td></tr><tr><td>X-VLA</td><td>72.80</td><td>72.84</td><td>−0.04</td></tr><tr><td>Motus</td><td>88.66</td><td>87.02</td><td>1.64</td></tr><tr><td>LingBot-VLA</td><td>88.56</td><td>86.68</td><td>1.88</td></tr><tr class="emphasis"><td>ZR-0</td><td>88.70</td><td>87.98</td><td>0.72</td></tr>
+</tbody></table></div>
+<p>域随机化包含杂物、光照、背景、桌高与语言指令等因素。ZR-0 的平均下降较小，支持其在这组设置下具备较好的鲁棒性。但 Clean 只比 Motus 高 0.04 点，不能没有方差与重复种子就宣称显著领先。</p>
+<p>某些任务 Randomized 分数高于 Clean 也不矛盾：评测样本与场景分布不同，有限采样有波动；更强的数据多样性可能有帮助，但单个分数反转不能证明某种训练组件是原因。完整 50 任务结果保留在附录。</p>
+<h3 id="s9-5">9.5 原论文 Figure 2：四类真机任务在测什么</h3>
+<figure class="figure original"><div class="scroll"><img src="assets/paper-fig2-real-world.png" alt="ZR-0 原论文 Figure 2：xArm 清桌、挂杯、推字母积木与空间指代放置任务" loading="lazy" decoding="async" width="1506" height="571"></div><figcaption>原图 2｜论文 Figure 2。推字母积木强调识字与目标选择，挂杯强调目标理解后的精确接触操作。</figcaption><div class="figure-meta"><span>作者原图 · 可横向滚动</span><button type="button" data-zoom="assets/paper-fig2-real-world.png" data-caption="ZR-0 原论文 Figure 2：xArm 清桌、挂杯、推字母积木与空间指代放置任务">放大查看</button><a href="https://arxiv.org/html/2606.30552v2#S4.F2">原始出处 ↗</a></div></figure>
+<h3 id="s9-6">9.6 真机进度分数：不是 76% 成功率</h3>
+<div class="tw"><table class="paper-table">
+<thead>
+<tr>
+<th>Method</th>
+<th>Pick &amp; Place</th>
+<th>Hang Cups</th>
+<th>Clean Table</th>
+<th>Push Blocks</th>
+<th>Avg.</th></tr>
+</thead>
+<tbody>
+<tr>
+<th>π₀.₅</th>
+<td>56.7</td>
+<td><span>85.0</span></td>
+<td>63.3</td>
+<td>66.1</td>
+<td>67.8</td></tr>
+<tr>
+<th>ZR-0</th>
+<td><span>66.7</span></td>
+<td>70.0</td>
+<td><span>73.4</span></td>
+<td><span>94.0</span></td>
+<td><span>76.0</span></td></tr>
+</tbody>
+</table></div>
+<p>平均进度分数为 76.0 对 67.8，相差 8.2 分；OCR 相关 Push Blocks 差 27.9 分，是最大收益项。Hang Cups 则为 70.0 对 85.0，ZR-0 落后 15 分。理解得更好与操作得更准，是两种相关但不同的能力。</p>
+<p>作者将 OCR、空间指代与长程任务收益联系到 VL 混训和 ECoT。这能为机制提供解释，但缺少分别移除 VL 与各 ECoT 组件的真机对照，不能精确分摊收益。每类仅 10 次试验，且论文没有完整报告重复训练种子的置信区间；这些结果应作为有限设置下的证据。</p>
+<p class="source-row">本章数值与协议：论文 §4、Tables 1–4；完整数表见第 15 章。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch10"><h2><span class="num" aria-hidden="true"></span>消融与证据边界：结论能说多强</h2>
+<h3 id="s10-1">10.1 最重要的消融，究竟移除了什么</h3>
+<div class="tw"><table class="paper-table">
+<thead>
+<tr>
+<th>Method</th>
+<th>LIBERO-Spatial</th>
+<th>LIBERO-Object</th>
+<th>LIBERO-Goal</th>
+<th>LIBERO-10</th>
+<th>Avg.</th></tr>
+</thead>
+<tbody>
+<tr>
+<th>ZR-0</th>
+<td><span>97.4</span></td>
+<td><span>99.4</span></td>
+<td><span>98.0</span></td>
+<td><span>96.4</span></td>
+<td><span>97.8</span></td></tr>
+<tr>
+<th>- w/o ECoT PT</th>
+<td>96.8</td>
+<td>98.6</td>
+<td>94.8</td>
+<td>92.6</td>
+<td>95.7</td></tr>
+</tbody>
+</table></div>
+<p>论文对 <code>w/o ECoT PT</code> 的定义是：VLM 从 Qwen3-VL-2B-Instruct 初始化，动作专家随机初始化，<b>跳过整个 ECoT 监督预训练阶段，直接在 LIBERO 后训练</b>。因此两组不只差“有没有 ECoT 文本”，还差机器人预训练、一般 VL 混训、动作专家初始化等。</p>
+<p>均值差 2.1 个百分点，LIBERO-10 差 3.8 点。它支持<b>完整预训练方案带来了可迁移收益</b>，不能单独测出“其他条件固定时，仅 ECoT 监督的净收益”。</p>
+<h3 id="s10-2">10.2 如果要把机制证明得更完整，还缺哪些对照</h3>
+<ul><li><b>等数据、等算力，移除 ECoT：</b>仍保留相同机器人轨迹与动作训练，仅去除 ECoT 文本损失。</li><li><b>移除一般 VL：</b>区分通用知识保留与机器人过程监督的作用。</li><li><b>六组件逐项 / 组合消融：</b>判断目标框、待办步骤、FAST token 是否互补，是否存在冗余。</li><li><b>密集与关键帧：</b>在相近标注成本或训练预算下比较覆盖率、准确率与最终表现。</li><li><b>1:1 与 1:3 注意力比例：</b>固定参数量和训练预算，评估增加跨模态交互的贡献。</li><li><b>直接动作与生成解释后动作：</b>同时报告时延、成功率、失败类型和配套训练设置。</li></ul>
+<p>这些是本文提出的研究建议，不是论文已经完成的实验。一个方案整体有效，与其中每个设计都被独立证明有效，是不同层次的证据。</p>
+<h3 id="s10-3">10.3 跨本体迁移，不等于未见机器人零样本控制</h3>
+<p>论文从同一预训练 checkpoint 适配到单臂、双臂、人形三组目标，说明共同预训练具有跨本体适配价值。它没有因此证明完全新接口可以不提供数据直接控制，也没有在主表给出“对每一个本体做留一预训练”的系统性实验。</p>
+<p>还应询问预训练语料与目标 benchmark 的交集、任务相似性、去重和过滤规则。跨本体的“见过/没见过”可以指相同硬件、相同控制接口、同类任务或相同场景，必须明确是哪一层。论文主结果不应自动升级为所有层面的严格零样本泛化。</p>
+<h3 id="s10-4">10.4 视觉鲁棒性不自动带来接触稳定性</h3>
+<p>随机光照背景下成功，主要检验视觉与任务条件变化；挂杯、关门、插接还涉及精确定位、接触动力学、夹持与反馈。ECoT 能帮助找到杯子与挂钩，但不会凭空补足稀缺的精细接触演示。</p>
+<p>因此，实际复现不应只记录成功率。最好另外统计目标选择错、抓取失败、碰撞、放置偏差、终止判断错误和动作震荡，让改进方向能对应到数据、视觉、控制或闭环设计。</p>
+<h3 id="s10-5">10.5 哪些结论相对稳，哪些应保留</h3>
+<div class="tw"><table><thead><tr><th>可以据当前证据说</th><th>不应直接说</th></tr></thead><tbody>
+<tr><td>prompt-only 条件路径允许推理跳过 ECoT 解码。</td><td>模型在任何情形都已进行了与文字等价的完整隐式推理。</td></tr>
+<tr><td>完整预训练方案优于其从基础 VLM 直接后训练的消融。</td><td>2.1 点收益全部由 ECoT 或某一个组件造成。</td></tr>
+<tr><td>在所列任务与协议下获得较强结果，且有明确弱项。</td><td>普遍击败所有 VLA、完成通用机器人智能。</td></tr>
+<tr><td>约 1,000 小时语料下的结果具有数据效率启发。</td><td>仅凭不同模型的数据小时数，就证明严格的样本效率领先。</td></tr>
+</tbody></table></div>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch11"><h2><span class="num" aria-hidden="true"></span>和 GR00T 放在一起：相似外壳，监督不同</h2>
+<h3 id="s11-1">11.1 先对齐比较对象：N1、N1.7 不是同一配置</h3>
+<p>ZR-0 论文用 GR00T N1 的双流与 1:1 注意力模式解释架构渊源；LIBERO 结果表里列的是 GR00T-N1.7，RoboCasa 表里列的是 N1.6。这些名字指不同版本，不能拿 N1 的层配置解释 N1.7 的所有工程细节。</p>
+<div class="tw"><table><thead><tr><th>问题</th><th>ZR-0</th><th>GR00T 笔记中的对应视角</th></tr></thead><tbody>
+<tr><td>基本外壳</td><td>VLM + 交叉注意力 DiT + 连续 flow matching。</td><td>N1 系列同属视觉语言表征配合连续动作专家路线。</td></tr>
+<tr><td>本篇强调的增量</td><td>密集 ECoT 监督与 prompt-only 动作条件。</td><td>不可只看都有 System 1 / 2 就认为贡献一样。</td></tr>
+<tr><td>VLM 初始化</td><td>Qwen3-VL-2B-Instruct。</td><td>N1 与 N1.7 的 VLM 来源不同，按具体版本核对。</td></tr>
+<tr><td>本体入口</td><td>核对代码用单一 MLP 槽位与 cat_ids=0。</td><td>先前分析的 N1.7 代码用 embodiment id 选择多本体参数。</td></tr>
+<tr><td>推理文本</td><td>论文主路径不生成 ECoT；仓库另有 subtask 扩展。</td><td>不要把 VLM hidden states 直接等同于生成文字。</td></tr>
+<tr><td>动作步数</td><td>预训练 H=32，各后训练任务 H=10/16。</td><td>属于任务与 checkpoint 配置，不是架构固定常数。</td></tr>
+</tbody></table></div>
+<h3 id="s11-2">11.2 为什么这更像“训练表征”，不是外挂规划器</h3>
+<p>外挂规划器通常先产生显式计划，再将计划传给低层控制器。ZR-0 主路径没有这条必要的中间文本依赖。它通过语言目标训练 VLM，让动作模型读取共享表征。评价它时，要关注预训练监督是否提高适配、定位和指令理解，而不是只看生成的解释听起来是否合理。</p>
+<p>这也意味着部署的可解释性有限：可以另行生成 ECoT 供观察，但生成文本与直接动作路径之间没有逐条忠实性保证。要声称“这句解释就是本次动作的真实原因”，需要额外的干预或一致性分析。</p>
+<h3 id="s11-3">11.3 看下一篇 VLA，可以沿用哪些问题</h3>
+<p>依次问：输入是什么 → 输出怎样表示 → 谁能看谁 → 训练监督在哪里 → 哪些参数收到梯度 → 部署删掉哪些路径 → 动作执行后何时重新观察 → 结果到底在哪个协议成立。这个顺序比从模型名字或总参数量出发更容易发现真正差异。</p>
+<p>建议与 <a href="../gr00t/#ch3">GR00T 架构章</a>、<a href="../gr00t/#embodiment-training">多本体训练与适配</a>对照；本章是依据两份来源的机制比较，不代表相同训练预算下的自建基准测试。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch12"><h2><span class="num" aria-hidden="true"></span>读代码：论文主路径与仓库扩展分开</h2>
+<h3 id="s12-1">12.1 固定版本，才知道自己核对了什么</h3>
+<p>本文核对官方仓库提交 <code>b1440d4cf27624da2b1aa31268637cf46601c15d</code>，记录日期为 2026-10-19。源码链接固定到该提交；论文采用 arXiv v2（2026-07-01）。后续仓库变动可能修正或扩展这些行为，不能把当前默认值倒推为所有发布 checkpoint 的配置。</p>
+<h3 id="s12-2">12.2 推理有两个模式，不要串用</h3>
+<p><code>direct_action</code> 对应本篇主线：VLM prompt 前向后直接调用动作专家。<code>subtask_then_action</code> 是仓库的另一个模式，会先生成 subtask，再将相关序列送回模型；backbone 通过 <code>sub_task_flag</code> 选择 prompt-only 或 prompt-plus-subtask 掩码。</p>
+<p>因此，论文“推理不生成 ECoT”的描述不能覆盖仓库所有可选入口。若你启用了 subtask 模式，时延、可见 token 和训练依赖都要重新核对，不能继续套用 direct-action 的计算图与 88 ms 测量。</p>
+<h3 id="s12-3">12.3 类名里有多本体，不等于真的用了多套参数</h3>
+<p>动作头保留 <code>CategorySpecificMLP</code> 与 <code>MultiEmbodimentActionEncoder</code> 名字，但实际构造的数量是 1，并在 forward / get_action 中使用零索引。这是一个很好的源码阅读例子：<b>看实例化参数与调用路径，比看类名更可靠。</b></p>
+<p>公开代码支持这条单槽位路径；论文也未提供一份完整的逐本体索引表。本文据此解释公开实现，不断言作者的每一个历史训练作业都与这一默认源码逐项相同。</p>
+<h3 id="s12-4">12.4 1:3 模式、默认层数与 checkpoint 三者要一起看</h3>
+<p>DiT 循环在 <code>idx % 4 == 0</code> 时用自注意力，其余层用交叉注意力，体现“一自三交”的周期。动作头默认配置的 <code>num_layers=9</code> 会在第 0、4、8 层使用自注意力，因此整个有限栈是 3 层自注意力与 6 层交叉注意力，并非总数严格 1:3。</p>
+<p>这不否定论文描述的重复模式，而是说明最后一组可能被层数截断。复现时读取实际 checkpoint 的动作专家配置，不能只根据论文示意图推定总层数、参数量与推理耗时。</p>
+<h3 id="s12-5">12.5 归一化与 mask 的两个实际细节</h3>
+<p><code>min_max_norm</code> 将 q01/q99 映射到 −1/+1，但将最终越界值限制到 [−15,15]，不是 [−1,1]。所以统计区间外的读数仍保留一定幅度信息；你自己改成严格 clip(−1,1) 会改变模型输入分布。</p>
+<p>推理的 <code>infer_action_mask</code> 由有效动作维数构造，并用于噪声与更新。若更换数据接口后 mask 没变，模型可能忽略真正有效的后几维，或把占位维发送到环境。与字段错序一样，这种问题可能完全不触发张量形状错误。</p>
+<h3 id="s12-6">12.6 一般微调脚本，不等于论文后训练协议</h3>
+<p>仓库通用单机脚本设置联合语言/动作损失、H=32、动作权重 5；README 的 LIBERO 后训练示例则使用 <code>loss_type=action</code>、H=10。脚本名包含 finetune，并不能证明它与某张结果表的完整实验设置相同。</p>
+<p class="source-row">核对文件：<a href="#src-backbone">C1</a>、<a href="#src-head">C2</a>、<a href="#src-dit">C3</a>、<a href="#src-model">C4</a>、<a href="#src-policy">C5</a>、<a href="#src-data">C7</a>；所有链接均固定提交。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch13"><h2><span class="num" aria-hidden="true"></span>如果要复现或接自己的机器人</h2>
+<h3 id="s13-1">13.1 从一个受支持任务开始，先验证数据闭环</h3>
+<p>优先使用官方提供的已后训练 checkpoint 与对应 benchmark。先让同一套数据统计量、字段配置、动作维数与环境接口跑通，再改模型或训练新机器人。不要把 base model 下载完成当作已经适配目标机器人。</p>
+<p>模型基础权重与 LIBERO、RoboTwin、RoboCasa 权重在 README 分别列出；页面底部提供官方入口。这里不上传数 GB 的权重，也没有宣称在本地实际运行了机器人评测。</p>
+<h3 id="s13-2">13.2 数据接口的最小理解</h3>
+<pre><code># 教学伪代码：只表达依赖关系，不是官方可直接运行脚本
+cfg = 读取目标数据源的字段约定()
+stats = 读取该数据源的训练统计量()
+图像, 状态, 指令 = 依约定整理当前观测(cfg)
+状态输入 = 逐维缩放并补齐(状态, stats.state)
+候选动作 = 模型直接动作推理(图像, 状态输入, 指令, 有效维掩码)
+物理动作 = 还原尺度并裁出有效维(候选动作, stats.action)
+执行前若干步(物理动作)
+重新获取观测()</code></pre>
+<p>这里的 <code>dataset entry</code> 是 YAML 中的名字，不是 embodiment id，也不是随便填一个机器人型号字符串。它需要对应数据路径、字段与统计量等约定；选择了别的数据源配置，即便模型没有报错也可能使用错误尺度。</p>
+<h3 id="s13-3">13.3 新机器人的数据准备顺序</h3>
+<ol><li>先定义控制语义：关节 / 末端、位置 / 增量、单位、旋转表示、夹爪约定。</li><li>同步保存图像、状态、任务与动作序列，明确采样频率和下一动作与当前状态的对应关系。</li><li>组织为官方支持的 LeRobot v2 数据格式，登记字段并计算训练统计量。</li><li>选择动作 horizon，构造有效维 mask；验证少量轨迹的读入与反归一化。</li><li>从预训练 checkpoint 做适配训练，保留训练外验证数据，评估动作误差与闭环任务表现。</li><li>若要重做 ECoT 联合预训练，再接入结构化标签与一般 VL 数据；这与最小动作后训练不是同一工作量。</li></ol>
+<h3 id="s13-4">13.4 有哪些现象能帮助定位错误</h3>
+<div class="tw"><table><thead><tr><th>现象</th><th>先核对</th><th>为什么</th></tr></thead><tbody>
+<tr><td>输出数值看着平滑，位置总不对。</td><td>单位、状态/动作统计量、字段顺序、绝对/相对控制。</td><td>尺度或语义错，不一定产生数值异常。</td></tr>
+<tr><td>夹爪一直反向或不动。</td><td>夹爪维、开合范围、mask、有效维数。</td><td>补零维被当成真实维，或开合约定相反。</td></tr>
+<tr><td>挑对物体但挂不上 / 关不了门。</td><td>接触演示、末端精度、相机标定、闭环间隔。</td><td>语义理解正确不等于精细控制已学好。</td></tr>
+<tr><td>显存 / 时延与 README 差很多。</td><td>相机数、图像尺寸、序列长度、去噪步数、compile、硬件。</td><td>计算负担与测量条件不一致。</td></tr>
+</tbody></table></div>
+<h3 id="s13-5">13.5 开放问题：如何把本文变成一个研究计划</h3>
+<p>三个有明确验证路径的方向：用等成本关键帧 ECoT 替代全帧标注；做数据/预算匹配的 ECoT 组件消融；把长程语义失败与精细接触失败分开评估。若使用人类第一视角视频，只能先为 VLM 提供语义监督，不能把没有机器人动作标签的视频直接当作真实机器人控制监督。</p>
+<p class="source-row">操作入口：<a href="#src-readme">官方 README</a>、<a href="#src-advanced">高级训练说明</a>。本章排错表与研究建议是本文综合分析，不是新的实测结果。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch14"><h2><span class="num" aria-hidden="true"></span>把容易问住的地方再讲一遍</h2>
+<h3 id="s14-1">14.1 十个自测问题：先回答，再展开</h3>
+<details class="quiz"><summary>① 没生成 ECoT，模型是不是就没推理？</summary><p>不能只凭有没有文字判断内部计算。但本文能明确证明的是：动作路径使用 ECoT 监督训练过的 prompt 特征，不需要逐 token 文本生成。它是否等价于完整符号推理，不是当前实验已经解决的问题。</p></details>
+<details class="quiz"><summary>② 动作专家看不到 ECoT，为什么训练它还有意义？</summary><p>ECoT 损失改变共享 VLM 参数；更新后的参数产生更适合任务的特征。动作分支通过这些特征受益。训练监督与一次前向中的输入依赖要分开。</p></details>
+<details class="quiz"><summary>③ 训练时整段 ECoT 都在输入里，会不会答案泄漏？</summary><p>需要同时保证 VLM 的 prompt 位置不看未来答案，以及动作 cross-attention 不看 ECoT 位置。只遮住后者，却允许未来答案流入 prompt 特征，并不足以阻止泄漏。</p></details>
+<details class="quiz"><summary>④ q01/q99 把状态统一后，跨本体问题解决了吗？</summary><p>只统一了数值尺度。同样的第 1 维仍可能是不同关节或不同控制量。语义对齐是另一层任务，ECoT 的目标就是在高层监督上提供共享结构。</p></details>
+<details class="quiz"><summary>⑤ ZR-0 也是每种机器人一套 MLP 吗？</summary><p>不要从 GR00T 推断。本文核对的 ZR-0 公开代码仅实例化一个槽位，并使用零 cat_ids。新接口仍需配置和适配训练，单槽位不代表通用控制保证。</p></details>
+<details class="quiz"><summary>⑥ FAST 动作 token 和 DiT 动作，是重复做两次控制吗？</summary><p>不是。FAST token 为 VLM 的结构化语言监督提供动作相关信号；连续动作分支通过 flow matching 产生部署输出，direct-action 路径不必先解码 FAST token。</p></details>
+<details class="quiz"><summary>⑦ H=16、N=5，是 80 个动作吗？</summary><p>不是。H 是候选动作块的未来步数，N 是对整块候选动作做数值更新的次数。最终仍得到 H 步动作，环境实际执行的步数由调用方设定。</p></details>
+<details class="quiz"><summary>⑧ 真实机器人平均 76.0，是否 76% 的任务成功？</summary><p>不是。这里使用任务子步骤进度分数，范围 0–100；仿真表的 SR 才是按 episode 成败计算的成功率，两者不能混为同一指标。</p></details>
+<details class="quiz"><summary>⑨ 消融下降 2.1 点，是否 ECoT 净收益就是 2.1？</summary><p>不是。对照跳过了整段预训练，从基础 VLM 和随机动作专家直接后训练。它测到完整预训练方案的收益，没有单独隔离 ECoT。</p></details>
+<details class="quiz"><summary>⑩ 从同一个 base model 适配三个身体，是一个模型同时零样本控制它们吗？</summary><p>不是。论文为各 benchmark 分别后训练，然后在各自环境测试。共同初始化、跨本体迁移、同时多本体部署、未知身体零样本控制，四者需要分别举证。</p></details>
+<h3 id="s14-2">14.2 一分钟复述版</h3>
+<div class="sticky tilt-r"><h4>用自己的话讲 ZR-0</h4><p>它认为不同机器人的低层动作难以直接对齐，但场景理解、任务进度与子目标可以共享。于是，用约 60M 帧语料上的密集 ECoT 和一般 VL 数据监督 VLM，同时训练 DiT 生成连续动作。动作分支只看 prompt 特征，避免依赖 ECoT 文本，所以推理只需一次 VLM 前向和多步动作积分。多环境后训练取得较强结果，但精细接触有弱项，现有消融也没独立分离 ECoT 的贡献。</p></div>
+<h3 id="s14-3">14.3 再次阅读时，把这些词区分开</h3>
+<div class="tw"><table><thead><tr><th>词</th><th>本篇含义</th></tr></thead><tbody><tr><td>VLA / VLM / DiT</td><td>视觉语言动作策略 / 视觉语言模型 / 用于生成的 Transformer 动作专家。</td></tr><tr><td>ECoT / prompt / hidden states</td><td>训练的结构化解释目标 / 当前图像任务输入 / 连续中间表征。</td></tr><tr><td>state / action / velocity field</td><td>身体当前读数 / 控制接口目标 / 生成路径上更新动作的导数。</td></tr><tr><td>horizon / denoise steps / execution steps</td><td>预测多少步 / 生成迭代多少次 / 环境实际先执行多少步。</td></tr><tr><td>annotation coverage / accuracy / SR</td><td>有标签的覆盖比例 / 标签是否正确 / 策略任务成功比例。</td></tr></tbody></table></div>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch15"><h2><span class="num" aria-hidden="true"></span>附录：把完整实验数表留在手边</h2>
+<p>以下三张表从 arXiv v2 的 HTML 数值转录，保留任务与模型对应关系；排版适合横向滚动。论文 Table 1、4、5 已在正文展示，这里补充 Table 2、3、6，便于检查平均数背后的任务差异。</p>
+<h3 id="s15-1">15.1 RoboCasa GR-1：完整 24 任务（Table 2）</h3>
+<div class="tw"><table class="paper-table">
+<thead>
+<tr>
+<th rowspan="2"><span>Task</span></th>
+<th><span>GR00T</span></th>
+<th rowspan="2"><span>Qwen3PI </span></th>
+<th><span>VP</span></th>
+<th><span>ABot</span></th>
+<th><span>JoyAI</span></th>
+<th rowspan="2"><span>ZR-0</span></th></tr>
+<tr>
+<th><span>-N1.6 </span></th>
+<th><span>-VLA </span></th>
+<th><span>-M0 </span></th>
+<th><span>-RA </span></th></tr>
+</thead>
+<tbody>
+<tr>
+<th><span>BottleToCabinetClose</span></th>
+<td><span>51.5</span></td>
+<td><span>26.0</span></td>
+<td><span>54.0</span></td>
+<td><span>86.0</span></td>
+<td><span>84.0</span></td>
+<td><span>39.0</span></td></tr>
+<tr>
+<th><span>CanToDrawerClose</span></th>
+<td><span>13.0</span></td>
+<td><span>62.0</span></td>
+<td><span>72.0</span></td>
+<td><span>74.0</span></td>
+<td><span>90.0</span></td>
+<td><span>47.0</span></td></tr>
+<tr>
+<th><span>CupToDrawerClose</span></th>
+<td><span>8.5</span></td>
+<td><span>42.0</span></td>
+<td><span>44.0</span></td>
+<td><span>48.0</span></td>
+<td><span>48.0</span></td>
+<td><span>20.0</span></td></tr>
+<tr>
+<th><span>MilkToMicrowaveClose</span></th>
+<td><span>14.0</span></td>
+<td><span>50.0</span></td>
+<td><span>74.0</span></td>
+<td><span>46.0</span></td>
+<td><span>84.0</span></td>
+<td><span>45.0</span></td></tr>
+<tr>
+<th><span>PotatoToMicrowaveClose</span></th>
+<td><span>41.5</span></td>
+<td><span>42.0</span></td>
+<td><span>34.0</span></td>
+<td><span>50.0</span></td>
+<td><span>70.0</span></td>
+<td><span>59.0</span></td></tr>
+<tr>
+<th><span>WineToCabinetClose</span></th>
+<td><span>16.5</span></td>
+<td><span>32.0</span></td>
+<td><span>48.0</span></td>
+<td><span>66.0</span></td>
+<td><span>54.0</span></td>
+<td><span>40.0</span></td></tr>
+<tr>
+<th><span>CuttingboardToBasket</span></th>
+<td><span>58.0</span></td>
+<td><span>40.0</span></td>
+<td><span>66.0</span></td>
+<td><span>70.0</span></td>
+<td><span>88.0</span></td>
+<td><span>82.0</span></td></tr>
+<tr>
+<th><span>CuttingboardToCardboardbox</span></th>
+<td><span>46.5</span></td>
+<td><span>46.0</span></td>
+<td><span>54.0</span></td>
+<td><span>58.0</span></td>
+<td><span>46.0</span></td>
+<td><span>79.0</span></td></tr>
+<tr>
+<th><span>CuttingboardToPan</span></th>
+<td><span>68.5</span></td>
+<td><span>60.0</span></td>
+<td><span>74.0</span></td>
+<td><span>76.0</span></td>
+<td><span>92.0</span></td>
+<td><span>92.0</span></td></tr>
+<tr>
+<th><span>CuttingboardToPot</span></th>
+<td><span>65.0</span></td>
+<td><span>40.0</span></td>
+<td><span>54.0</span></td>
+<td><span>66.0</span></td>
+<td><span>80.0</span></td>
+<td><span>85.0</span></td></tr>
+<tr>
+<th><span>CuttingboardToTieredbasket</span></th>
+<td><span>46.5</span></td>
+<td><span>44.0</span></td>
+<td><span>56.0</span></td>
+<td><span>38.0</span></td>
+<td><span>36.0</span></td>
+<td><span>80.0</span></td></tr>
+<tr>
+<th><span>PlacematToBasket</span></th>
+<td><span>58.5</span></td>
+<td><span>44.0</span></td>
+<td><span>48.0</span></td>
+<td><span>52.0</span></td>
+<td><span>76.0</span></td>
+<td><span>78.0</span></td></tr>
+<tr>
+<th><span>PlacematToBowl</span></th>
+<td><span>57.5</span></td>
+<td><span>52.0</span></td>
+<td><span>74.0</span></td>
+<td><span>66.0</span></td>
+<td><span>52.0</span></td>
+<td><span>87.0</span></td></tr>
+<tr>
+<th><span>PlacematToPlate</span></th>
+<td><span>63.0</span></td>
+<td><span>50.0</span></td>
+<td><span>70.0</span></td>
+<td><span>60.0</span></td>
+<td><span>38.0</span></td>
+<td><span>88.0</span></td></tr>
+<tr>
+<th><span>PlacematToTieredshelf</span></th>
+<td><span>28.5</span></td>
+<td><span>28.0</span></td>
+<td><span>26.0</span></td>
+<td><span>26.0</span></td>
+<td><span>14.0</span></td>
+<td><span>46.0</span></td></tr>
+<tr>
+<th><span>PlateToBowl</span></th>
+<td><span>57.0</span></td>
+<td><span>52.0</span></td>
+<td><span>52.0</span></td>
+<td><span>54.0</span></td>
+<td><span>48.0</span></td>
+<td><span>82.0</span></td></tr>
+<tr>
+<th><span>PlateToCardboardbox</span></th>
+<td><span>43.5</span></td>
+<td><span>40.0</span></td>
+<td><span>44.0</span></td>
+<td><span>48.0</span></td>
+<td><span>38.0</span></td>
+<td><span>81.0</span></td></tr>
+<tr>
+<th><span>PlateToPan</span></th>
+<td><span>51.0</span></td>
+<td><span>36.0</span></td>
+<td><span>56.0</span></td>
+<td><span>66.0</span></td>
+<td><span>46.0</span></td>
+<td><span>89.0</span></td></tr>
+<tr>
+<th><span>PlateToPlate</span></th>
+<td><span>78.7</span></td>
+<td><span>48.0</span></td>
+<td><span>62.0</span></td>
+<td><span>64.0</span></td>
+<td><span>88.0</span></td>
+<td><span>85.0</span></td></tr>
+<tr>
+<th><span>TrayToCardboardbox</span></th>
+<td><span>51.5</span></td>
+<td><span>34.0</span></td>
+<td><span>44.0</span></td>
+<td><span>54.0</span></td>
+<td><span>82.0</span></td>
+<td><span>81.0</span></td></tr>
+<tr>
+<th><span>TrayToPlate</span></th>
+<td><span>71.0</span></td>
+<td><span>64.0</span></td>
+<td><span>66.0</span></td>
+<td><span>68.0</span></td>
+<td><span>88.0</span></td>
+<td><span>81.0</span></td></tr>
+<tr>
+<th><span>TrayToPot</span></th>
+<td><span>64.5</span></td>
+<td><span>44.0</span></td>
+<td><span>38.0</span></td>
+<td><span>64.0</span></td>
+<td><span>88.0</span></td>
+<td><span>74.0</span></td></tr>
+<tr>
+<th><span>TrayToTieredbasket</span></th>
+<td><span>57.0</span></td>
+<td><span>50.0</span></td>
+<td><span>58.0</span></td>
+<td><span>60.0</span></td>
+<td><span>62.0</span></td>
+<td><span>74.0</span></td></tr>
+<tr>
+<th><span>TrayToTieredshelf</span></th>
+<td><span>31.5</span></td>
+<td><span>28.0</span></td>
+<td><span>24.0</span></td>
+<td><span>38.0</span></td>
+<td><span>24.0</span></td>
+<td><span>50.0</span></td></tr>
+<tr>
+<th><span>Average</span></th>
+<td><span>47.6</span></td>
+<td><span>43.9</span></td>
+<td><span>53.8</span></td>
+<td><span>58.3</span></td>
+<td><span>63.2</span></td>
+<td><span>69.3</span></td></tr>
+</tbody>
+</table></div>
+<h3 id="s15-2">15.2 RoboTwin 正文节选（Table 3，Clean / Rand.）</h3>
+<div class="tw"><table class="paper-table">
+<tbody>
+<tr>
+<th><span>Task</span></th>
+<td colspan="2">π₀<span> </span></td>
+<td colspan="2">π₀.₅<span> </span></td>
+<td colspan="2"><span>X-VLA </span></td>
+<td colspan="2"><span>Motus </span></td>
+<td colspan="2"><span>LB-VLA </span></td>
+<td colspan="2"><span>ZR-0</span></td></tr>
+<tr>
+<th></th>
+<td><span>Clean</span></td>
+<td><span>Rand.</span></td>
+<td><span>Clean</span></td>
+<td><span>Rand.</span></td>
+<td><span>Clean</span></td>
+<td><span>Rand.</span></td>
+<td><span>Clean</span></td>
+<td><span>Rand.</span></td>
+<td><span>Clean</span></td>
+<td><span>Rand.</span></td>
+<td><span>Clean</span></td>
+<td><span>Rand.</span></td></tr>
+<tr>
+<th><span>AdjustBottle</span></th>
+<td><span>99</span></td>
+<td><span>95</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td>
+<td><span>89</span></td>
+<td><span>93</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td></tr>
+<tr>
+<th><span>BeatBlockHammer</span></th>
+<td><span>79</span></td>
+<td><span>84</span></td>
+<td><span>96</span></td>
+<td><span>93</span></td>
+<td><span>92</span></td>
+<td><span>88</span></td>
+<td><span>95</span></td>
+<td><span>88</span></td>
+<td><span>92</span></td>
+<td><span>89</span></td>
+<td><span>85</span></td>
+<td><span>88</span></td></tr>
+<tr>
+<th><span>BlocksRankingRGB</span></th>
+<td><span>80</span></td>
+<td><span>63</span></td>
+<td><span>92</span></td>
+<td><span>85</span></td>
+<td><span>83</span></td>
+<td><span>83</span></td>
+<td><span>99</span></td>
+<td><span>97</span></td>
+<td><span>92</span></td>
+<td><span>91</span></td>
+<td><span>92</span></td>
+<td><span>91</span></td></tr>
+<tr>
+<th><span>BlocksRankingSize</span></th>
+<td><span>14</span></td>
+<td><span>5</span></td>
+<td><span>49</span></td>
+<td><span>26</span></td>
+<td><span>67</span></td>
+<td><span>74</span></td>
+<td><span>75</span></td>
+<td><span>63</span></td>
+<td><span>76</span></td>
+<td><span>70</span></td>
+<td><span>70</span></td>
+<td><span>81</span></td></tr>
+<tr>
+<th><span>ClickAlarmclock</span></th>
+<td><span>77</span></td>
+<td><span>68</span></td>
+<td><span>98</span></td>
+<td><span>89</span></td>
+<td><span>99</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>97</span></td>
+<td><span>43</span></td>
+<td><span>96</span></td>
+<td><span>82</span></td></tr>
+<tr>
+<th><span>ClickBell</span></th>
+<td><span>71</span></td>
+<td><span>48</span></td>
+<td><span>99</span></td>
+<td><span>66</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>43</span></td>
+<td><span>36</span></td>
+<td><span>90</span></td>
+<td><span>83</span></td></tr>
+<tr>
+<th><span>DumpBinBigbin</span></th>
+<td><span>88</span></td>
+<td><span>83</span></td>
+<td><span>92</span></td>
+<td><span>97</span></td>
+<td><span>79</span></td>
+<td><span>77</span></td>
+<td><span>95</span></td>
+<td><span>91</span></td>
+<td><span>97</span></td>
+<td><span>97</span></td>
+<td><span>94</span></td>
+<td><span>93</span></td></tr>
+<tr>
+<th><span>GrabRoller</span></th>
+<td><span>98</span></td>
+<td><span>94</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td></tr>
+<tr>
+<th><span>HandoverBlock</span></th>
+<td><span>47</span></td>
+<td><span>31</span></td>
+<td><span>66</span></td>
+<td><span>57</span></td>
+<td><span>73</span></td>
+<td><span>37</span></td>
+<td><span>86</span></td>
+<td><span>73</span></td>
+<td><span>99</span></td>
+<td><span>93</span></td>
+<td><span>93</span></td>
+<td><span>87</span></td></tr>
+<tr>
+<th><span>HandoverMic</span></th>
+<td><span>97</span></td>
+<td><span>97</span></td>
+<td><span>98</span></td>
+<td><span>97</span></td>
+<td><span>0</span></td>
+<td><span>0</span></td>
+<td><span>78</span></td>
+<td><span>63</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td></tr>
+<tr>
+<th colspan="13">⋮</th></tr>
+<tr>
+<th><span>StackBlocksThree</span></th>
+<td><span>72</span></td>
+<td><span>52</span></td>
+<td><span>91</span></td>
+<td><span>76</span></td>
+<td><span>6</span></td>
+<td><span>10</span></td>
+<td><span>91</span></td>
+<td><span>95</span></td>
+<td><span>60</span></td>
+<td><span>62</span></td>
+<td><span>86</span></td>
+<td><span>88</span></td></tr>
+<tr>
+<th><span>StackBlocksTwo</span></th>
+<td><span>93</span></td>
+<td><span>79</span></td>
+<td><span>97</span></td>
+<td><span>100</span></td>
+<td><span>92</span></td>
+<td><span>87</span></td>
+<td><span>100</span></td>
+<td><span>98</span></td>
+<td><span>95</span></td>
+<td><span>93</span></td>
+<td><span>95</span></td>
+<td><span>91</span></td></tr>
+<tr>
+<th><span>StackBowlsThree</span></th>
+<td><span>77</span></td>
+<td><span>75</span></td>
+<td><span>77</span></td>
+<td><span>71</span></td>
+<td><span>76</span></td>
+<td><span>86</span></td>
+<td><span>79</span></td>
+<td><span>87</span></td>
+<td><span>80</span></td>
+<td><span>81</span></td>
+<td><span>79</span></td>
+<td><span>88</span></td></tr>
+<tr>
+<th><span>StackBowlsTwo</span></th>
+<td><span>94</span></td>
+<td><span>95</span></td>
+<td><span>95</span></td>
+<td><span>96</span></td>
+<td><span>96</span></td>
+<td><span>93</span></td>
+<td><span>98</span></td>
+<td><span>98</span></td>
+<td><span>95</span></td>
+<td><span>93</span></td>
+<td><span>94</span></td>
+<td><span>92</span></td></tr>
+<tr>
+<th><span>StampSeal</span></th>
+<td><span>46</span></td>
+<td><span>33</span></td>
+<td><span>79</span></td>
+<td><span>55</span></td>
+<td><span>76</span></td>
+<td><span>82</span></td>
+<td><span>93</span></td>
+<td><span>92</span></td>
+<td><span>90</span></td>
+<td><span>90</span></td>
+<td><span>92</span></td>
+<td><span>92</span></td></tr>
+<tr>
+<th><span>TurnSwitch</span></th>
+<td><span>41</span></td>
+<td><span>42</span></td>
+<td><span>62</span></td>
+<td><span>54</span></td>
+<td><span>40</span></td>
+<td><span>61</span></td>
+<td><span>84</span></td>
+<td><span>78</span></td>
+<td><span>71</span></td>
+<td><span>76</span></td>
+<td><span>83</span></td>
+<td><span>78</span></td></tr>
+<tr>
+<th><span>Average</span></th>
+<td><span>65.92</span></td>
+<td><span>58.40</span></td>
+<td><span>82.74</span></td>
+<td><span>76.76</span></td>
+<td><span>72.80</span></td>
+<td><span>72.84</span></td>
+<td><span>88.66</span></td>
+<td><span>87.02</span></td>
+<td><span>88.56</span></td>
+<td><span>86.68</span></td>
+<td><span>88.70</span></td>
+<td><span>87.98</span></td></tr>
+</tbody>
+</table></div>
+<h3 id="s15-3">15.3 RoboTwin 附录完整 50 任务（Table 6）</h3>
+<p>原论文附录表头使用 Easy / Hard，正文使用 Clean / Randomized；此处保留原表命名，不自行改成另一组实验。两张表数值可逐任务对照，解释时沿正文的 Clean / Randomized 口径。</p>
+<div class="tw"><table class="paper-table">
+<tbody>
+<tr>
+<td><span>Task</span></td>
+<td colspan="2">π₀<span> </span></td>
+<td colspan="2">π₀.₅<span> </span></td>
+<td colspan="2"><span>X-VLA </span></td>
+<td colspan="2"><span>Motus </span></td>
+<td colspan="2"><span>LingBot-VLA </span></td>
+<td colspan="2"><span>ZR-0</span></td></tr>
+<tr>
+<td></td>
+<td><span>Easy</span></td>
+<td><span>Hard</span></td>
+<td><span>Easy</span></td>
+<td><span>Hard</span></td>
+<td><span>Easy</span></td>
+<td><span>Hard</span></td>
+<td><span>Easy</span></td>
+<td><span>Hard</span></td>
+<td><span>Easy</span></td>
+<td><span>Hard</span></td>
+<td><span>Easy</span></td>
+<td><span>Hard</span></td></tr>
+<tr>
+<td><span>AdjustBottle</span></td>
+<td><span>99</span></td>
+<td><span>95</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td>
+<td><span>89</span></td>
+<td><span>93</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td></tr>
+<tr>
+<td><span>BeatBlockHammer</span></td>
+<td><span>79</span></td>
+<td><span>84</span></td>
+<td><span>96</span></td>
+<td><span>93</span></td>
+<td><span>92</span></td>
+<td><span>88</span></td>
+<td><span>95</span></td>
+<td><span>88</span></td>
+<td><span>92</span></td>
+<td><span>89</span></td>
+<td><span>85</span></td>
+<td><span>88</span></td></tr>
+<tr>
+<td><span>BlocksRankingRGB</span></td>
+<td><span>80</span></td>
+<td><span>63</span></td>
+<td><span>92</span></td>
+<td><span>85</span></td>
+<td><span>83</span></td>
+<td><span>83</span></td>
+<td><span>99</span></td>
+<td><span>97</span></td>
+<td><span>92</span></td>
+<td><span>91</span></td>
+<td><span>92</span></td>
+<td><span>91</span></td></tr>
+<tr>
+<td><span>BlocksRankingSize</span></td>
+<td><span>14</span></td>
+<td><span>5</span></td>
+<td><span>49</span></td>
+<td><span>26</span></td>
+<td><span>67</span></td>
+<td><span>74</span></td>
+<td><span>75</span></td>
+<td><span>63</span></td>
+<td><span>76</span></td>
+<td><span>70</span></td>
+<td><span>70</span></td>
+<td><span>81</span></td></tr>
+<tr>
+<td><span>ClickAlarmclock</span></td>
+<td><span>77</span></td>
+<td><span>68</span></td>
+<td><span>98</span></td>
+<td><span>89</span></td>
+<td><span>99</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>97</span></td>
+<td><span>43</span></td>
+<td><span>96</span></td>
+<td><span>82</span></td></tr>
+<tr>
+<td><span>ClickBell</span></td>
+<td><span>71</span></td>
+<td><span>48</span></td>
+<td><span>99</span></td>
+<td><span>66</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>43</span></td>
+<td><span>36</span></td>
+<td><span>90</span></td>
+<td><span>83</span></td></tr>
+<tr>
+<td><span>DumpBinBigbin</span></td>
+<td><span>88</span></td>
+<td><span>83</span></td>
+<td><span>92</span></td>
+<td><span>97</span></td>
+<td><span>79</span></td>
+<td><span>77</span></td>
+<td><span>95</span></td>
+<td><span>91</span></td>
+<td><span>97</span></td>
+<td><span>97</span></td>
+<td><span>94</span></td>
+<td><span>93</span></td></tr>
+<tr>
+<td><span>GrabRoller</span></td>
+<td><span>98</span></td>
+<td><span>94</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td></tr>
+<tr>
+<td><span>HandoverBlock</span></td>
+<td><span>47</span></td>
+<td><span>31</span></td>
+<td><span>66</span></td>
+<td><span>57</span></td>
+<td><span>73</span></td>
+<td><span>37</span></td>
+<td><span>86</span></td>
+<td><span>73</span></td>
+<td><span>99</span></td>
+<td><span>93</span></td>
+<td><span>93</span></td>
+<td><span>87</span></td></tr>
+<tr>
+<td><span>HandoverMic</span></td>
+<td><span>97</span></td>
+<td><span>97</span></td>
+<td><span>98</span></td>
+<td><span>97</span></td>
+<td><span>0</span></td>
+<td><span>0</span></td>
+<td><span>78</span></td>
+<td><span>63</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td></tr>
+<tr>
+<td><span>HangingMug</span></td>
+<td><span>14</span></td>
+<td><span>11</span></td>
+<td><span>18</span></td>
+<td><span>17</span></td>
+<td><span>23</span></td>
+<td><span>27</span></td>
+<td><span>38</span></td>
+<td><span>38</span></td>
+<td><span>31</span></td>
+<td><span>28</span></td>
+<td><span>35</span></td>
+<td><span>33</span></td></tr>
+<tr>
+<td><span>LiftPot</span></td>
+<td><span>80</span></td>
+<td><span>72</span></td>
+<td><span>96</span></td>
+<td><span>85</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>96</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td>
+<td><span>96</span></td>
+<td><span>98</span></td></tr>
+<tr>
+<td><span>MoveCanPot</span></td>
+<td><span>68</span></td>
+<td><span>48</span></td>
+<td><span>51</span></td>
+<td><span>55</span></td>
+<td><span>89</span></td>
+<td><span>86</span></td>
+<td><span>34</span></td>
+<td><span>74</span></td>
+<td><span>97</span></td>
+<td><span>87</span></td>
+<td><span>85</span></td>
+<td><span>81</span></td></tr>
+<tr>
+<td><span>MovePillbottlePad</span></td>
+<td><span>67</span></td>
+<td><span>46</span></td>
+<td><span>84</span></td>
+<td><span>61</span></td>
+<td><span>73</span></td>
+<td><span>71</span></td>
+<td><span>93</span></td>
+<td><span>96</span></td>
+<td><span>98</span></td>
+<td><span>99</span></td>
+<td><span>98</span></td>
+<td><span>99</span></td></tr>
+<tr>
+<td><span>MovePlayingcardAway</span></td>
+<td><span>74</span></td>
+<td><span>65</span></td>
+<td><span>96</span></td>
+<td><span>84</span></td>
+<td><span>93</span></td>
+<td><span>98</span></td>
+<td><span>100</span></td>
+<td><span>96</span></td>
+<td><span>99</span></td>
+<td><span>95</span></td>
+<td><span>99</span></td>
+<td><span>94</span></td></tr>
+<tr>
+<td><span>MoveStaplerPad</span></td>
+<td><span>41</span></td>
+<td><span>24</span></td>
+<td><span>56</span></td>
+<td><span>42</span></td>
+<td><span>78</span></td>
+<td><span>73</span></td>
+<td><span>83</span></td>
+<td><span>85</span></td>
+<td><span>93</span></td>
+<td><span>96</span></td>
+<td><span>85</span></td>
+<td><span>92</span></td></tr>
+<tr>
+<td><span>OpenLaptop</span></td>
+<td><span>71</span></td>
+<td><span>81</span></td>
+<td><span>90</span></td>
+<td><span>96</span></td>
+<td><span>93</span></td>
+<td><span>100</span></td>
+<td><span>95</span></td>
+<td><span>91</span></td>
+<td><span>96</span></td>
+<td><span>100</span></td>
+<td><span>96</span></td>
+<td><span>99</span></td></tr>
+<tr>
+<td><span>OpenMicrowave</span></td>
+<td><span>4</span></td>
+<td><span>32</span></td>
+<td><span>34</span></td>
+<td><span>77</span></td>
+<td><span>79</span></td>
+<td><span>71</span></td>
+<td><span>95</span></td>
+<td><span>91</span></td>
+<td><span>97</span></td>
+<td><span>99</span></td>
+<td><span>94</span></td>
+<td><span>92</span></td></tr>
+<tr>
+<td><span>PickDiverseBottles</span></td>
+<td><span>69</span></td>
+<td><span>31</span></td>
+<td><span>81</span></td>
+<td><span>71</span></td>
+<td><span>58</span></td>
+<td><span>36</span></td>
+<td><span>90</span></td>
+<td><span>91</span></td>
+<td><span>85</span></td>
+<td><span>90</span></td>
+<td><span>90</span></td>
+<td><span>88</span></td></tr>
+<tr>
+<td><span>PickDualBottles</span></td>
+<td><span>59</span></td>
+<td><span>37</span></td>
+<td><span>93</span></td>
+<td><span>63</span></td>
+<td><span>47</span></td>
+<td><span>36</span></td>
+<td><span>96</span></td>
+<td><span>90</span></td>
+<td><span>95</span></td>
+<td><span>93</span></td>
+<td><span>97</span></td>
+<td><span>98</span></td></tr>
+<tr>
+<td><span>PlaceA2BLeft</span></td>
+<td><span>43</span></td>
+<td><span>47</span></td>
+<td><span>87</span></td>
+<td><span>82</span></td>
+<td><span>48</span></td>
+<td><span>49</span></td>
+<td><span>82</span></td>
+<td><span>79</span></td>
+<td><span>99</span></td>
+<td><span>96</span></td>
+<td><span>83</span></td>
+<td><span>80</span></td></tr>
+<tr>
+<td><span>PlaceA2BRight</span></td>
+<td><span>39</span></td>
+<td><span>34</span></td>
+<td><span>87</span></td>
+<td><span>84</span></td>
+<td><span>36</span></td>
+<td><span>36</span></td>
+<td><span>90</span></td>
+<td><span>87</span></td>
+<td><span>97</span></td>
+<td><span>92</span></td>
+<td><span>86</span></td>
+<td><span>87</span></td></tr>
+<tr>
+<td><span>PlaceBreadBasket</span></td>
+<td><span>62</span></td>
+<td><span>46</span></td>
+<td><span>77</span></td>
+<td><span>64</span></td>
+<td><span>81</span></td>
+<td><span>71</span></td>
+<td><span>91</span></td>
+<td><span>94</span></td>
+<td><span>88</span></td>
+<td><span>91</span></td>
+<td><span>90</span></td>
+<td><span>93</span></td></tr>
+<tr>
+<td><span>PlaceBreadSkillet</span></td>
+<td><span>66</span></td>
+<td><span>49</span></td>
+<td><span>85</span></td>
+<td><span>66</span></td>
+<td><span>77</span></td>
+<td><span>67</span></td>
+<td><span>86</span></td>
+<td><span>83</span></td>
+<td><span>92</span></td>
+<td><span>89</span></td>
+<td><span>92</span></td>
+<td><span>85</span></td></tr>
+<tr>
+<td><span>PlaceBurgerFries</span></td>
+<td><span>81</span></td>
+<td><span>76</span></td>
+<td><span>94</span></td>
+<td><span>87</span></td>
+<td><span>94</span></td>
+<td><span>94</span></td>
+<td><span>98</span></td>
+<td><span>98</span></td>
+<td><span>99</span></td>
+<td><span>93</span></td>
+<td><span>98</span></td>
+<td><span>98</span></td></tr>
+<tr>
+<td><span>PlaceCanBasket</span></td>
+<td><span>55</span></td>
+<td><span>46</span></td>
+<td><span>62</span></td>
+<td><span>62</span></td>
+<td><span>49</span></td>
+<td><span>52</span></td>
+<td><span>81</span></td>
+<td><span>76</span></td>
+<td><span>71</span></td>
+<td><span>73</span></td>
+<td><span>66</span></td>
+<td><span>62</span></td></tr>
+<tr>
+<td><span>PlaceCansPlasticbox</span></td>
+<td><span>63</span></td>
+<td><span>45</span></td>
+<td><span>94</span></td>
+<td><span>84</span></td>
+<td><span>97</span></td>
+<td><span>98</span></td>
+<td><span>98</span></td>
+<td><span>94</span></td>
+<td><span>100</span></td>
+<td><span>98</span></td>
+<td><span>86</span></td>
+<td><span>85</span></td></tr>
+<tr>
+<td><span>PlaceContainerPlate</span></td>
+<td><span>97</span></td>
+<td><span>92</span></td>
+<td><span>99</span></td>
+<td><span>95</span></td>
+<td><span>97</span></td>
+<td><span>95</span></td>
+<td><span>98</span></td>
+<td><span>99</span></td>
+<td><span>96</span></td>
+<td><span>99</span></td>
+<td><span>99</span></td>
+<td><span>98</span></td></tr>
+<tr>
+<td><span>PlaceDualShoes</span></td>
+<td><span>59</span></td>
+<td><span>51</span></td>
+<td><span>75</span></td>
+<td><span>75</span></td>
+<td><span>79</span></td>
+<td><span>88</span></td>
+<td><span>93</span></td>
+<td><span>87</span></td>
+<td><span>90</span></td>
+<td><span>97</span></td>
+<td><span>90</span></td>
+<td><span>95</span></td></tr>
+<tr>
+<td><span>PlaceEmptyCup</span></td>
+<td><span>91</span></td>
+<td><span>85</span></td>
+<td><span>100</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>98</span></td>
+<td><span>99</span></td>
+<td><span>98</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>97</span></td>
+<td><span>97</span></td></tr>
+<tr>
+<td><span>PlaceFan</span></td>
+<td><span>66</span></td>
+<td><span>71</span></td>
+<td><span>87</span></td>
+<td><span>85</span></td>
+<td><span>80</span></td>
+<td><span>75</span></td>
+<td><span>91</span></td>
+<td><span>87</span></td>
+<td><span>91</span></td>
+<td><span>92</span></td>
+<td><span>85</span></td>
+<td><span>78</span></td></tr>
+<tr>
+<td><span>PlaceMousePad</span></td>
+<td><span>20</span></td>
+<td><span>20</span></td>
+<td><span>60</span></td>
+<td><span>39</span></td>
+<td><span>70</span></td>
+<td><span>70</span></td>
+<td><span>66</span></td>
+<td><span>68</span></td>
+<td><span>89</span></td>
+<td><span>82</span></td>
+<td><span>85</span></td>
+<td><span>83</span></td></tr>
+<tr>
+<td><span>PlaceObjectBasket</span></td>
+<td><span>67</span></td>
+<td><span>70</span></td>
+<td><span>80</span></td>
+<td><span>76</span></td>
+<td><span>44</span></td>
+<td><span>39</span></td>
+<td><span>81</span></td>
+<td><span>87</span></td>
+<td><span>90</span></td>
+<td><span>88</span></td>
+<td><span>75</span></td>
+<td><span>77</span></td></tr>
+<tr>
+<td><span>PlaceObjectScale</span></td>
+<td><span>57</span></td>
+<td><span>52</span></td>
+<td><span>86</span></td>
+<td><span>80</span></td>
+<td><span>52</span></td>
+<td><span>74</span></td>
+<td><span>88</span></td>
+<td><span>85</span></td>
+<td><span>90</span></td>
+<td><span>87</span></td>
+<td><span>88</span></td>
+<td><span>89</span></td></tr>
+<tr>
+<td><span>PlaceObjectStand</span></td>
+<td><span>82</span></td>
+<td><span>68</span></td>
+<td><span>91</span></td>
+<td><span>85</span></td>
+<td><span>86</span></td>
+<td><span>88</span></td>
+<td><span>98</span></td>
+<td><span>97</span></td>
+<td><span>95</span></td>
+<td><span>93</span></td>
+<td><span>90</span></td>
+<td><span>91</span></td></tr>
+<tr>
+<td><span>PlacePhoneStand</span></td>
+<td><span>49</span></td>
+<td><span>53</span></td>
+<td><span>81</span></td>
+<td><span>81</span></td>
+<td><span>88</span></td>
+<td><span>87</span></td>
+<td><span>87</span></td>
+<td><span>86</span></td>
+<td><span>95</span></td>
+<td><span>95</span></td>
+<td><span>85</span></td>
+<td><span>81</span></td></tr>
+<tr>
+<td><span>PlaceShoe</span></td>
+<td><span>76</span></td>
+<td><span>76</span></td>
+<td><span>92</span></td>
+<td><span>93</span></td>
+<td><span>96</span></td>
+<td><span>95</span></td>
+<td><span>99</span></td>
+<td><span>97</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>98</span></td>
+<td><span>97</span></td></tr>
+<tr>
+<td><span>PressStapler</span></td>
+<td><span>44</span></td>
+<td><span>37</span></td>
+<td><span>87</span></td>
+<td><span>83</span></td>
+<td><span>92</span></td>
+<td><span>98</span></td>
+<td><span>93</span></td>
+<td><span>98</span></td>
+<td><span>87</span></td>
+<td><span>81</span></td>
+<td><span>90</span></td>
+<td><span>92</span></td></tr>
+<tr>
+<td><span>PutBottlesDustbin</span></td>
+<td><span>65</span></td>
+<td><span>56</span></td>
+<td><span>84</span></td>
+<td><span>79</span></td>
+<td><span>74</span></td>
+<td><span>77</span></td>
+<td><span>81</span></td>
+<td><span>79</span></td>
+<td><span>95</span></td>
+<td><span>97</span></td>
+<td><span>82</span></td>
+<td><span>79</span></td></tr>
+<tr>
+<td><span>PutObjectCabinet</span></td>
+<td><span>73</span></td>
+<td><span>60</span></td>
+<td><span>80</span></td>
+<td><span>79</span></td>
+<td><span>46</span></td>
+<td><span>48</span></td>
+<td><span>88</span></td>
+<td><span>71</span></td>
+<td><span>87</span></td>
+<td><span>86</span></td>
+<td><span>82</span></td>
+<td><span>76</span></td></tr>
+<tr>
+<td><span>RotateQRcode</span></td>
+<td><span>74</span></td>
+<td><span>70</span></td>
+<td><span>89</span></td>
+<td><span>87</span></td>
+<td><span>34</span></td>
+<td><span>33</span></td>
+<td><span>89</span></td>
+<td><span>73</span></td>
+<td><span>83</span></td>
+<td><span>82</span></td>
+<td><span>78</span></td>
+<td><span>85</span></td></tr>
+<tr>
+<td><span>ScanObject</span></td>
+<td><span>55</span></td>
+<td><span>42</span></td>
+<td><span>72</span></td>
+<td><span>65</span></td>
+<td><span>14</span></td>
+<td><span>36</span></td>
+<td><span>67</span></td>
+<td><span>66</span></td>
+<td><span>98</span></td>
+<td><span>96</span></td>
+<td><span>86</span></td>
+<td><span>85</span></td></tr>
+<tr>
+<td><span>ShakeBottleHorizontally</span></td>
+<td><span>98</span></td>
+<td><span>92</span></td>
+<td><span>99</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>98</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td></tr>
+<tr>
+<td><span>ShakeBottle</span></td>
+<td><span>94</span></td>
+<td><span>91</span></td>
+<td><span>99</span></td>
+<td><span>97</span></td>
+<td><span>99</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>97</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td>
+<td><span>100</span></td></tr>
+<tr>
+<td><span>StackBlocksThree</span></td>
+<td><span>72</span></td>
+<td><span>52</span></td>
+<td><span>91</span></td>
+<td><span>76</span></td>
+<td><span>6</span></td>
+<td><span>10</span></td>
+<td><span>91</span></td>
+<td><span>95</span></td>
+<td><span>60</span></td>
+<td><span>62</span></td>
+<td><span>86</span></td>
+<td><span>88</span></td></tr>
+<tr>
+<td><span>StackBlocksTwo</span></td>
+<td><span>93</span></td>
+<td><span>79</span></td>
+<td><span>97</span></td>
+<td><span>100</span></td>
+<td><span>92</span></td>
+<td><span>87</span></td>
+<td><span>100</span></td>
+<td><span>98</span></td>
+<td><span>95</span></td>
+<td><span>93</span></td>
+<td><span>95</span></td>
+<td><span>91</span></td></tr>
+<tr>
+<td><span>StackBowlsThree</span></td>
+<td><span>77</span></td>
+<td><span>75</span></td>
+<td><span>77</span></td>
+<td><span>71</span></td>
+<td><span>76</span></td>
+<td><span>86</span></td>
+<td><span>79</span></td>
+<td><span>87</span></td>
+<td><span>80</span></td>
+<td><span>81</span></td>
+<td><span>79</span></td>
+<td><span>88</span></td></tr>
+<tr>
+<td><span>StackBowlsTwo</span></td>
+<td><span>94</span></td>
+<td><span>95</span></td>
+<td><span>95</span></td>
+<td><span>96</span></td>
+<td><span>96</span></td>
+<td><span>93</span></td>
+<td><span>98</span></td>
+<td><span>98</span></td>
+<td><span>95</span></td>
+<td><span>93</span></td>
+<td><span>94</span></td>
+<td><span>92</span></td></tr>
+<tr>
+<td><span>StampSeal</span></td>
+<td><span>46</span></td>
+<td><span>33</span></td>
+<td><span>79</span></td>
+<td><span>55</span></td>
+<td><span>76</span></td>
+<td><span>82</span></td>
+<td><span>93</span></td>
+<td><span>92</span></td>
+<td><span>90</span></td>
+<td><span>90</span></td>
+<td><span>92</span></td>
+<td><span>92</span></td></tr>
+<tr>
+<td><span>TurnSwitch</span></td>
+<td><span>41</span></td>
+<td><span>42</span></td>
+<td><span>62</span></td>
+<td><span>54</span></td>
+<td><span>40</span></td>
+<td><span>61</span></td>
+<td><span>84</span></td>
+<td><span>78</span></td>
+<td><span>71</span></td>
+<td><span>76</span></td>
+<td><span>83</span></td>
+<td><span>78</span></td></tr>
+<tr>
+<td><span>Average</span></td>
+<td><span>65.92</span></td>
+<td><span>58.40</span></td>
+<td><span>82.74</span></td>
+<td><span>76.76</span></td>
+<td><span>72.80</span></td>
+<td><span>72.84</span></td>
+<td><span>88.66</span></td>
+<td><span>87.02</span></td>
+<td><span>88.56</span></td>
+<td><span>86.68</span></td>
+<td><span>88.70</span></td>
+<td><span>87.98</span></td></tr>
+</tbody>
+</table></div>
+<p class="source-row">表格转录核对来源：<a href="https://arxiv.org/html/2606.30552v2#S4.T2">Table 2</a> · <a href="https://arxiv.org/html/2606.30552v2#S4.T3">Table 3</a> · <a href="https://arxiv.org/html/2606.30552v2#A1.T6">Table 6</a>。小数位与原文一致，本文未重新运行模型。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section>
+<section id="ch16"><h2><span class="num" aria-hidden="true"></span>来源、版本与阅读说明</h2>
+<h3 id="s16-1">16.1 可逐项追溯的官方来源</h3>
+<ol class="src-list"><li id="src-paper"><a href="https://arxiv.org/html/2606.30552v2">P1 · ZR-0 原论文 ↗</a><br>Training Vision-Language-Action Models with Dense Embodied Chain-of-Thought Supervision；arXiv:2606.30552v2，2026-07-01。模型、公式、数值、实验与原图的主要来源。</li><li id="src-proc"><a href="https://procvlm.github.io/">P2 · ProcVLM / ProcCorpus 官方项目 ↗</a><br>语料构造、程序步骤与进度标签的背景。本文没有将其奖励模型结果当作 ZR-0 实验。</li><li id="src-readme"><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/README.md">S1 · ZR-0 官方仓库 README ↗</a><br>模型、checkpoint 下载入口、推理时延配置、后训练和服务器示例。</li><li id="src-backbone"><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/model/qwen_vl_backbone.py">C1 · VLM 与跨流掩码 ↗</a><br>最后层特征，prompt-only 与 prompt-plus-subtask 掩码选择。</li><li id="src-head"><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/model/flow_matching_action_head.py">C2 · Flow-matching 动作头 ↗</a><br>单槽位 MLP、时间采样、动作维数 mask、训练损失与 Euler 更新。</li><li id="src-dit"><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/model/cross_attention_dit.py">C3 · 自注意力 / 交叉注意力循环 ↗</a><br>每四层周期与 idx % 4 的分支，查询/键值来源。</li><li id="src-model"><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/model/reasoning_vla_model.py">C4 · 联合模型与直接动作入口 ↗</a><br>语言/动作损失组合、detach、direct_action 和 subtask 扩展。</li><li id="src-policy"><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/policies/reasoning_vla_policy.py">C5 · Policy / 服务接口 ↗</a><br>状态处理、dataset entry、推理模式与动作后处理；另见 server.py。</li><li id="src-advanced"><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/README-advanced-features.md">C6 · 高级训练与 ECoT 数据字段 ↗</a><br>多数据源、VL 混训、cot / bbox / future_sub_tasks 字段。</li><li id="src-data"><a href="https://github.com/RUCKBReasoning/ZR-0/blob/b1440d4cf27624da2b1aa31268637cf46601c15d/utils/normalization.py">C7 · 归一化与数据接口 ↗</a><br>q01/q99 缩放与 [−15,15] 截断；配合 utils/load_training_dataset.py、dataset2feature.yaml 阅读。</li></ol>
+<h3 id="s16-2">16.2 原图与原创内容如何区分</h3>
+<p>本页收录论文 Figure 1（架构）、Figure 2（真机任务）及官方 README 的 ECoT 示例，未改写图中内容；中文数据流图、解释、演算工具、自测题与证据分析由本笔记整理。数表标明原表编号，所有自拟数值均注明教学例子。</p>
+<p>原图与论文版权归原作者或相应权利人；arXiv v2 标示为 arXiv perpetual non-exclusive license，本文没有将论文标为 CC BY。官方代码仓库有 Apache-2.0 LICENSE，代码许可也不应自动等同于整篇论文的许可。原图在本页用于论文解读与对照，来源及校验信息见 <a href="assets/SOURCES.md">图像来源记录</a>。</p>
+<h3 id="s16-3">16.3 本页做到什么程度</h3>
+<p>已核对论文方法、两张原图、六张数表、官方 README 与关键代码路径；没有执行 ZR-0 训练、下载模型权重或运行机器人环境。本文属于有源码对照的研究笔记，不是复现实验报告。对消融、时延与源码默认值的疑问均保留在正文，不用推测补齐。</p>
+<p class="small">整理日期：2026-10-19。论文：v2；源码：b1440d4。后续更新应重新核对引用版本与数值。</p>
+<a class="back-top" href="#top">↑ 回到封面</a></section></main><footer><p>读论文，画数据流，把不确定的地方也记下来。</p><p><a href="../">← 返回书架</a> · <a href="../gr00t/">GR00T 笔记</a> · <a href="https://github.com/futurehafuture/embodied-ai-notes">GitHub ↗</a></p></footer>
+<dialog id="image-viewer" aria-labelledby="viewer-caption"><div class="viewer-toolbar"><span id="viewer-caption"></span><button type="button" id="viewer-close">关闭 ×</button></div><p class="small">原始尺寸显示，可横向 / 纵向滚动；按 Esc 关闭。</p><div class="viewer-scroll"><img id="viewer-image" alt=""></div></dialog>
+</body></html>
