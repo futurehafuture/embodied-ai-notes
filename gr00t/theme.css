@@ -93,3 +93,9 @@ code{background:var(--red-soft);color:var(--ink)}
 }
 @media(prefers-reduced-motion:reduce){#side{transition:none}}
 @media print{#side,#tocbtn,.progress{display:none}main{margin:0;padding:0}main::before{display:none}.sheet{padding:0}.why{transform:none;box-shadow:none}}
+
+/* Architecture comparison figures retain their original white image background. */
+.arch-guide li{margin:8px 0}
+.paper-original .scroll{background:white}
+.paper-original img{display:block;width:100%;min-width:680px;max-width:none;height:auto}
+.paper-original figcaption a{font-family:var(--f-body);font-size:15px}

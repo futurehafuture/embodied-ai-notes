@@ -643,7 +643,12 @@ next_action = arm_action[:, 0, :]     # 取第 1 步去执行</pre>
 
 <figure class="fig">
   <div class="scroll">
-<svg viewBox="0 0 960 590" role="img" aria-label="GR00T N1.7 总体架构：VLM 骨干提供视觉语言特征，DiT 动作头通过交叉注意力读取并迭代去噪生成动作块">
+<svg id="groot-architecture" viewBox="0 0 1020 590" role="img" aria-label="GR00T N1.7 总体架构：VLM 骨干提供视觉语言特征，DiT 动作头通过交叉注意力读取并迭代去噪生成动作块">
+  <defs>
+    <marker id="arch-blue-arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M2 2 L10 6 L2 10" fill="none" stroke="#2F5D9E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  </defs>
+  <title>GR00T 架构与去噪数据流</title>
+  <desc>黑色箭头表示状态和带噪动作进入 DiT 的主数据流。蓝色线从 VLM 特征框右侧出发，沿上方与右侧绕行，箭头从右侧进入交叉注意力框，提供 K 和 V。交叉注意力的 Q 来自状态与动作 token。红色线从 Euler 更新框返回 Action encoder，表示下一步去噪。</desc>
   <!-- 输入 -->
   <g class="wob">
     <rect x="14" y="40" width="158" height="66" rx="6" class="bx"/>
@@ -689,7 +694,8 @@ next_action = arm_action[:, 0, :]     # 取第 1 步去执行</pre>
     <rect x="518" y="356" width="260" height="42" rx="5" class="bxg"/>
   </g>
   <text x="648" y="82" text-anchor="middle" class="t">DiT 输入序列（1 + H 个 token）</text><text x="648" y="98" text-anchor="middle" class="ts">[ state token ; H 个 action token ]</text>
-  <text x="648" y="150" text-anchor="middle" class="t">交叉注意力层 ← VL 特征 φ_t</text>
+  <text x="648" y="142" text-anchor="middle" class="t">交叉注意力层</text>
+  <text x="648" y="160" text-anchor="middle" class="ts">Q：状态/动作；K,V：VL 特征</text>
   <text x="648" y="212" text-anchor="middle" class="t">自注意力层（state + action）</text>
   <text x="648" y="270" text-anchor="middle" class="t">… 两种层交替重复 …</text>
   <text x="648" y="325" text-anchor="middle" class="ts">每层：AdaLN(τ) → 注意力 → FFN</text>
@@ -707,37 +713,67 @@ next_action = arm_action[:, 0, :]     # 取第 1 步去执行</pre>
   </g>
   <text x="648" y="477" text-anchor="middle" class="t">Action decoder（按 embodiment）</text><text x="648" y="494" text-anchor="middle" class="ts">→ 速度向量 V_θ (H × D)</text>
   <text x="648" y="540" text-anchor="middle" class="t">Euler：A ← A + V_θ / K</text><text x="648" y="558" text-anchor="middle" class="ts">重复 K = 4 次</text>
-  <text x="882" y="486" text-anchor="middle" class="tb">反归一化</text><text x="882" y="508" text-anchor="middle" class="ts">相对 → 绝对</text><text x="882" y="534" text-anchor="middle" class="tb">动作块 A_t</text><text x="882" y="554" text-anchor="middle" class="ts">→ 低层控制器</text>
+  <text x="882" y="478" text-anchor="middle" class="ts">完成 K 步后</text><text x="882" y="500" text-anchor="middle" class="tb">反归一化</text><text x="882" y="520" text-anchor="middle" class="ts">相对 → 绝对</text><text x="882" y="542" text-anchor="middle" class="tb">动作块 A_t</text><text x="882" y="562" text-anchor="middle" class="ts">→ 低层控制器</text>
 
   <!-- 箭头 -->
   <path d="M174 73 H210" class="ln"/><path d="M174 148 H210" class="ln"/>
   <path d="M316 74 H336" class="ln"/><path d="M316 142 H336" class="ln"/>
   <path d="M392 168 V214" class="ln"/>
   <path d="M174 281 H210" class="ln"/><path d="M174 439 H210" class="ln"/>
-  <path d="M446 294 H468 V94 H516" class="ln"/>
-  <path d="M446 440 H486 V102 H516" class="ln"/>
-  <path d="M446 232 H466 L 506 210 H516" class="lnb"/>
+  <path d="M446 294 H486 V86 H516" class="ln"/>
+  <path d="M446 440 H498 V98 H516" class="ln"/>
+  <!-- 蓝色条件支路绕开两条黑色输入线，从右侧明确进入交叉注意力。 -->
+  <path d="M446 232 H474 V50 H984 V145 H780" fill="none" stroke="#fffdf3" stroke-width="7"/>
+  <path id="arch-vl-kv" d="M446 232 H474 V50 H984 V145 H780" fill="none" stroke="#2F5D9E" stroke-width="2.8" marker-end="url(#arch-blue-arrow)"/>
+  <text x="814" y="80" class="bl">VL 特征 φ_t</text>
+  <text x="814" y="100" class="bl">条件支路 → K,V</text>
   <path d="M648 400 V456" class="ln"/>
   <path d="M648 504 V516" class="ln"/>
   <path d="M796 543 H812" class="ln"/>
-  <path d="M502 543 H329 V484" class="lnr"/>
-  <text x="340" y="534" class="rds">K 次迭代：A^τ → A^{τ+1/K}</text>
+  <path id="arch-denoise-loop" d="M502 543 H329 V484" class="lnr"/>
+  <text x="340" y="514" class="rds">未满 K 步：</text>
+  <text x="340" y="534" class="rds">更新 A 与 τ 后回送</text>
   <!-- 左侧红笔批注 -->
   <text x="14" y="212" class="rd">VLM 只算 1 次</text>
   <text x="14" y="352" class="rd">DiT 要算 K=4 次</text>
   <path d="M60 358 C 70 372 76 384 84 392" class="lnr"/>
   <!-- 右侧批注 -->
-  <text x="808" y="132" class="rds">Q：动作+状态</text>
-  <text x="808" y="152" class="rds">K,V：VLM 特征</text>
-  <path d="M806 160 C 796 176 790 190 782 200" class="lnr"/>
+  <text x="814" y="180" class="bl">蓝线：输入 K,V</text>
+  <text x="814" y="242" class="ts">自注意力处理</text>
+  <text x="814" y="260" class="ts">状态 + 动作 token</text>
   <text x="808" y="300" class="rds">默认 16 层</text>
   <text x="808" y="320" class="rds">博客写 32 ⚠</text>
   <text x="808" y="340" class="rds">以 config 为准</text>
 </svg>
   </div>
   <p class="hint">← 图较宽，可左右滑动 →</p>
-  <figcaption>图 3-1　N1.7 总体架构示意。蓝线 = VLM 特征走向交叉注意力；红线 = 去噪迭代的回路</figcaption>
+  <figcaption>图 3-1　N1.7 总体架构整理图。黑线：主数据流；蓝线：VLM 特征 → 交叉注意力的 K/V；红线：Euler 更新 → Action encoder。以箭头尖端确定接收方。</figcaption>
 </figure>
+
+
+<div class="note arch-guide">
+  <span class="lab">沿着箭头读：谁把什么交给谁</span>
+  <ul>
+    <li><b>黑线：</b>State encoder 与 Action encoder 的输出拼成 DiT 输入序列，作为后续注意力层的状态/动作表示。</li>
+    <li><b class="blue">蓝线：</b>从 VL 特征 φ<sub>t</sub> 出发，沿图的上方和右侧绕行，箭头从右侧进入<b>交叉注意力</b>，提供 K、V；Q 来自当前状态/动作表示。蓝线不接入自注意力。</li>
+    <li><b class="red">红线：</b>Euler 用预测的速度更新带噪动作块，再送回 Action encoder，并更新 τ，进行下一次去噪；完成 K 步后才走向最终动作输出。</li>
+  </ul>
+</div>
+
+<div class="note" id="gr00t-paper-comparison">
+  <span class="lab">对照原论文：GR00T N1（不是 N1.7）</span>
+  <p>下面两张图来自 NVIDIA 的 <a href="https://arxiv.org/html/2503.14734v2#S2" target="_blank" rel="noopener">GR00T N1 论文 v2</a>（2025-03-27）。原图保留不改：先看 Fig. 2 的整体分工，再看 Fig. 3 中 VLM 到 Cross-Attention 的条件支路，以及底部 K 次迭代回路。</p>
+  <p>原图使用 <b>Eagle-2</b>，上方整理图按笔记中的 <b>N1.7 / Cosmos-Reason2-2B</b> 标注。这里用于对照连接关系，不能把 N1 的骨干、维度、层数或动作块长度直接当成 N1.7 配置。</p>
+</div>
+<figure class="fig paper-original" id="gr00t-paper-fig2">
+  <div class="scroll"><a href="assets/groot-n1-paper-fig2.png" target="_blank" rel="noopener"><img src="assets/groot-n1-paper-fig2.png" alt="GR00T N1 论文原图 Fig. 2：视觉语言模型与扩散动作模块的双系统总览" loading="lazy" width="2041" height="1065"></a></div>
+  <figcaption>原论文 Fig. 2 · Model Overview。<a href="https://arxiv.org/html/2503.14734v2#S2.F2" target="_blank" rel="noopener">查看原文</a> · <a href="assets/groot-n1-paper-fig2.png" target="_blank" rel="noopener">打开高清图</a></figcaption>
+</figure>
+<figure class="fig paper-original" id="gr00t-paper-fig3">
+  <div class="scroll"><a href="assets/groot-n1-paper-fig3.png" target="_blank" rel="noopener"><img src="assets/groot-n1-paper-fig3.png" alt="GR00T N1 论文原图 Fig. 3：VLM 特征进入交叉注意力，状态与带噪动作经编码器进入 DiT，底部为 K 次去噪回路" loading="lazy" width="2029" height="1052"></a></div>
+  <figcaption>原论文 Fig. 3 · Model Architecture。<a href="https://arxiv.org/html/2503.14734v2#S2.F3" target="_blank" rel="noopener">查看原文</a> · <a href="assets/groot-n1-paper-fig3.png" target="_blank" rel="noopener">打开高清图</a></figcaption>
+</figure>
+<p class="small">原图作者：NVIDIA，来源：<i>GR00T N1: An Open Foundation Model for Generalist Humanoid Robots</i>，arXiv:2503.14734v2，Fig. 2–3；<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>。图片为论文 HTML 原始图像，未重绘。</p>
 
 <h3 class="sec" id="s3-2"><span>3.2 System 2 与 System 1：分工，而不是「两个模型」</span></h3>
 <p>N1 论文借用 Kahneman「快与慢」的比喻：<b>System 2 = 视觉-语言模型</b>，负责看懂场景、理解任务；<b>System 1 = 扩散 Transformer</b>，负责实时生成流畅的动作。两者都是 Transformer，<span class="hl">紧密耦合、端到端联合训练</span> <b class="tg o">官方 S1 摘要 / §1</b>。N1.7 的博客把这个分工叫作「Action Cascade」：System 2 处理图像与语言，System 1 接收 VLM 的输出与实时机器人状态，去噪成电机指令 <b class="tg o">官方 S6</b>。</p>
