@@ -875,6 +875,41 @@ embodiment_id_mapping[embodiment_tag] = 2
 # 可把其作用理解为：使用第 2 套本体专属入口/出口参数
 # 这不表示“2 个关节”，也不是给语言指令加上一个数字 token。</pre>
   <p>这个整数<b>不是每台实物机器人的序列号</b>，也不是模型自动看图识别出的机器人编号。相同物理本体的不同数据标签可以有意共享一个 id；新机器人需要匹配的配置、统计量和训练过的参数，不能随便填个新数字就获得适配。<a href="#processor-sources">官方 tag→id 映射 ↗</a></p>
+  <h4 id="embodiment-training">⑤ 多本体训练：各用各的数据和专属 MLP，一起学习共享主干</h4>
+  <p>先回答“是不是同一套数据换不同 embodiment 重复训练”：<b>通常不是。</b>机器人 A 的轨迹带 A 的本体标签，机器人 B 的轨迹带 B 的标签；把这些数据组成训练混合，从中采样。每条样本的标签与它的状态、动作语义绑定，不是可随意替换的数据增强标签。正常训练仍可能多次采样同一条轨迹，但不会因此把它改标成另一台机器人。</p>
+  <pre># 教学示意：A/B 是假想机器人，不是官方 tag
+A 的观测、状态、动作 + id_A
+  → 状态编码器_A / 带噪动作编码器_A
+  → 共享 DiT（读取共享 VLM 的视觉语言特征）
+  → 动作解码器_A → 与 A 的训练目标比较
+
+B 的观测、状态、动作 + id_B
+  → 状态编码器_B / 带噪动作编码器_B
+  → 同一个共享 DiT（读取同一个共享 VLM 的特征）
+  → 动作解码器_B → 与 B 的训练目标比较</pre>
+  <p>A 与 B 可以执行同一种任务，例如“拿起杯子”，但各自关节读数、动作目标来自各自的演示。共享部分学习可迁移的视觉、任务与动作规律；专属入口/出口学习“这个身体的数值如何接入共享表示”。<b>把 A 的七维关节动作直接改标成 B 的动作，即使补零后长度一致，也不会自动变成 B 的正确演示。</b>如果做了真实的动作重定向与验证，那是另外的数据构造步骤。</p>
+  <p>反向传播时，A 样本的损失经过 A 的专属分支与参与计算的共享层，B 样本同理。一个训练批次的损失可以汇总多种本体的贡献，再更新可训练参数；是否在同一张卡的一个批次混合、如何配比，取决于数据加载与分布式训练设置。</p>
+  <p>在 N1.7 源码里，这不是“模型自己猜选谁”：<code>selected_W = self.W[cat_ids]</code> 明确按 id 索引权重；状态编码器、动作编码器、动作解码器都接收同一个 <code>embodiment_id</code>。动作训练使用 flow matching：真实动作与噪声构造带噪输入，以速度场为目标计算带掩码的均方误差，而不是只拟合某个 id 数字。<a href="#embodiment-training-sources">模型与 MLP 源码 ↗</a></p>
+  <p class="small">版本与训练阶段要分开：上述多源联合预训练原则来自 N1 论文；id 路由细节核对的是 N1.7 实现。共享参数不代表每次微调都更新全部参数。所核对 N1.7 微调配置默认 <code>tune_llm=False</code>、<code>tune_visual=False</code>，而 <code>tune_projector=True</code>、<code>tune_diffusion_model=True</code>；投影分支可训练，VLM 的语言与视觉骨干默认冻结，具体以本次启动参数为准。</p>
+
+  <h4 id="embodiment-unseen">⑥ 推理遇到“没见过的”：新状态和新本体是两回事</h4>
+  <div class="tw"><table>
+    <thead><tr><th>没见过的是什么</th><th>选哪套 MLP</th><th>需要理解的边界</th></tr></thead>
+    <tbody>
+      <tr><td>同一种本体的新关节姿态，例如以前没出现过的角度组合</td><td>继续用该本体已训练的 id 与 MLP。</td><td>MLP 是连续函数，不是状态查找表；能计算新输入，但分布外姿态的表现仍需验证。</td></tr>
+      <tr><td>同型号的另一台实体机器，接口约定一致</td><td>通常沿用兼容本体的 id。</td><td>id 不区分设备序列号；仍需核对标定、相机、字段、单位、控制模式与统计量。</td></tr>
+      <tr><td>训练中没有支持的新机器人，或状态/动作接口语义改变</td><td>先为它建立兼容的配置与参数，再用适配后的 checkpoint。</td><td>不能仅凭维数相同或“长得像”挑一套现成 MLP；基础模型没有保证可直接使用的匹配分支。</td></tr>
+    </tbody>
+  </table></div>
+  <p>例如，A 的六个关节从熟悉姿态转到新姿态，输入数值变了，仍用 A 的 MLP；如果换成六维末端位姿控制，虽然也有六个数字，数字的物理意义已经不同，不能据此认为同一个 MLP 直接兼容。</p>
+
+  <h4 id="embodiment-adaptation">⑦ 真正的新机器人：先做适配训练，再推理</h4>
+  <p>官方 N1.7 自定义机器人流程是：<b>准备该机器人的演示数据 → 定义字段、时间与动作配置 → 注册 <code>NEW_EMBODIMENT</code> → 从预训练模型微调 → 加载微调 checkpoint 做推理。</b>预训练主干提供已有知识，本体专属分支通过新机器人的数据学习正确接口，不需要把整个模型从零重训。</p>
+  <p>所核对源码将 <code>new_embodiment</code> 映射到预留槽位 <code>10</code>。它是自定义微调入口，<b>不是一个已经理解任意机器人的万能 MLP</b>。选中槽位并不等于该槽位已经针对你的机器人训练完成。参数初始值来自具体模型构建/加载流程，是否额外重置或迁移要查看训练实现，不能仅凭 id 判断。</p>
+  <p>微调后使用保存的配置、统计量和权重，推理继续传入同一个 tag，由相同映射选中已经适配的分支。若分别训练两个新机器人，可以各自拥有独立 checkpoint；如果要让同一个 checkpoint 同时支持二者，就要给不同本体安排不同的有效槽位，并处理配置注册与联合训练，不能在同一模型里盲目共用 <code>NEW_EMBODIMENT</code> 槽位而期待自动区分。</p>
+  <div class="take"><b>一句话记忆：</b>新的“状态数值”交给原来的函数计算；新的“机器人接口”需要训练匹配的函数。跨本体共享主干带来迁移能力，但不等于任意新身体都能直接零样本控制。</div>
+  <p class="small" id="embodiment-training-sources">核对来源：<a href="https://arxiv.org/html/2503.14734v2#S2.SS1">N1 论文 §2.1–2.3：专属 MLP 与混合数据训练</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/model/modules/embodiment_conditioned_mlp.py">N1.7 按 id 选择权重</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/model/gr00t_n1d7/gr00t_n1d7.py">分支路由与训练损失</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/configs/finetune_config.py">微调开关</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/getting_started/finetune_new_embodiment.md">自定义本体微调教程</a>。N1.7 来源固定为 <code>dac54b3</code>；A/B 示例仅用于说明机制。</p>
+
   <div class="take"><b>串起来：</b>选 tag → 找到字段与时间配置 → 取匹配的观测 → 按统计量变换状态 → 把状态与 tag 映射的 id 送给模型 → 生成动作 → 后处理还原成机器人接口需要的量。</div>
   <p class="small" id="processor-sources">核对来源（2026-10-19，官方仓库 <code>dac54b3</code>）：<a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/getting_started/data_config.md">数据与 ModalityConfig</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/getting_started/policy.md">Policy 输入约定</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/data/state_action/state_action_processor.py">状态/动作处理</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/data/utils.py">归一化函数</a> · <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/dac54b313160c201c450f97df0fd74ebd379c892/gr00t/model/gr00t_n1d7/processing_gr00t_n1d7.py">tag→id 与观测处理</a>。教学例子用于理解配置，不是可直接套用的机器人参数。</p>
 </div>
