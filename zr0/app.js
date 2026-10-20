@@ -149,3 +149,17 @@ for (const input of [noiseInput, targetInput, stepsInput, kInput]) {
   input.addEventListener('input', updateEulerLab);
 }
 updateEulerLab();
+
+// Direct links to supplemental source still reveal the requested excerpt.
+function revealLinkedSource() {
+  let id;
+  try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+  const target = document.getElementById(id);
+  const fold = target?.closest('.source-code-fold');
+  if (fold) fold.open = true;
+}
+addEventListener('hashchange', revealLinkedSource);
+revealLinkedSource();
+document.querySelectorAll('.source-code-fold').forEach(fold => {
+  fold.addEventListener('toggle', schedulePositionUpdate);
+});
