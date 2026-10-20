@@ -46,3 +46,22 @@
 }
 @media(max-width:380px){.hub .index-main{padding-left:18px;padding-right:18px}.notebook h3{font-size:31px}.wordmark{font-size:25px}.index-label{font-size:14px}}
 @media(prefers-reduced-motion:reduce){.notebook{transition:none}.notebook:hover{transform:none}}
+
+/* Topic groups stay visible together, including the intentionally empty LLM shelf. */
+.topic-nav{display:flex;gap:22px 30px;flex-wrap:wrap;margin-top:27px;padding:14px 0;border-top:1px dashed var(--grid-strong);border-bottom:1px dashed var(--grid-strong)}
+.topic-nav a{font:400 22px/1.5 var(--f-head);text-decoration:none;color:var(--blue)}
+.topic-nav a:hover{text-decoration:underline}
+.topic-nav span{font:400 13px/1.6 var(--f-body);color:var(--ink-soft);margin-left:8px}
+.hub .collection{margin-bottom:54px;scroll-margin-top:24px}
+.collection-heading{align-items:center;margin-bottom:22px}
+.collection-heading h2{font-size:32px}
+.collection-kicker{font:400 18px/1.4 var(--f-note);color:var(--red);margin:0 0 5px}
+.collection-description{font-size:15px;color:var(--ink-soft);margin:9px 0 0}
+.empty-category{display:flex;align-items:center;gap:24px;padding:26px 30px;border:1.5px dashed var(--grid-strong);background:var(--card);color:var(--ink-soft)}
+.empty-mark{font:400 49px/1 var(--f-num);color:var(--red)}
+.empty-category h3{font:400 27px/1.4 var(--f-head);margin:0 0 4px;color:var(--ink)}
+.empty-category h3::after{display:none}
+.empty-category p{font-size:15px;margin:0}
+.notebook-zr0,.notebook-pi{transform:rotate(.25deg)}
+.notebook-ppo,.notebook-flow{transform:rotate(-.2deg)}
+@media(max-width:740px){.topic-nav{gap:12px 22px}.collection-heading{align-items:baseline}.collection-heading>span{font-size:14px;white-space:nowrap}.collection-description{max-width:18em}.empty-category{padding:23px 22px;gap:18px}}

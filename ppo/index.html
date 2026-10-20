@@ -1,0 +1,2084 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-notebook-import="ppo">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PPO 近端策略优化：从直觉到手写实现</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Serif+SC:wght@600;800&display=swap" rel="stylesheet">
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    tags: 'none',
+    macros: {
+      E: '\\mathbb{E}', Eh: '\\hat{\\mathbb{E}}', pit: '\\pi_\\theta', pio: '\\pi_{\\theta_{\\text{old}}}',
+      tho: '\\theta_{\\text{old}}', At: '\\hat{A}_t', clip: '\\operatorname{clip}', KL: 'D_{\\mathrm{KL}}',
+      Var: '\\operatorname{Var}', Lclip: 'L^{\\text{CLIP}}'
+    }
+  },
+  svg: { fontCache: 'global' },
+  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+};
+</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js"></script>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+  --bg:#edf1ec; --bg2:#e2e8e1; --panel:#f9faf6; --fg:#18202b; --muted:#566170; --line:#ccd5cb; --grid:rgba(31,79,216,.075);
+  --accent:#1f4fd8; --accent-soft:#e1e8ff; --hl:#ffe66d;
+  --ok:#17805a; --ok-soft:#dcf1e6; --bad:#c9341f; --bad-soft:#fbe3de; --warn:#9a6200; --warn-soft:#fbefd2; --pur:#6b44c4; --pur-soft:#ece6fa;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC","Source Han Sans SC",system-ui,sans-serif;
+  --serif:"Noto Serif SC","Songti SC","STSong","Source Han Serif SC",SimSun,serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --topbar:0px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0e151a; --bg2:#1a252d; --panel:#141e25; --fg:#e5ebee; --muted:#9aa9b5; --line:#2b3b47; --grid:rgba(127,178,255,.07);
+    --accent:#7fb2ff; --accent-soft:#1b2d4a; --hl:#8a7a1c;
+    --ok:#4cc38a; --ok-soft:#14352a; --bad:#ff7d68; --bad-soft:#3d1f1b; --warn:#e3a93a; --warn-soft:#3a2f12; --pur:#b69cff; --pur-soft:#2a2347;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0e151a; --bg2:#1a252d; --panel:#141e25; --fg:#e5ebee; --muted:#9aa9b5; --line:#2b3b47; --grid:rgba(127,178,255,.07);
+  --accent:#7fb2ff; --accent-soft:#1b2d4a; --hl:#8a7a1c;
+  --ok:#4cc38a; --ok-soft:#14352a; --bad:#ff7d68; --bad-soft:#3d1f1b; --warn:#e3a93a; --warn-soft:#3a2f12; --pur:#b69cff; --pur-soft:#2a2347;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + var(--topbar) + 14px);scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background-color:var(--bg);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:26px 26px;color:var(--fg);font:16px/1.85 var(--sans);overflow-wrap:break-word}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+code{font:.88em var(--mono);background:var(--bg2);padding:.1em .35em;border-radius:2px}
+mark{background:linear-gradient(transparent 52%,var(--hl) 52%);color:inherit;padding:0 .1em}
+h1,h2,h3{font-family:var(--serif);line-height:1.35;margin:0;text-wrap:balance}
+h2{font-size:clamp(26px,4.2vw,36px);font-weight:800}
+h3{font-size:clamp(19px,2.6vw,23px);font-weight:800;margin:2.2em 0 .5em;padding-top:.3em;border-top:2px solid var(--fg)}
+h4{font-size:1.02em;margin:1.4em 0 .2em;font-weight:700}
+p{margin:.75em 0}
+ul,ol{padding-left:1.4em;margin:.6em 0}
+li{margin:.25em 0}
+mjx-container[display="true"]{overflow-x:auto;overflow-y:hidden;max-width:100%;padding:.3em 0}
+mjx-container{color:inherit}
+.tag{display:inline-block;font:700 12px/1 var(--sans);padding:4px 7px;border:1.5px solid currentColor;border-radius:2px;vertical-align:middle;margin-left:.6em;letter-spacing:.02em}
+.tag.g{color:var(--ok)}.tag.y{color:var(--warn)}.tag.r{color:var(--bad)}.tag.p{color:var(--pur)}
+#bar{position:fixed;left:0;top:env(safe-area-inset-top,0px);height:4px;width:0;background:var(--accent);z-index:60;transition:width .08s linear}
+#topbar{display:none}
+#toc{position:fixed;left:0;top:0;bottom:0;width:288px;padding:calc(env(safe-area-inset-top,0px) + 16px) 12px 24px;overflow-y:auto;background:var(--panel);border-right:2px solid var(--fg);z-index:50}
+#toc .brand{font:800 18px/1.3 var(--serif);padding:0 10px 10px}
+#toc .brand small{display:block;font:400 12px/1.5 var(--sans);color:var(--muted);margin-top:2px}
+#toc a{display:block;padding:5px 10px;color:var(--fg);text-decoration:none;border-left:3px solid transparent;font-size:14px;line-height:1.45}
+#toc a:hover{background:var(--bg2)}
+#toc a.active{border-left-color:var(--accent);background:var(--accent-soft);font-weight:700}
+#toc .sub{display:none;padding:2px 0 6px 12px}
+#toc a.active+.sub{display:block}
+#toc .sub a{font-size:13px;color:var(--muted);padding:3px 8px}
+#toc .tools{display:flex;gap:6px;padding:10px;flex-wrap:wrap}
+#scrim{display:none}
+.page{margin-left:288px;padding:0 clamp(0px,3vw,40px)}
+.col{max-width:860px;margin:0 auto;background:var(--panel);border-inline:1px solid var(--line);padding:0 clamp(18px,4vw,52px) 80px;min-height:100vh}
+.btn{font:600 14px/1.2 var(--sans);padding:8px 14px;border:2px solid var(--fg);background:var(--panel);color:var(--fg);cursor:pointer;border-radius:3px}
+.btn:hover{background:var(--accent-soft)}
+.btn.on{background:var(--fg);color:var(--bg)}
+.btn.sm{padding:5px 9px;font-size:12.5px}
+.hero{padding:clamp(28px,6vw,64px) 0 8px}
+.hero h1{font-size:clamp(30px,6.2vw,54px);font-weight:800;line-height:1.22;letter-spacing:-.01em}
+.hero .lead{font-size:1.06em;color:var(--muted);max-width:40em;margin:1em 0 1.4em}
+.routes{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:1.2em 0}
+.routes .hint{font-size:.88em;color:var(--muted);flex-basis:100%}
+.chapter{padding-top:3.2em}
+.ch-head .kick{font:700 14px var(--sans);color:var(--accent)}
+.ch-head h2{margin-top:.15em}
+.problem{margin:1.2em 0;padding:.8em 1.1em;border:2px solid var(--fg);background:var(--bg2)}
+.problem b{display:block;margin-bottom:.1em}
+.summary{margin:2em 0 1em;padding:.8em 1.1em;border:2px dashed var(--fg)}
+.summary b{display:block}
+.box{margin:1.2em 0;padding:.75em 1.1em;border-left:5px solid var(--c);background:var(--cs)}
+.box .bt{display:block;font-weight:700;margin-bottom:.1em;color:var(--c)}
+.box>p:first-of-type{margin-top:.2em}.box>*:last-child{margin-bottom:.2em}
+.box.i{--c:var(--accent);--cs:var(--accent-soft)}
+.box.a{--c:var(--pur);--cs:var(--pur-soft)}
+.box.w{--c:var(--bad);--cs:var(--bad-soft)}
+.box.c{--c:var(--ok);--cs:var(--ok-soft)}
+.box.d{--c:var(--warn);--cs:var(--warn-soft)}
+.box.n{--c:var(--muted);--cs:var(--bg2)}
+.tpl{margin:1.4em 0;border:2px solid var(--fg)}
+.tpl .row{display:grid;grid-template-columns:8em 1fr;border-top:1px solid var(--line)}
+.tpl .row:first-child{border-top:0}
+.tpl .row>b{padding:.7em .9em;background:var(--bg2);font-size:.9em;line-height:1.5}
+.tpl .row>div{padding:.3em 1em;min-width:0}
+.tbl{overflow-x:auto;margin:1em 0}
+table{border-collapse:collapse;width:100%;font-size:.9em;line-height:1.6}
+th,td{border:1px solid var(--line);padding:.45em .7em;text-align:left;vertical-align:top}
+th{background:var(--bg2);white-space:nowrap}
+td.n{font-family:var(--mono);white-space:nowrap}
+details{margin:1em 0}
+details.deep{border:2px solid var(--bad)}
+details.deep>summary{background:var(--bad-soft)}
+details>summary{cursor:pointer;padding:.55em 1em;font-weight:700;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"＋ ";color:var(--muted)}
+details[open]>summary::before{content:"－ "}
+details>.dbody{padding:.2em 1.1em .8em}
+details.qa{border:1px solid var(--line)}
+details.qa>summary{background:var(--bg2);font-weight:600}
+details.qa .dbody{background:var(--panel)}
+figure.code{margin:1.2em 0;background:#131a21;color:#e6ebf0;border-radius:3px;overflow:hidden}
+figure.code figcaption{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;background:#1d2833;font:12.5px/1.4 var(--sans);color:#aebccb}
+figure.code pre{margin:0;padding:12px 14px;overflow-x:auto;font:13px/1.65 var(--mono);tab-size:4;white-space:pre}
+figure.code code{background:none;padding:0;font:inherit;color:inherit}
+figure.code button{font:600 12px var(--sans);background:#2b3947;color:#e6ebf0;border:1px solid #435567;padding:3px 9px;cursor:pointer;border-radius:2px}
+.t-c{color:#7f90a2;font-style:italic}.t-s{color:#a8d98a}.t-k{color:#ff9d7a}.t-b{color:#7fc1ff}.t-n{color:#f0cf65}
+.widget{margin:1.8em 0;border:2px solid var(--fg);background:var(--panel);box-shadow:5px 5px 0 var(--fg)}
+.widget>.wt{padding:.5em 1em;background:var(--fg);color:var(--bg);font-weight:700}
+.widget .wb{padding:1em}
+.ctrl{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.5em 1.4em}
+.ctrl label{display:flex;flex-direction:column;font-size:.9em;line-height:1.5}
+.ctrl output{font:600 .95em var(--mono);color:var(--accent)}
+input[type=range]{width:100%;accent-color:var(--accent);margin:.2em 0}
+input[type=text],input[type=number]{width:100%;font:14px var(--mono);padding:6px 8px;border:1.5px solid var(--fg);background:var(--bg);color:var(--fg);border-radius:2px}
+.readout{font-size:.92em;border-top:1px dashed var(--muted);margin-top:.8em;padding-top:.6em}
+.pill{display:inline-block;padding:1px 8px;border-radius:2px;font-weight:700;font-size:.9em}
+.pill.good{background:var(--ok-soft);color:var(--ok)}.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.presets{display:flex;gap:6px;flex-wrap:wrap;margin:.7em 0}
+svg.plot{width:100%;height:auto;display:block;overflow:visible}
+svg.plot text{font:11.5px var(--mono);fill:var(--muted)}
+svg.plot .lab{font-family:var(--sans);fill:var(--fg)}
+.quiz{margin:2.2em 0 .5em;border:2px solid var(--accent);padding:.9em 1.1em;background:var(--accent-soft)}
+.quiz .qh{font-weight:800;color:var(--accent)}
+.quiz .qq{margin:.4em 0 .7em}
+.quiz .opt{margin:.45em 0}
+.quiz .opt>button{display:block;width:100%;text-align:left;font:inherit;font-size:.95em;padding:.5em .8em;border:1.5px solid var(--fg);background:var(--panel);color:var(--fg);cursor:pointer;border-radius:2px}
+.quiz .opt.ok>button{border-color:var(--ok);background:var(--ok-soft)}
+.quiz .opt.no>button{border-color:var(--bad);background:var(--bad-soft)}
+.quiz .why{display:none;font-size:.9em;padding:.3em .8em .1em}
+.quiz .opt.shown .why{display:block}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.flow button{font:600 13.5px/1.4 var(--sans);padding:8px 11px;border:2px solid var(--fg);background:var(--panel);color:var(--fg);cursor:pointer;border-radius:3px;text-align:left}
+.flow button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.flow i{font-style:normal;color:var(--muted)}
+#flow-detail{margin-top:.9em;padding:.8em 1em;border-left:5px solid var(--accent);background:var(--accent-soft)}
+.lineage{display:grid;gap:0;margin:1.2em 0}
+.lineage>div{display:grid;grid-template-columns:11em 1fr;border:2px solid var(--fg);border-top-width:0}
+.lineage>div:first-child{border-top-width:2px}
+.lineage b{padding:.6em .9em;background:var(--bg2)}
+.lineage span{padding:.6em .9em}
+.cheat{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:1em 0}
+.cheat>div{border:2px solid var(--fg);padding:.6em .9em;font-size:.93em;line-height:1.7}
+.cheat b{display:block;margin-bottom:.2em}
+.refs li{margin:.5em 0}
+.foot{margin-top:3em;color:var(--muted);font-size:.88em;border-top:1px solid var(--line);padding-top:1em}
+@media (max-width:980px){
+  :root{--topbar:54px}
+  #topbar{display:flex;position:sticky;top:env(safe-area-inset-top,0px);z-index:40;align-items:center;gap:10px;height:54px;padding:0 12px;background:var(--panel);border-bottom:2px solid var(--fg)}
+  #topbar .ttl{font:800 16px var(--serif);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #toc{transform:translateX(-100%);transition:transform .22s ease;width:min(86vw,320px);}
+  body.menu #toc{transform:none;box-shadow:6px 0 0 rgba(0,0,0,.18)}
+  body.menu #scrim{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:45}
+  .page{margin-left:0;padding:0}
+  .col{border-inline:0}
+}
+@media (max-width:640px){
+  body{font-size:15.5px}
+  .tpl .row{grid-template-columns:1fr}.tpl .row>b{padding:.45em .9em}
+  .lineage>div{grid-template-columns:1fr}
+  .widget{box-shadow:3px 3px 0 var(--fg)}
+}
+body[data-mode="fast"] details.deep,body[data-mode="fast"] .adv{display:none}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}#toc,#bar{transition:none}}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Long+Cang&family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<link rel="stylesheet" href="../notebook-theme.css">
+<link rel="stylesheet" href="../imported-theme.css?v=20261020">
+</head>
+<body data-mode="full" class="imported-note import-ppo"><div class="collection-back" data-imported-chrome><a href="../">← 研究笔记总目录</a><span>Agent · 强化学习基础</span></div>
+<div id="bar" aria-hidden="true"></div>
+<div id="topbar">
+  <button class="btn sm" id="menu-btn" aria-label="打开目录">目录</button>
+  <span class="ttl">PPO 精通教程</span>
+  <button class="btn sm" id="theme-btn2" aria-label="切换主题">主题</button>
+</div>
+<div id="scrim"></div>
+<nav id="toc" aria-label="目录">
+  <div class="brand">PPO 精通教程<small>近端策略优化：从直觉到手写实现</small></div>
+  <div class="tools">
+    <button class="btn sm" id="theme-btn">切换主题</button>
+    <button class="btn sm" data-mode-set="fast">速通</button>
+    <button class="btn sm" data-mode-set="full">精通</button>
+  </div>
+  <div id="toc-list"></div>
+</nav>
+
+<div class="page"><main class="col">
+
+<section class="hero" id="top">
+  <h1>PPO：让策略每次只走稳的一小步</h1>
+  <p class="lead">近端策略优化（Proximal Policy Optimization）被 OpenAI Five、InstructGPT 等系统采用。它的核心是目标函数里的一道折线：拖动下面的概率比 ρ，看目标值在 1.2 之后为什么不再增长。读完这份教程，你能讲清它的来龙去脉，手推公式，从零写出实现，并看懂训练曲线。</p>
+  <div class="widget">
+    <div class="wt">先看一眼：PPO-Clip 的形状（优势 Â = +2，ε = 0.2）</div>
+    <div class="wb">
+      <div class="ctrl"><label>概率比 ρ（新策略 / 旧策略对同一动作的概率之比）<input type="range" id="hero-r" min="0" max="2" step="0.01" value="1.3"><output></output></label></div>
+      <div id="hero-plot"></div>
+      <div class="readout" id="hero-read"></div>
+    </div>
+  </div>
+  <div class="routes">
+    <button class="btn" data-mode-set="fast">速通路线：只读 🟢🟡</button>
+    <button class="btn on" data-mode-set="full">精通路线：含 🔴 深入内容</button>
+    <span id="resume"></span>
+    <span class="hint">速通模式会隐藏所有 🔴 折叠块，保留主线。随时可以切换，不会丢失阅读位置。</span>
+  </div>
+</section>
+
+<section class="chapter" id="ch0" data-title="导读：怎么读这份教程">
+  <header class="ch-head"><div class="kick">第 0 章</div><h2>导读：怎么读这份教程</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>说清楚 PPO 要解决什么问题，你该按什么路线读，以及全文用的是同一套符号。</div>
+
+  <h3>PPO 解决什么问题 <span class="tag g">🟢 基础</span></h3>
+  <div class="box i"><span class="bt">💡 一句话直觉</span>PPO 允许你用同一批数据连续更新多次，同时保证每次更新后的策略不会离旧策略太远。</div>
+  <div class="box a"><span class="bt">🏠 生活类比</span>学骑自行车。教练（优势估计）每次告诉你“刚才往左倾是好是坏”，你据此调整车把。调整幅度太大，车直接倒了，倒了就得从头来过。PPO 的做法是给每次调整设一个“最多拧多少”的规矩。</div>
+  <p>策略梯度方法直接优化策略，思路简单，但有两个麻烦：</p>
+  <ol>
+    <li><b>样本只能用一次。</b>标准策略梯度要求数据来自当前策略，更新一次就作废，采样成本很高。</li>
+    <li><b>步长难选。</b>监督学习里一步走偏，下一批数据还能拉回来。强化学习里数据由当前策略产生，策略一旦变坏，之后采到的数据也变坏，很难恢复。</li>
+  </ol>
+  <p>TRPO 用“KL 信赖域”约束解决了这两点，但要用二阶优化（共轭梯度、线搜索），实现复杂。PPO 把“别走太远”改写成一个只需一阶梯度的目标函数：在目标里加一道 clip，让策略走出信赖区间后<mark>不再有收益</mark>。于是我们可以放心地对同一批数据做多轮 minibatch 更新，代码也只有几十行。</p>
+
+  <h3>你学完后能做到什么 <span class="tag g">🟢 基础</span></h3>
+  <ol>
+    <li>不看资料，把 PPO 的来龙去脉讲清楚（REINFORCE → Actor-Critic → TRPO → PPO）。</li>
+    <li>手推核心公式：策略梯度、baseline 无偏性、GAE、clip 目标的梯度。</li>
+    <li>从零写出可运行的实现，离散和连续动作都覆盖。</li>
+    <li>看懂训练曲线（approx_kl、clipfrac、熵、explained variance），并排查常见故障。</li>
+    <li>理解 PPO 在大模型 RLHF 里如何使用，以及它与 GRPO、DPO 的关系。</li>
+  </ol>
+
+  <h3>两条阅读路线 <span class="tag g">🟢 基础</span></h3>
+  <div class="tbl"><table>
+    <tr><th>路线</th><th>读什么</th><th>适合谁</th></tr>
+    <tr><td><b>第一遍速通</b></td><td>只读 🟢🟡 内容。顺序：第 0、1 章 → 第 2 章（直觉与公式结果） → 第 3 章 → 第 4 章 → 第 5 章 → 第 7 章 → 跑通第 8 章的代码 → 第 10 章。点“速通”后 🔴 折叠块会被隐藏。</td><td>想先建立整体图景、尽快跑通代码的新手</td></tr>
+    <tr><td><b>完整精通</b></td><td>全部章节，展开 🔴 内容：完整推导、证明、论文与实现的差异、争议点。读完后再回头做第 12 章的自测题。</td><td>要手推公式、读懂论文、调通训练的人</td></tr>
+  </table></div>
+  <p>难度标记含义：<span class="tag g">🟢 基础</span>不需要数学基础；<span class="tag y">🟡 进阶</span>需要导数、期望和一点耐心；<span class="tag r">🔴 深入</span>论文级细节，默认折叠。</p>
+  <p>提示框含义：</p>
+  <div class="box i"><span class="bt">💡 直觉</span>用最短的话讲清楚这件事在干什么。</div>
+  <div class="box a"><span class="bt">🏠 类比</span>用生活场景帮你建立画面。</div>
+  <div class="box c"><span class="bt">🧮 手算</span>带具体数字的例子，建议动笔跟着算一遍。</div>
+  <div class="box w"><span class="bt">⚠️ 误区</span>最常见的错误理解。</div>
+  <div class="box d"><span class="bt">🔬 深入</span>延伸细节，以及论文原文与常见代码实现不一致的地方。</div>
+  <p>凡是论文做法与常见代码实现不同的地方，我会用 <span class="tag p">📄 论文</span> 和 <span class="tag p">🛠 实现</span> 明确区分。核心概念（策略梯度、baseline、GAE、重要性采样、PPO-Clip、完整损失）使用统一的 8 段模板：一句话直觉、生活类比、定义、手算、设计动机、常见误区、对应代码、小测。基础概念用更精简的卡片。</p>
+
+  <h3>贯穿全文的示例：三步寻宝 <span class="tag g">🟢 基础</span></h3>
+  <p>一个小机器人在走廊里走三步，每步得到奖励，最后一步后回合结束。后面所有章节的数字都来自这张表，方便你前后对照。</p>
+  <div class="tbl"><table>
+    <tr><th>时刻 t</th><th>奖励 \(r_t\)</th><th>critic 估值 \(V(s_t)\)</th><th>旧策略取该动作的概率</th><th>新策略取该动作的概率</th></tr>
+    <tr><td class="n">0</td><td class="n">1</td><td class="n">2.0</td><td class="n">0.50</td><td class="n">0.65</td></tr>
+    <tr><td class="n">1</td><td class="n">0</td><td class="n">1.5</td><td class="n">0.40</td><td class="n">0.36</td></tr>
+    <tr><td class="n">2</td><td class="n">2</td><td class="n">1.0</td><td class="n">0.25</td><td class="n">0.15</td></tr>
+  </table></div>
+  <p>折扣因子 \(\gamma = 0.9\)，回合在 \(t=2\) 之后结束，所以终止状态的价值 \(V(s_3)=0\)。第 1 章算回报，第 3 章算优势，第 5 章算概率比和 clip，第 7 章的手算计算器会把整条链路串起来。</p>
+
+  <h3>全文统一符号表 <span class="tag g">🟢 基础</span></h3>
+  <div class="tbl"><table>
+    <tr><th>符号</th><th>含义</th><th>备注</th></tr>
+    <tr><td>\(s_t,\ a_t,\ r_t\)</td><td>时刻 \(t\) 的状态、动作、奖励</td><td>约定 \(r_t\) 是在 \(s_t\) 执行 \(a_t\) 后得到的奖励</td></tr>
+    <tr><td>\(\tau\)</td><td>轨迹 \((s_0,a_0,r_0,s_1,a_1,r_1,\dots)\)</td><td></td></tr>
+    <tr><td>\(\pit(a\mid s)\)</td><td>策略（actor），参数为 \(\theta\)</td><td>离散动作是类别分布，连续动作常用高斯分布</td></tr>
+    <tr><td>\(\tho,\ \pio\)</td><td>采样数据时使用的旧参数、旧策略</td><td>一轮更新内保持不变</td></tr>
+    <tr><td>\(\gamma\)</td><td>折扣因子</td><td>常取 0.99</td></tr>
+    <tr><td>\(G_t\)</td><td>回报（reward-to-go）：\(\sum_{k\ge0}\gamma^k r_{t+k}\)</td><td></td></tr>
+    <tr><td>\(V(s),\ Q(s,a)\)</td><td>状态价值、动作价值</td><td>\(V_\phi\) 表示参数为 \(\phi\) 的 critic</td></tr>
+    <tr><td>\(A(s,a),\ \At\)</td><td>优势函数、优势估计</td><td>帽子表示由样本估计出来的值</td></tr>
+    <tr><td>\(\delta_t\)</td><td>TD 误差</td><td>第 3 章</td></tr>
+    <tr><td>\(\lambda\)</td><td>GAE 参数</td><td>常取 0.95</td></tr>
+    <tr><td>\(\rho_t(\theta)\)</td><td>概率比 \(\pit(a_t\mid s_t)/\pio(a_t\mid s_t)\)</td><td>📄 论文记作 \(r_t(\theta)\)。为避免和奖励 \(r_t\) 冲突，本教程记作 \(\rho_t\)，代码里叫 <code>ratio</code></td></tr>
+    <tr><td>\(\epsilon\)</td><td>clip 范围</td><td>常取 0.2（Atari 用 0.1）</td></tr>
+    <tr><td>\(\Lclip\)</td><td>clip 代理目标（最大化）</td><td>第 5 章</td></tr>
+    <tr><td>\(c_v,\ c_e\)</td><td>价值损失系数、熵系数</td><td>第 6 章</td></tr>
+    <tr><td>\(\mathcal H[\pit]\)</td><td>策略的熵</td><td></td></tr>
+    <tr><td>\(\Eh_t\)</td><td>对一批采样数据的经验平均</td><td>\(\E_{\tau\sim\pit}\) 表示对策略产生的轨迹取期望</td></tr>
+    <tr><td>\(N,\ T,\ K\)</td><td>并行环境数、每个环境采样步数、每批数据的更新轮数（epoch）</td><td>代码里是 <code>num_envs</code>、<code>num_steps</code>、<code>update_epochs</code></td></tr>
+    <tr><td>\(B=NT,\ M\)</td><td>整批大小、minibatch 大小</td><td></td></tr>
+  </table></div>
+
+  <h3>前提说明 <span class="tag g">🟢 基础</span></h3>
+  <ul>
+    <li>假设你会 Python，了解神经网络和反向传播；数学只需要导数、期望、对数的基本性质。所有额外的推导我都会写出来。</li>
+    <li>代码依赖：Python ≥ 3.9，PyTorch ≥ 2.0，<code>gymnasium==0.29.1</code>，<code>numpy&lt;2</code>。选 gymnasium 0.29.1 是因为它的向量环境在回合结束时“同一步自动 reset”，与本教程的 done 处理一致；新版本的 autoreset 语义不同，见第 8 章的提醒。</li>
+    <li>引用文献限于：PPO（Schulman 等，2017，arXiv:1707.06347）、GAE（arXiv:1506.02438）、TRPO（arXiv:1502.05477）及第 12 章列出的少数几篇。凡是经验性的经验值（例如“approx_kl 一般不超过 0.02”），我会标明这是经验法则，不是定理。</li>
+  </ul>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>PPO 把“别让策略走太远”改写成一个只需一阶梯度的 clip 目标，从而能对同一批数据多轮更新。</li>
+    <li>第一遍走速通路线，跑通代码后再回头啃 🔴 内容。</li>
+    <li>全文符号统一：奖励是 \(r_t\)，概率比是 \(\rho_t\)，优势估计是 \(\At\)。</li>
+  </ol></div>
+</section>
+
+<section class="chapter" id="ch1" data-title="强化学习最小基础">
+  <header class="ch-head"><div class="kick">第 1 章</div><h2>强化学习最小基础</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>建立后面所有章节要用的词汇。每个概念配一个类比和一个数字例子，数字都来自“三步寻宝”。</div>
+
+  <h3>1.1 智能体、环境、状态、动作、奖励 <span class="tag g">🟢 基础</span></h3>
+  <div class="tpl">
+    <div class="row"><b>🏠 类比</b><div><p>玩家和游戏机。玩家看屏幕（状态 state），按手柄（动作 action），游戏机给出得分变化（奖励 reward）并刷新画面。玩家就是智能体（agent），游戏机就是环境（environment）。</p></div></div>
+    <div class="row"><b>📐 定义</b><div><p>每个时刻 \(t\)：智能体观察状态 \(s_t\)，按策略选动作 \(a_t\sim\pit(\cdot\mid s_t)\)，环境返回奖励 \(r_t\) 和下一状态 \(s_{t+1}\)。从起点到终止的一整段叫一个回合（episode），记录下来的序列叫轨迹 \(\tau=(s_0,a_0,r_0,s_1,a_1,r_1,\dots)\)。</p><p>我们默认环境满足马尔可夫性：\(s_t\) 已经包含做决定所需的全部信息，过去历史不再提供额外帮助。</p></div></div>
+    <div class="row"><b>🧮 数字例子</b><div><p>三步寻宝的轨迹：\(s_0\xrightarrow{a_0}r_0=1\;\to\;s_1\xrightarrow{a_1}r_1=0\;\to\;s_2\xrightarrow{a_2}r_2=2\;\to\;s_3\)（终止）。一个回合共 3 步。</p></div></div>
+  </div>
+
+  <h3>1.2 回报与折扣因子 γ <span class="tag g">🟢 基础</span></h3>
+  <div class="tpl">
+    <div class="row"><b>🏠 类比</b><div><p>今天的一块钱比一年后的一块钱更值钱。折扣因子 \(\gamma\) 就是“未来奖励打几折”：\(\gamma\) 越小越短视，越接近 1 越有远见。</p></div></div>
+    <div class="row"><b>📐 定义</b><div>\[G_t=\sum_{k=0}^{\infty}\gamma^k r_{t+k}=r_t+\gamma\,G_{t+1}\]<p>\(G_t\) 是从 \(t\) 时刻往后的折扣累计奖励，也叫 reward-to-go。右边的递推式是实现时从后往前算的依据。经验上，\(\gamma\) 对应的有效视野约为 \(1/(1-\gamma)\) 步（\(\gamma=0.99\) 约 100 步）。</p></div></div>
+    <div class="row"><b>🧮 数字例子</b><div><p>\(r=[1,0,2],\ \gamma=0.9\)，从后往前：</p><p>\(G_2=2\)；\(G_1=0+0.9\times2=1.8\)；\(G_0=1+0.9\times1.8=2.62\)。</p><p>如果不打折，总和是 3。折扣让“越晚到手的奖励权重越小”。</p></div></div>
+  </div>
+
+  <h3>1.3 策略 π_θ <span class="tag g">🟢 基础</span></h3>
+  <div class="tpl">
+    <div class="row"><b>🏠 类比</b><div><p>一枚有偏的骰子：神经网络根据当前状态决定每个面朝上的概率，然后掷一次，掷出什么就做什么。因为是“掷骰子”，策略天然带有随机性，这正是探索的来源。</p></div></div>
+    <div class="row"><b>📐 定义</b><div><p>策略 \(\pit(a\mid s)\) 是给定状态下动作的概率分布，\(\theta\) 是神经网络参数。离散动作时，网络输出 logits \(z\)，再做 softmax：</p>\[\pit(a\mid s)=\frac{e^{z_a}}{\sum_b e^{z_b}}\]<p>连续动作时，网络输出均值 \(\mu_\theta(s)\)，配一个标准差 \(\sigma\)，动作从高斯分布 \(\mathcal N(\mu_\theta(s),\sigma^2)\) 采样。</p></div></div>
+    <div class="row"><b>🧮 数字例子</b><div><p>两个动作，\(z=[1,0]\)：\(\pi=[e/(e+1),\ 1/(e+1)]=[0.731,\ 0.269]\)。</p></div></div>
+  </div>
+
+  <h3>1.4 价值函数 V、Q 与优势 A <span class="tag g">🟢 基础</span></h3>
+  <div class="tpl">
+    <div class="row"><b>🏠 类比</b><div><p>考试后你拿了 85 分，班级平均分 78。“85”是动作价值，“78”是状态价值，你比平均水平高的 7 分就是优势。优势告诉我们的是“这个动作比平时的表现好多少”，而不是“这个动作绝对有多好”。</p></div></div>
+    <div class="row"><b>📐 定义</b><div>\[V^\pi(s)=\E\!\left[G_t\mid s_t=s\right],\quad Q^\pi(s,a)=\E\!\left[G_t\mid s_t=s,a_t=a\right],\quad A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s)\]<p>\(V\)：在 \(s\) 按策略走下去的期望回报。\(Q\)：在 \(s\) 先强制做 \(a\)，之后按策略走的期望回报。\(A\)：\(a\) 比策略的平均选择好多少。因为 \(V(s)=\sum_a\pit(a\mid s)Q(s,a)\)，所以 \(\sum_a\pit(a\mid s)A(s,a)=0\)：优势按策略加权平均一定是 0。</p></div></div>
+    <div class="row"><b>🧮 数字例子</b><div><p>某状态有两个动作，\(\pi=[0.5,0.5]\)，\(Q=[3,1]\)。则 \(V=0.5\times3+0.5\times1=2\)，\(A=[+1,-1]\)，加权平均 \(0.5\times1+0.5\times(-1)=0\)。</p></div></div>
+  </div>
+
+  <h3>1.5 on-policy 与 off-policy <span class="tag g">🟢 基础</span></h3>
+  <div class="tpl">
+    <div class="row"><b>🏠 类比</b><div><p>on-policy 像“看自己刚打的比赛录像来改进”；off-policy 像“看别人、或自己很久以前的比赛录像来改进”。</p></div></div>
+    <div class="row"><b>📐 定义</b><div><p>on-policy：用来更新策略的数据，由当前策略（或几乎相同的策略）产生。off-policy：数据可以来自别的策略，例如经验回放池里的旧数据（DQN、SAC）。</p><p>PPO 是“近似 on-policy”：每批数据由 \(\pio\) 采集，随后被反复使用 \(K\) 轮；clip 保证 \(\pit\) 与 \(\pio\) 始终相近，所以这些数据对 \(\pit\) 仍近似有效。第 4 章会解释这件事为什么成立。</p></div></div>
+  </div>
+
+  <h3>1.6 探索与利用，以及熵 <span class="tag g">🟢 基础</span></h3>
+  <div class="tpl">
+    <div class="row"><b>🏠 类比</b><div><p>餐厅选择：总去最爱的那家（利用）稳妥，但可能错过更好吃的；偶尔试新店（探索）有风险，却可能发现惊喜。</p></div></div>
+    <div class="row"><b>📐 定义</b><div><p>策略的熵衡量它有多“不确定”：</p>\[\mathcal H[\pit(\cdot\mid s)]=-\sum_a\pit(a\mid s)\log\pit(a\mid s)\]<p>熵越大，行为越随机、探索越多。PPO 的损失里加一项熵奖励，防止策略过早变成“只会一个动作”。</p></div></div>
+    <div class="row"><b>🧮 数字例子</b><div><p>\(\pi=[0.5,0.5]\)：\(\mathcal H=\ln2=0.693\)（两个动作时的最大值）。\(\pi=[0.9,0.1]\)：\(\mathcal H=-0.9\ln0.9-0.1\ln0.1=0.095+0.230=0.325\)。</p></div></div>
+  </div>
+
+  <h3>1.7 强化学习的目标 <span class="tag g">🟢 基础</span></h3>
+  <p>找到参数 \(\theta\)，让策略产生的轨迹平均折扣回报最大：</p>
+  \[J(\theta)=\E_{\tau\sim\pit}\!\left[\sum_{t=0}^{T}\gamma^t r_t\right]\tag{1.1}\]
+  <p>期望是对“用策略 \(\pit\) 跑出来的所有轨迹”取的。注意轨迹分布本身依赖 \(\theta\)，这使得求梯度并不直接，下一章专门解决它。</p>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>智能体按策略 \(\pit\) 选动作，环境给奖励；回报 \(G_t=r_t+\gamma G_{t+1}\) 是折扣累计奖励。</li>
+    <li>\(V\) 是平均水平，\(Q\) 是做了某动作后的期望，优势 \(A=Q-V\) 表示这个动作比平均好多少。</li>
+    <li>PPO 近似 on-policy：数据来自 \(\pio\)，用有限几轮，目标是最大化 \(J(\theta)\)。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch1"></div>
+</section>
+
+<section class="chapter" id="ch2" data-title="策略梯度">
+  <header class="ch-head"><div class="kick">第 2 章</div><h2>策略梯度</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>怎样让网络“更多地做出好动作”。难点是 \(J(\theta)\) 是对策略自己采样出的轨迹的期望，奖励来自环境，不能直接对 \(\theta\) 反向传播。策略梯度定理给出了一个只依赖 \(\log\pit\) 的可计算梯度。</div>
+
+  <h3>2.1 核心概念总览：策略梯度 <span class="tag g">🟢 基础</span></h3>
+  <div class="tpl">
+    <div class="row"><b>💡 一句话直觉</b><div><p>结果好的轨迹，提高路上每个动作的概率；结果差的轨迹，降低它们的概率；好坏程度决定调整多大。</p></div></div>
+    <div class="row"><b>🏠 生活类比</b><div><p>教练根据比赛结果调整出场安排：赢了，让这场上过的战术多出现；输了，少出现。得分越高，加强得越多。</p></div></div>
+    <div class="row"><b>📐 正式公式</b><div>\[\nabla_\theta J(\theta)=\E_{\tau\sim\pit}\!\left[\sum_{t}\nabla_\theta\log\pit(a_t\mid s_t)\,\Psi_t\right]\tag{2.1}\]<p>\(\nabla_\theta\log\pit(a_t\mid s_t)\)：让动作 \(a_t\) 概率变大的方向。\(\Psi_t\)：给这个方向打的权重，可以是回报、优势等（见 2.7）。期望对策略采样出的轨迹取。</p></div></div>
+    <div class="row"><b>🧮 手算例子</b><div><p>三个动作，logits \(z=[0,0,0]\)，\(\pi=[\tfrac13,\tfrac13,\tfrac13]\)。采到第三个动作，权重 \(\Psi=1.5\)。softmax 有一个干净的结论：\(\nabla_z\log\pi(a)=e_a-\pi\)（\(e_a\) 是第 \(a\) 位为 1 的独热向量）。于是</p><p>\(\nabla_z=1.5\times[-\tfrac13,-\tfrac13,\tfrac23]=[-0.5,\,-0.5,\,1.0]\)。</p><p>梯度上升后，第三个 logit 上升，其余下降，正好是“强化这个动作”。若 \(\Psi\) 是负数，方向反过来。</p></div></div>
+    <div class="row"><b>🎯 设计动机</b><div><p>直接对 \(J\) 求导会碰到“期望里的采样分布依赖 \(\theta\)”。log-derivative trick 把求导移到 \(\log\pit\) 上，环境动力学（我们不知道、不可微）自动消失，这就是“model-free”。新问题：权重 \(\Psi\) 如果直接用整条轨迹的总回报，噪声（方差）很大，所以后面要引入 reward-to-go、baseline 和优势。</p></div></div>
+    <div class="row"><b>⚠️ 常见误区</b><div><p>① 以为 loss 是“回报”本身。实际上我们构造的 <code>-(logp * weight).mean()</code> 只是一个“梯度恰好等于策略梯度估计”的替身，它的数值没有物理意义。② 忘记对权重 <code>detach()</code>，让梯度流进 critic。</p></div></div>
+    <div class="row"><b>💻 对应代码</b><div>
+<script type="text/x-code" data-lang="python" data-title="REINFORCE 的损失（最小示意）">
+# logp: 每个 (s_t, a_t) 的 log π_θ(a_t|s_t)；weight: Ψ_t（先当作 G_t）
+loss = -(logp * weight.detach()).mean()
+loss.backward()          # 得到 -∇J 的估计
+optimizer.step()         # 一步梯度下降 == 对 J 做梯度上升
+</script></div></div>
+    <div class="row"><b>✅ 小测</b><div><details class="qa"><summary>若 Ψ_t 全是正数，会发生什么？</summary><div class="dbody">所有被采到的动作概率都被推高。梯度期望仍然正确，但每次采样都在推高“恰好采到的动作”，噪声很大。下面的 baseline 就是为了解决这个问题。</div></details></div></div>
+  </div>
+
+  <h3>2.2 log-derivative trick 的完整推导 <span class="tag y">🟡 进阶</span></h3>
+  <p>记轨迹概率 \(p_\theta(\tau)=\mu_0(s_0)\prod_{t}\pit(a_t\mid s_t)\,P(s_{t+1}\mid s_t,a_t)\)，其中 \(\mu_0\) 是初始状态分布，\(P\) 是环境转移概率，总回报 \(R(\tau)=\sum_t\gamma^t r_t\)。</p>
+  \[J(\theta)=\E_{\tau\sim p_\theta}[R(\tau)]=\int p_\theta(\tau)\,R(\tau)\,d\tau\tag{2.2}\]
+  <p><b>第 1 步：</b>求导进积分号，\(R(\tau)\) 不依赖 \(\theta\)：</p>
+  \[\nabla_\theta J=\int \nabla_\theta p_\theta(\tau)\,R(\tau)\,d\tau\]
+  <p><b>第 2 步（trick 本身）：</b>由 \(\nabla_\theta\log p_\theta=\nabla_\theta p_\theta/p_\theta\)，得 \(\nabla_\theta p_\theta=p_\theta\nabla_\theta\log p_\theta\)。代入：</p>
+  \[\nabla_\theta J=\int p_\theta(\tau)\,\nabla_\theta\log p_\theta(\tau)\,R(\tau)\,d\tau=\E_{\tau\sim p_\theta}\!\left[\nabla_\theta\log p_\theta(\tau)\,R(\tau)\right]\]
+  <p>积分又变回了“对策略采样的期望”，这样才能用采样来估计。</p>
+  <p><b>第 3 步：</b>展开 \(\log p_\theta(\tau)=\log\mu_0(s_0)+\sum_t\big[\log\pit(a_t\mid s_t)+\log P(s_{t+1}\mid s_t,a_t)\big]\)。\(\mu_0\) 和 \(P\) 不含 \(\theta\)，导数为 0：</p>
+  \[\nabla_\theta\log p_\theta(\tau)=\sum_t\nabla_\theta\log\pit(a_t\mid s_t)\]
+  <p>环境动力学完全消失。于是</p>
+  \[\nabla_\theta J=\E_{\tau\sim\pit}\!\left[\Big(\sum_{t}\nabla_\theta\log\pit(a_t\mid s_t)\Big)R(\tau)\right]\tag{2.3}\]
+  <p><b>第 4 步：</b>蒙特卡洛估计。采 \(N\) 条轨迹，对括号里的量取样本平均即可。</p>
+
+  <h3>2.3 REINFORCE 算法 <span class="tag y">🟡 进阶</span></h3>
+  <script type="text/x-code" data-lang="text" data-title="REINFORCE 伪代码">
+初始化策略参数 θ
+重复：
+    用 π_θ 跑 N 个回合，得到轨迹 τ_1..τ_N
+    对每条轨迹计算权重（先用总回报 R(τ)）
+    g = 1/N * Σ_i Σ_t ∇θ log π_θ(a_t^i | s_t^i) * R(τ_i)
+    θ ← θ + α * g
+    丢弃这批数据（必须！因为数据只对当前 θ 有效）
+</script>
+  <p>最后一行就是“样本只能用一次”的由来：期望是在 \(\pit\) 下取的，\(\theta\) 一变，旧数据就不再服从新策略的分布。第 4 章会处理这个限制。</p>
+
+  <h3>2.4 方差问题 <span class="tag y">🟡 进阶</span></h3>
+  <div class="box c"><span class="bt">🧮 手算：奖励全为正时的噪声</span>
+    <p>某状态有 A、B 两个动作，A 的回报总是 100，B 的回报总是 101。直接用回报作权重，两个动作的概率都被推高（权重 100 和 101），区分“B 比 A 好 1”的信号被淹没在“都推高”的巨大分量里；采样到哪个动作，就多推哪个，随机性很大。</p>
+    <p>如果减去平均水平 100.5，权重变成 \(-0.5\) 和 \(+0.5\)：好的推高，差的压低，信号干净，方差大幅降低。</p></div>
+  <p>总回报 \(R(\tau)\) 把整条轨迹所有随机性（每步的动作和环境噪声）都累加进了权重，因此方差随轨迹长度增长。我们有两把刀降方差：reward-to-go 和 baseline。</p>
+
+  <h3>2.5 reward-to-go <span class="tag y">🟡 进阶</span></h3>
+  <p>动作 \(a_t\) 只能影响 \(t\) 时刻以后的奖励，过去的奖励与它无关，只会带来噪声。因此把权重由整条回报 \(R(\tau)\) 换成 reward-to-go \(G_t\)，期望不变：</p>
+  \[\nabla_\theta J=\E_{\tau\sim\pit}\!\left[\sum_t\nabla_\theta\log\pit(a_t\mid s_t)\,G_t\right]\tag{2.4}\]
+  <details class="deep"><summary><span class="tag r">🔴 深入</span> 为什么“过去的奖励”期望贡献为 0（因果性证明）</summary><div class="dbody">
+    <p>取 \(t'&lt;t\)，考察多余的项 \(\E[\nabla\log\pit(a_t\mid s_t)\,r_{t'}]\)。先对历史 \(h_t=(s_0,a_0,\dots,s_t)\) 取条件，此时 \(r_{t'}\) 已经确定（它由 \(t'\) 及以前的量决定），只有 \(a_t\) 还是随机的：</p>
+    \[\E\big[\nabla\log\pit(a_t\mid s_t)\,r_{t'}\big]=\E_{h_t}\Big[r_{t'}\;\E_{a_t\sim\pit(\cdot\mid s_t)}\big[\nabla\log\pit(a_t\mid s_t)\big]\Big]\]
+    <p>内层期望 \(=\sum_a\pit(a\mid s)\nabla\log\pit(a\mid s)=\sum_a\nabla\pit(a\mid s)=\nabla\sum_a\pit(a\mid s)=\nabla1=0\)。这个“score function 期望为 0”的恒等式，下一节的 baseline 证明还要再用一次。</p>
+  </div></details>
+  <details class="deep"><summary><span class="tag r">🔴 深入</span> 论文与实现的差异：γ^t 因子被省略了</summary><div class="dbody">
+    <p>严格地说，对折扣目标 \(J=\E[\sum_t\gamma^t r_t]\) 求梯度，每一项前面还应有一个 \(\gamma^t\) 因子：\(\sum_t\gamma^t\nabla\log\pit(a_t\mid s_t)G_t\)。这意味着理论上越晚的状态权重越低。几乎所有实现（包括 PPO 的官方与主流代码）都省略了 \(\gamma^t\)，相当于对所有时刻的状态等权。这是一个被广泛接受的“工程折中”，也是为什么说主流实现并不是折扣目标的严格梯度。</p>
+  </div></details>
+
+  <h3>2.6 baseline 与优势 <span class="tag y">🟡 进阶</span></h3>
+  <p>权重里再减一个只依赖状态的函数 \(b(s_t)\)：</p>
+  \[\nabla_\theta J=\E_{\tau\sim\pit}\!\left[\sum_t\nabla_\theta\log\pit(a_t\mid s_t)\,\big(G_t-b(s_t)\big)\right]\tag{2.5}\]
+  <p><b>证明不引入偏差。</b>只需证明新增的项期望为 0。对任意状态 \(s\)：</p>
+  \[\E_{a\sim\pit(\cdot\mid s)}\!\big[\nabla\log\pit(a\mid s)\,b(s)\big]=b(s)\sum_a\pit(a\mid s)\nabla\log\pit(a\mid s)=b(s)\sum_a\nabla\pit(a\mid s)=b(s)\,\nabla\!\sum_a\pit(a\mid s)=b(s)\,\nabla 1=0\]
+  <p>关键条件：\(b\) 不依赖动作 \(a\)，才能提到求和号外面。连续动作把求和换成积分，结论相同。<mark>baseline 可以随便选，只要不依赖当前动作，就不会改变梯度的期望，只会改变方差。</mark></p>
+  <p>最常用的选择是 \(b(s)=V^\pi(s)\)。因为 \(\E[G_t\mid s_t,a_t]=Q^\pi(s_t,a_t)\)，所以 \(G_t-V(s_t)\) 的期望正是优势 \(A^\pi(s_t,a_t)\)。这就是“优势”这个概念出现在策略梯度里的原因。</p>
+  <div class="box w"><span class="bt">⚠️ 误区</span>“baseline 越接近真实回报，估计就越准确（无偏）”是把两件事混淆了。无偏性来自 \(b\) 不依赖动作；“越接近越好”指的是方差更小。</div>
+
+  <h3>2.7 统一形式：权重 Ψ_t 可以怎么选 <span class="tag y">🟡 进阶</span></h3>
+  <div class="tbl"><table>
+    <tr><th>Ψ_t</th><th>含义</th><th>特点</th></tr>
+    <tr><td>\(R(\tau)\)</td><td>整条轨迹总回报</td><td>无偏，方差最大</td></tr>
+    <tr><td>\(G_t\)</td><td>reward-to-go</td><td>无偏，方差较小</td></tr>
+    <tr><td>\(G_t-b(s_t)\)</td><td>带 baseline</td><td>无偏，方差更小</td></tr>
+    <tr><td>\(Q^\pi(s_t,a_t)\)</td><td>动作价值</td><td>理论上的“期望”版本</td></tr>
+    <tr><td>\(A^\pi(s_t,a_t)\)</td><td>优势函数</td><td>方差最小的理论选择</td></tr>
+    <tr><td>\(\delta_t\)</td><td>TD 误差</td><td>低方差，依赖 critic，有偏</td></tr>
+    <tr><td>\(\At^{\text{GAE}}\)</td><td>GAE 估计</td><td>用 \(\lambda\) 在偏差与方差间折中，第 3 章</td></tr>
+  </table></div>
+  <p>PPO 用的是最后一行。下一章讲它怎么来。</p>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>log-derivative trick 把 \(\nabla J\) 变成“\(\nabla\log\pit\) 乘权重”的采样期望，环境动力学自动消失。</li>
+    <li>reward-to-go 与 baseline 都不改变梯度期望，只降方差；baseline 无偏的关键是它不依赖当前动作。</li>
+    <li>把权重取成优势 \(A=Q-V\)，就得到“好于平均才强化”的直觉，这是 PPO 的起点。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch2"></div>
+</section>
+
+<section class="chapter" id="ch3" data-title="Actor-Critic 与优势估计 GAE">
+  <header class="ch-head"><div class="kick">第 3 章</div><h2>Actor-Critic 与优势估计 GAE</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>\(G_t-V(s_t)\) 把未来所有的随机性都包进来，噪声太大。能否借助一个学出来的价值函数（critic）降噪，同时不引入太多偏差？答案是 GAE：一个用参数 \(\lambda\) 连续调节“偏差—方差”的优势估计。</div>
+
+  <h3>3.1 Actor 与 Critic <span class="tag g">🟢 基础</span></h3>
+  <div class="box a"><span class="bt">🏠 类比</span>运动员（actor）负责做动作，教练（critic）负责在比赛中随时给出“当前局面大概能得多少分”的预估。有了教练的预估，运动员不必等到终场哨响才知道刚才那个动作好不好，每一步都能得到反馈。</div>
+  <p>Actor 是策略网络 \(\pit\)；critic 是价值网络 \(V_\phi(s)\)，用回归训练：让 \(V_\phi(s_t)\) 逼近一个回报目标 \(\hat G_t\)（见 3.5）。actor 用 critic 提供的优势来更新。两者可以是两个独立网络，也可以共享前几层。</p>
+
+  <h3>3.2 TD 误差与一步优势 <span class="tag y">🟡 进阶</span></h3>
+  \[\delta_t=r_t+\gamma\,V(s_{t+1})-V(s_t)\tag{3.1}\]
+  <p>读法：“实际发生的（一步奖励 + 下一状态的估值）”减去“事前预期的 \(V(s_t)\)”。如果 \(V\) 恰好等于真实价值 \(V^\pi\)，那么 \(\E[\delta_t\mid s_t,a_t]=Q^\pi(s_t,a_t)-V^\pi(s_t)=A^\pi(s_t,a_t)\)，所以 \(\delta_t\) 是优势的无偏估计。可 critic 总有误差，\(\delta_t\) 就有偏。</p>
+  <div class="box c"><span class="bt">🧮 手算：三步寻宝的 TD 误差（γ=0.9）</span>
+    <p>\(\delta_0=1+0.9\times1.5-2.0=0.35\)</p>
+    <p>\(\delta_1=0+0.9\times1.0-1.5=-0.6\)</p>
+    <p>\(\delta_2=2+0.9\times0-1.0=1.0\)（终止后 \(V(s_3)=0\)）</p></div>
+  <p><b>偏差—方差：</b>\(\delta_t\) 只含一步真实奖励，随机性少、方差低；但它大量依赖 critic 的猜测，critic 不准就有偏。\(G_t-V(s_t)\) 用满了真实奖励，对 critic 的依赖只剩那个 baseline，无偏但噪声大。</p>
+
+  <h3>3.3 n 步优势 <span class="tag y">🟡 进阶</span></h3>
+  <p>在两个极端之间，可以展开 \(n\) 步真实奖励、第 \(n\) 步后再用 critic 兜底：</p>
+  \[\hat A_t^{(n)}=\sum_{l=0}^{n-1}\gamma^l\delta_{t+l}=-V(s_t)+r_t+\gamma r_{t+1}+\dots+\gamma^{n-1}r_{t+n-1}+\gamma^nV(s_{t+n})\]
+  <p>\(n=1\) 就是 \(\delta_t\)；\(n\to\infty\) 就是 \(G_t-V(s_t)\)。\(n\) 越大，偏差越小、方差越大。</p>
+  <div class="box c"><span class="bt">🧮 手算：t=0 处的 n 步优势</span>
+    <p>\(n=1\)：\(0.35\)。\(n=2\)：\(0.35+0.9\times(-0.6)=-0.19\)。\(n=3\)：\(0.35-0.54+0.81=0.62\)（已经覆盖整个回合，等于 \(G_0-V(s_0)=2.62-2.0\)）。</p></div>
+
+  <h3>3.4 核心概念：GAE（广义优势估计） <span class="tag y">🟡 进阶</span></h3>
+  <div class="tpl">
+    <div class="row"><b>💡 一句话直觉</b><div><p>把 1 步、2 步、3 步……所有 n 步优势按几何权重混合起来，用一个旋钮 \(\lambda\) 在“低方差有偏”与“高方差无偏”之间平滑切换。</p></div></div>
+    <div class="row"><b>🏠 生活类比</b><div><p>预测明天股价，你可以只看今天的数据（稳定但可能偏），也可以参考未来一个月的真实走势（准但噪声多）。GAE 是给“看多远”的各个预测加权平均，\(\lambda\) 决定权重衰减得多快。</p></div></div>
+    <div class="row"><b>📐 正式公式</b><div>\[\At^{\text{GAE}(\gamma,\lambda)}=\sum_{l=0}^{\infty}(\gamma\lambda)^l\,\delta_{t+l}\tag{3.2}\]\[\hat A_t=\delta_t+\gamma\lambda\,\hat A_{t+1}\tag{3.3}\]<p>回合在 \(T\) 步结束时，求和到 \(T-1-t\) 为止，等价于递推的起点 \(\hat A_T=0\)。式 (3.3) 就是代码里“从后往前”的循环。特例：\(\lambda=0\) 得 \(\delta_t\)；\(\lambda=1\) 得 \(G_t-V(s_t)\)。</p></div></div>
+    <div class="row"><b>🧮 手算例子</b><div><p>三步寻宝，\(\gamma=0.9\)，\(\delta=[0.35,-0.6,1.0]\)。从后往前：</p>
+      <div class="tbl"><table><tr><th>λ</th><th>\(\hat A_2\)</th><th>\(\hat A_1\)</th><th>\(\hat A_0\)</th></tr>
+      <tr><td class="n">0</td><td class="n">1.000</td><td class="n">−0.600</td><td class="n">0.350</td></tr>
+      <tr><td class="n">0.5</td><td class="n">1.000</td><td class="n">−0.150</td><td class="n">0.283</td></tr>
+      <tr><td class="n">0.95</td><td class="n">1.000</td><td class="n">0.255</td><td class="n">0.568</td></tr>
+      <tr><td class="n">1</td><td class="n">1.000</td><td class="n">0.300</td><td class="n">0.620</td></tr></table></div>
+      <p>以 \(\lambda=0.95\) 为例：\(\hat A_1=-0.6+0.9\times0.95\times1.0=0.255\)；\(\hat A_0=0.35+0.855\times0.255=0.568\)。后面章节的 \(\hat A_0=0.568,\ \hat A_1=0.255,\ \hat A_2=1.0\) 都来自这里。</p></div></div>
+    <div class="row"><b>🎯 设计动机</b><div><p>它解决了“\(n\) 取几”的难题：不必硬选，而是用几何衰减混合所有 \(n\)。同时 \(\gamma\) 和 \(\lambda\) 分工明确：\(\gamma\) 属于问题本身（未来值多少钱），\(\lambda\) 只是估计器的旋钮。GAE 论文指出：\(\lambda&lt;1\) 带来的偏差只有在 critic 不准时才出现，而 \(\gamma&lt;1\) 即使 critic 完美也会改变目标。</p></div></div>
+    <div class="row"><b>⚠️ 常见误区</b><div><p>① 把 \(\lambda\) 当成另一个折扣因子，两者作用不同。② 忘记终止时要把递推截断，导致优势跨回合泄漏。③ 以为 \(\lambda=1\) 与 \(\lambda=0\) 谁绝对更好：取值取决于 critic 的质量和环境噪声，0.95 是常用折中，不是定理。</p></div></div>
+    <div class="row"><b>💻 对应代码</b><div>
+<script type="text/x-code" data-lang="python" data-title="GAE 反向递推（对应式 3.1 与 3.3）">
+last = 0.0
+for t in reversed(range(T)):
+    nonterminal = 1.0 - dones[t]                    # 回合结束则不能 bootstrap
+    next_v = next_value if t == T - 1 else values[t + 1]
+    delta = rewards[t] + gamma * next_v * nonterminal - values[t]   # 式(3.1)
+    last = delta + gamma * lam * nonterminal * last                  # 式(3.3)
+    advantages[t] = last
+returns = advantages + values                                        # 价值目标，见 3.5
+</script></div></div>
+    <div class="row"><b>✅ 小测</b><div><details class="qa"><summary>γ=0.99、λ=0.95 时，GAE 的有效视野大约多少步？</summary><div class="dbody">权重按 \((\gamma\lambda)^l\) 衰减，\(\gamma\lambda=0.9405\)，有效视野约 \(1/(1-0.9405)\approx16.8\) 步。比 \(\gamma\) 单独决定的约 100 步短得多：这说明 GAE 的“看多远”主要由 \(\gamma\lambda\) 决定。</div></details></div></div>
+  </div>
+
+  <div class="widget" id="w-gae">
+    <div class="wt">交互实验：GAE 的 γ 与 λ</div>
+    <div class="wb">
+      <div class="ctrl">
+        <label>γ（折扣因子）<input type="range" id="gae-g" min="0.8" max="1" step="0.005" value="0.9"><output></output></label>
+        <label>λ（GAE 参数）<input type="range" id="gae-l" min="0" max="1" step="0.01" value="0.95"><output></output></label>
+      </div>
+      <p style="margin:.6em 0 .2em"><b>① 各步 TD 误差 \(\delta_{t+l}\) 的权重 \((\gamma\lambda)^l\)</b>：λ 越小，权重衰减得越快，越“短视”。</p>
+      <div id="gae-w"></div>
+      <p style="margin:.6em 0 .2em"><b>② 偏差来源与方差来源随 λ 的变化</b>（当前 λ 处有圆点）</p>
+      <div id="gae-c"></div>
+      <div class="readout" id="gae-read"></div>
+    </div>
+  </div>
+  <div class="box d"><span class="bt">🔬 图②的两条曲线是怎么来的</span>
+    <p><b>偏差来源（蓝）</b>：把 GAE 展开成 \(-V(s_t)+\sum_{l\ge1}\gamma^l\lambda^{l-1}(1-\lambda)V(s_{t+l})+\text{（真实奖励项）}\)（推导见下方 🔴），critic 在后续状态上的误差会通过系数之和 \(B(\lambda)=\gamma(1-\lambda)/(1-\gamma\lambda)\) 进入估计。\(\lambda=0\) 时 \(B=\gamma\)，\(\lambda=1\) 时 \(B=0\)。</p>
+    <p><b>方差来源（橙）</b>：假设各个 \(\delta\) 互不相关、方差相同，则 \(\Var(\At)\propto\sum_l(\gamma\lambda)^{2l}=1/(1-(\gamma\lambda)^2)\)，图中除以 \(\lambda=1\) 处的值做了归一化。这是帮助理解的简化模型，不是对真实任务的精确预测。</p></div>
+
+  <details class="deep"><summary><span class="tag r">🔴 深入</span> GAE 的完整推导与 critic 依赖系数</summary><div class="dbody">
+    <p><b>第 1 步：</b>定义 GAE 为所有 n 步优势的几何加权平均（权重和为 1）：</p>
+    \[\At=(1-\lambda)\big(\hat A_t^{(1)}+\lambda\hat A_t^{(2)}+\lambda^2\hat A_t^{(3)}+\cdots\big)\]
+    <p><b>第 2 步：</b>把 \(\hat A_t^{(n)}=\sum_{l=0}^{n-1}\gamma^l\delta_{t+l}\) 代入，按 \(\delta_{t+l}\) 合并同类项。\(\delta_t\) 出现在所有项里，系数是 \(1+\lambda+\lambda^2+\cdots=\tfrac1{1-\lambda}\)；\(\delta_{t+1}\) 从第二项开始出现，系数是 \(\gamma(\lambda+\lambda^2+\cdots)=\tfrac{\gamma\lambda}{1-\lambda}\)；一般地 \(\delta_{t+l}\) 的系数是 \(\tfrac{(\gamma\lambda)^l}{1-\lambda}\)。乘上外面的 \((1-\lambda)\)：</p>
+    \[\At=\sum_{l=0}^{\infty}(\gamma\lambda)^l\delta_{t+l}\]
+    <p><b>第 3 步（递推）：</b>从求和里提出 \(l=0\) 项，剩下的每项含一个 \(\gamma\lambda\)：\(\At=\delta_t+\gamma\lambda\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+1+l}=\delta_t+\gamma\lambda\hat A_{t+1}\)。</p>
+    <p><b>第 4 步（critic 依赖系数）：</b>代入 \(\delta_{t+l}=r_{t+l}+\gamma V(s_{t+l+1})-V(s_{t+l})\)，只看含 \(V\) 的项。\(V(s_t)\) 的系数是 \(-1\)；对 \(l\ge1\)，\(V(s_{t+l})\) 的系数是 \((\gamma\lambda)^{l-1}\gamma-(\gamma\lambda)^l=\gamma^l\lambda^{l-1}(1-\lambda)\)。这些系数之和是 \(\gamma(1-\lambda)\sum_{l\ge1}(\gamma\lambda)^{l-1}=\tfrac{\gamma(1-\lambda)}{1-\gamma\lambda}\)，即图中的 \(B(\lambda)\)。</p>
+  </div></details>
+
+  <h3>3.5 critic 的训练目标 <span class="tag y">🟡 进阶</span></h3>
+  <p>critic 需要一个回归目标。常用的是 λ-return：</p>
+  \[\hat G_t=\At+V_{\text{old}}(s_t)\tag{3.4}\]
+  <p>\(V_{\text{old}}\) 是采样时 critic 给出的估值。\(\lambda=1\) 时它就是真实折扣回报 \(G_t\)；\(\lambda<1\) 时它是“混合了 critic 自举”的回报。三步寻宝（\(\lambda=0.95\)）：\(\hat G=[0.568+2.0,\ 0.255+1.5,\ 1.0+1.0]=[2.568,\ 1.755,\ 2.0]\)。损失是均方误差 \(\tfrac12(V_\phi(s_t)-\hat G_t)^2\)，第 6 章会把它和策略损失合并。</p>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>TD 误差 \(\delta_t=r_t+\gamma V(s_{t+1})-V(s_t)\) 低方差但依赖 critic；\(G_t-V\) 无偏但噪声大。</li>
+    <li>GAE \(=\sum(\gamma\lambda)^l\delta_{t+l}\)，用递推 \(\At=\delta_t+\gamma\lambda\hat A_{t+1}\) 从后往前一遍算完，\(\lambda\) 调节偏差与方差。</li>
+    <li>\(\gamma\) 定义问题的远视程度，\(\lambda\) 只是估计器的旋钮；价值目标取 \(\hat G_t=\At+V_{\text{old}}(s_t)\)。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch3"></div>
+</section>
+
+<section class="chapter" id="ch4" data-title="PPO 之前的痛点">
+  <header class="ch-head"><div class="kick">第 4 章</div><h2>PPO 之前的痛点：步长、样本复用与 TRPO</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>策略梯度每批数据只能用一次，而且步长很难选。本章先说明为什么强化学习里“走太远”特别危险，再引入重要性采样让数据可以复用，最后看 TRPO 是怎样用信赖域解决这些问题、又为什么难用。</div>
+
+  <h3>4.1 强化学习里的步长为什么更危险 <span class="tag g">🟢 基础</span></h3>
+  <div class="box a"><span class="bt">🏠 类比</span>开车转向盘打得太猛。监督学习像在空旷的场地练习：打偏了，下一圈再修正。强化学习像在山路上开：一次打偏就冲出护栏，之后看到的全是悬崖下的景象，再没有机会学会怎么回到路上。</div>
+  <p>原因有两层：</p>
+  <ol>
+    <li><b>数据分布随策略而变。</b>监督学习的数据集是固定的，一次坏更新之后，下一个 batch 照样是好数据。强化学习的数据由当前策略采集：策略变坏，采到的轨迹也变坏，用坏数据继续更新，只会更坏，这叫策略崩溃（policy collapse）。</li>
+    <li><b>步长很难事先选好。</b>参数空间里的“同样大小的一步”，在策略空间里可能是微调，也可能是剧变。网络参数的 L2 距离和策略分布的变化量没有稳定的对应关系。</li>
+  </ol>
+  <p>所以我们真正想控制的是<mark>策略（输出分布）变了多少</mark>，而不是参数变了多少。</p>
+
+  <h3>4.2 核心概念：重要性采样与代理目标 <span class="tag y">🟡 进阶</span></h3>
+  <div class="tpl">
+    <div class="row"><b>💡 一句话直觉</b><div><p>数据是旧策略采的，但想评估新策略：给每个样本乘上“新策略选这个动作的概率 ÷ 旧策略选这个动作的概率”，就能把旧数据“当作”新数据来用。</p></div></div>
+    <div class="row"><b>🏠 生活类比</b><div><p>电话调查里，70% 的受访者来自北方，而北方人口只占 50%。要估计全国平均，就给每个北方样本乘 \(0.5/0.7\)，给南方样本乘 \(0.5/0.3\)。这个“人口占比 ÷ 样本占比”就是重要性权重。</p></div></div>
+    <div class="row"><b>📐 正式公式</b><div>\[\E_{a\sim\pit}\big[f(a)\big]=\sum_a\pit(a)f(a)=\sum_a\pio(a)\,\frac{\pit(a)}{\pio(a)}\,f(a)=\E_{a\sim\pio}\!\left[\frac{\pit(a)}{\pio(a)}f(a)\right]\tag{4.1}\]<p>要求 \(\pit(a)&gt;0\) 的地方 \(\pio(a)&gt;0\)。把它用到优势上，就得到<b>代理目标</b>（surrogate objective），其中 \(\rho_t(\theta)=\pit(a_t\mid s_t)/\pio(a_t\mid s_t)\)：</p>\[L^{\text{IS}}(\theta)=\Eh_t\!\big[\rho_t(\theta)\,\At\big]\tag{4.2}\]<p>\(\Eh_t\) 是对旧策略采集的这批数据取平均。在 \(\theta=\tho\) 处，\(\rho_t=1\)，而 \(\nabla_\theta\rho_t=\rho_t\nabla_\theta\log\pit\)，所以 \(\nabla_\theta L^{\text{IS}}\big|_{\tho}=\Eh_t[\At\nabla\log\pio(a_t\mid s_t)]\)，正好是策略梯度估计。也就是说，代理目标在 \(\tho\) 附近和真目标“一阶相同”。</p></div></div>
+    <div class="row"><b>🧮 手算例子</b><div><p>三个动作，旧策略 \(\pio=[0.5,0.3,0.2]\)，新策略 \(\pit=[0.4,0.4,0.2]\)，各动作的回报 \(f=[1,3,0]\)。</p><p>权重 \(\rho=[0.8,\ 1.333,\ 1.0]\)。</p><p>真值：\(\E_{\pit}[f]=0.4\times1+0.4\times3+0=1.6\)。</p><p>直接用旧策略的期望会得到 \(0.5+0.9+0=1.4\)，是错的。</p><p>重要性采样：\(\sum_a\pio(a)\rho(a)f(a)=0.5\times0.8\times1+0.3\times1.333\times3+0=1.6\)，和真值完全一致。</p></div></div>
+    <div class="row"><b>🎯 设计动机</b><div><p>它解决了“数据用一次就扔”：同一批 \(\pio\) 数据可以反复评估并优化 \(\pit\)。新问题：权重 \(\rho\) 没有上界；\(\pit\) 与 \(\pio\) 差得越远，权重越极端，估计方差越大；而且代理目标只在 \(\tho\) 附近可信（见 4.3）。</p></div></div>
+    <div class="row"><b>⚠️ 常见误区</b><div><p>以为“乘了权重，旧数据就和新数据完全等价”。其实只修正了“动作”的概率，状态分布仍然来自 \(\pio\)。策略变化小时这个近似没问题，变化大时就失效。</p></div></div>
+    <div class="row"><b>💻 对应代码</b><div>
+<script type="text/x-code" data-lang="python" data-title="概率比（对应式 4.2 中的 ρ_t）">
+logratio = newlogprob - old_logprob      # log π_θ - log π_θold
+ratio = logratio.exp()                   # ρ_t(θ)；用对数差再 exp，数值比直接做除法更稳定
+</script></div></div>
+    <div class="row"><b>✅ 小测</b><div><details class="qa"><summary>某动作 π_new=0.9，π_old=0.3，ρ 是多少？这对更新意味着什么？</summary><div class="dbody">\(\rho=3\)。这个样本的梯度被放大 3 倍，如果它的优势很大，就可能主导整个更新。这正是后面需要限制 \(\rho\) 的原因。</div></details></div></div>
+  </div>
+
+  <div class="widget" id="w-is">
+    <div class="wt">交互实验：重要性采样，看估计在新旧策略相距多远时失灵</div>
+    <div class="wb">
+      <p style="margin-top:0">旧策略固定为 \([0.5,0.3,0.2]\)，三个动作的回报为 \(f=[1,3,0]\)。拖动滑块改变新策略（各动作 logits 相对旧策略的偏移），观察概率比与估计。</p>
+      <div class="ctrl">
+        <label>动作 1 的偏移<input type="range" id="is-z0" min="-2" max="2" step="0.05" value="-0.2"><output></output></label>
+        <label>动作 2 的偏移<input type="range" id="is-z1" min="-2" max="2" step="0.05" value="0.3"><output></output></label>
+        <label>动作 3 的偏移<input type="range" id="is-z2" min="-2" max="2" step="0.05" value="0"><output></output></label>
+      </div>
+      <div class="presets"><button class="btn sm" id="is-p0">回到旧策略</button><button class="btn sm" id="is-p1">小步更新</button><button class="btn sm" id="is-p2">大步更新</button><button class="btn sm" id="is-re">重新采样</button></div>
+      <div id="is-bars"></div>
+      <div class="readout" id="is-read"></div>
+    </div>
+  </div>
+
+  <h3>4.3 如果不加限制地优化代理目标 <span class="tag y">🟡 进阶</span></h3>
+  <p>既然可以用同一批数据反复评估 \(L^{\text{IS}}\)，那干脆多跑几轮梯度上升不就好了？问题在于 \(L^{\text{IS}}=\Eh_t[\rho_t\At]\) 对 \(\rho_t\) 是线性的：</p>
+  <ul>
+    <li>\(\At&gt;0\) 的样本，目标鼓励 \(\rho_t\to+\infty\)，即把这个动作的概率拉得无限大。</li>
+    <li>\(\At&lt;0\) 的样本，目标鼓励 \(\rho_t\to0\)。</li>
+  </ul>
+  <p>这会让策略对这批数据严重“过拟合”：优势估计本身带噪声，\(\At\) 又是用 \(\pio\) 算的，策略一旦远离 \(\pio\)，这些优势就过时了；状态分布也已经不是 \(\pio\) 的了。代理目标和真目标之间的差距，会随 \(\pit\) 与 \(\pio\) 的距离迅速扩大。所以必须把 \(\pit\) 限制在 \(\pio\) 附近：这就是“信赖域”（trust region）。</p>
+
+  <h3>4.4 TRPO：用 KL 约束划出信赖域 <span class="tag y">🟡 进阶</span></h3>
+  <p>TRPO（Schulman 等，2015）把问题写成带约束的优化：</p>
+  \[\max_\theta\ \Eh_t\!\big[\rho_t(\theta)\At\big]\quad\text{s.t.}\quad\Eh_t\!\Big[\KL\big(\pio(\cdot\mid s_t)\,\Vert\,\pit(\cdot\mid s_t)\big)\Big]\le\delta\tag{4.3}\]
+  <p>\(\KL\) 是 KL 散度，衡量两个分布差多远；\(\delta\) 是允许的最大变化（常取 0.01 量级）。关键是约束的对象是<mark>策略分布</mark>而不是参数，正好回答了 4.1 的问题。</p>
+  <p><b>怎么求解：</b>对目标做一阶展开、对 KL 做二阶展开，得到自然梯度方向 \(F^{-1}g\)（\(g\) 是目标梯度，\(F\) 是 Fisher 信息矩阵）；用共轭梯度法（只需 Fisher-向量积，不显式构造 \(F\)）求这个方向，再用回溯线搜索确保 KL 约束成立且目标确实在提升。</p>
+  <p><b>为什么难用：</b></p>
+  <ul>
+    <li>需要二阶信息（Fisher-向量积）、共轭梯度、线搜索，代码量大，调试困难。</li>
+    <li>PPO 论文指出，TRPO 与带噪声的结构（如 dropout）、以及策略与价值网络共享参数的结构不兼容。</li>
+    <li>每次更新只能用一次大步长，不适合对同一批数据做多轮 minibatch SGD，难以用现成的一阶优化器（Adam）。</li>
+  </ul>
+  <details class="deep"><summary><span class="tag r">🔴 深入</span> TRPO 的理论依据：性能差分引理与单调改进下界</summary><div class="dbody">
+    <p>Kakade 与 Langford（2002）证明：新旧策略的性能差，等于新策略轨迹上旧策略优势的折扣累加：</p>
+    \[J(\theta')-J(\theta)=\E_{\tau\sim\pi_{\theta'}}\!\Big[\sum_t\gamma^t A^{\pi_\theta}(s_t,a_t)\Big]\]
+    <p>右边的期望里，状态是由新策略 \(\pi_{\theta'}\) 访问的，我们没法用旧数据估计。TRPO 的做法是把状态分布近似换成旧策略的，再用重要性采样处理动作，得到代理目标 \(L_\theta(\theta')\)。它与真目标在 \(\theta'=\theta\) 处一阶相同。TRPO 论文进一步给出下界：</p>
+    \[J(\theta')\ \ge\ L_\theta(\theta')-C\,D_{\mathrm{KL}}^{\max}(\theta,\theta'),\qquad C=\frac{4\varepsilon_A\gamma}{(1-\gamma)^2},\ \ \varepsilon_A=\max_{s,a}|A^{\pi_\theta}(s,a)|\]
+    <p>每步最大化右边，就能保证 \(J\) 单调不降。但这里的 \(C\) 很大，理论步长太保守，于是实际算法改用“约束 KL ≤ \(\delta\)”的形式（即式 4.3）。注意：实践里的 TRPO 与这个理论保证之间也有差距，使用的是平均 KL 而非最大 KL。</p>
+  </div></details>
+
+  <h3>4.5 PPO 的思路 <span class="tag g">🟢 基础</span></h3>
+  <p>TRPO 的约束需要二阶方法。PPO 的想法：不要显式约束，改写目标函数本身，让“远离 \(\pio\)”这件事在目标里<mark>不再带来任何额外好处</mark>。这样一阶优化器就够了，多轮 minibatch 更新也自然可行。具体怎么改，下一章。</p>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>强化学习的数据由策略自己产生，一步走偏会污染之后所有数据，所以要控制的是策略分布的变化量。</li>
+    <li>重要性采样让旧数据可用于评估新策略，代理目标 \(\Eh[\rho_t\At]\) 在 \(\tho\) 附近与真目标一阶相同，但 \(\rho\) 无上界，必须限制。</li>
+    <li>TRPO 用 KL 信赖域约束解决了问题，但需要二阶方法与复杂实现；PPO 要用一阶方法达到类似效果。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch4"></div>
+</section>
+
+<section class="chapter" id="ch5" data-title="PPO 核心：Clip 目标">
+  <header class="ch-head"><div class="kick">第 5 章</div><h2>PPO 核心：Clip 目标</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>怎样只用一阶梯度，让策略不会离旧策略太远？PPO 的答案是：给代理目标加上 clip 与 min，使得“把概率比推出 \([1-\epsilon,1+\epsilon]\) 之外”不再有收益。本章逐项解释这个设计。</div>
+
+  <h3>5.1 概率比 ρ_t(θ) <span class="tag g">🟢 基础</span></h3>
+  \[\rho_t(\theta)=\frac{\pit(a_t\mid s_t)}{\pio(a_t\mid s_t)}\tag{5.1}\]
+  <p>它是“新策略对这个动作的概率是旧策略的多少倍”。\(\rho=1\) 表示没变；\(\rho=1.3\) 表示新策略对这个动作的偏好提高了 30%；\(\rho=0.7\) 表示降低了 30%。采样时 \(\theta=\tho\)，所以每个样本的 \(\rho\) 都从 1 出发。</p>
+  <div class="box c"><span class="bt">🧮 三步寻宝的概率比</span>旧策略取到的动作概率是 \([0.50,0.40,0.25]\)，一轮更新后新策略对同样的动作给出 \([0.65,0.36,0.15]\)。于是 \(\rho=[1.3,\ 0.9,\ 0.6]\)。</div>
+
+  <h3>5.2 核心概念：PPO-Clip <span class="tag y">🟡 进阶</span></h3>
+  <div class="tpl">
+    <div class="row"><b>💡 一句话直觉</b><div><p>好动作（\(\At&gt;0\)）：想把概率提上去，但最多只奖励到 \(\rho=1+\epsilon\)，再往上推也没有额外好处。坏动作（\(\At&lt;0\)）：想把概率降下来，只奖励到 \(\rho=1-\epsilon\)。</p></div></div>
+    <div class="row"><b>🏠 生活类比</b><div><p>销售提成设了封顶：业绩比上期高 20% 以内，按比例拿提成；超过 20% 的部分不再加钱，这样没人会为了冲高业绩而冒险。但业绩下滑时，照常扣钱，不设“减少惩罚”的下限。</p></div></div>
+    <div class="row"><b>📐 正式公式</b><div>\[\Lclip(\theta)=\Eh_t\Big[\min\big(\rho_t(\theta)\At,\ \clip(\rho_t(\theta),\,1-\epsilon,\,1+\epsilon)\,\At\big)\Big]\tag{5.2}\]<p>\(\clip(x,a,b)\) 把 \(x\) 限制在 \([a,b]\) 内。\(\epsilon\) 是超参数（常取 0.2）。我们对 \(\Lclip\) 做梯度上升。\(\Eh_t\) 是对 \(\pio\) 采集的这批数据的平均。</p><p>按 \(\At\) 的正负讨论，式 (5.2) 化简为：</p>\[\At&gt;0:\ \ L_t=\At\cdot\min(\rho_t,\ 1+\epsilon)\qquad\qquad\At&lt;0:\ \ L_t=\At\cdot\max(\rho_t,\ 1-\epsilon)\]<p>（\(\At&lt;0\) 时乘以负数会让 min 变成 max。）单个样本的梯度为</p>\[\nabla_\theta L_t=\begin{cases}\At\,\rho_t\,\nabla_\theta\log\pit(a_t\mid s_t)&\text{未被截断}\\ 0&\text{被截断}\end{cases}\]<p>其中“未被截断”指：\(\At&gt;0\) 且 \(\rho_t&lt;1+\epsilon\)，或 \(\At&lt;0\) 且 \(\rho_t&gt;1-\epsilon\)。</p></div></div>
+    <div class="row"><b>🧮 手算例子</b><div><p>取 \(\epsilon=0.2\)，截断区间 \([0.8,1.2]\)。</p>
+      <div class="tbl"><table>
+        <tr><th>\(\At\)</th><th>\(\rho\)</th><th>\(\rho\At\)</th><th>\(\clip(\rho)\At\)</th><th>\(L_t=\min\)</th><th>梯度</th></tr>
+        <tr><td class="n">+2</td><td class="n">1.3</td><td class="n">2.6</td><td class="n">2.4</td><td class="n">2.4</td><td>0（被截断：好动作已涨够）</td></tr>
+        <tr><td class="n">+2</td><td class="n">1.1</td><td class="n">2.2</td><td class="n">2.2</td><td class="n">2.2</td><td>有效</td></tr>
+        <tr><td class="n">+2</td><td class="n">0.7</td><td class="n">1.4</td><td class="n">1.6</td><td class="n">1.4</td><td>有效（好动作概率掉了，允许推回来）</td></tr>
+        <tr><td class="n">−2</td><td class="n">1.3</td><td class="n">−2.6</td><td class="n">−2.4</td><td class="n">−2.6</td><td>有效（坏动作概率反而涨了，照常惩罚）</td></tr>
+        <tr><td class="n">−2</td><td class="n">0.9</td><td class="n">−1.8</td><td class="n">−1.8</td><td class="n">−1.8</td><td>有效</td></tr>
+        <tr><td class="n">−2</td><td class="n">0.7</td><td class="n">−1.4</td><td class="n">−1.6</td><td class="n">−1.6</td><td>0（被截断：坏动作已压够）</td></tr>
+      </table></div>
+      <p>回到三步寻宝（\(\epsilon=0.2\)，\(\hat A=[0.568,0.255,1.0]\)，\(\rho=[1.3,0.9,0.6]\)）：</p>
+      <p>\(t=0\)：\(\rho\At=0.738\)，\(\clip\cdot\At=1.2\times0.568=0.682\)，取 0.682，<b>被截断，梯度 0</b>。</p>
+      <p>\(t=1\)：\(\rho\) 在区间内，\(L=0.9\times0.255=0.2295\)，梯度有效。</p>
+      <p>\(t=2\)：\(\At=1.0\)，\(\rho=0.6\) 低于下界，\(\rho\At=0.6\)，\(\clip\cdot\At=0.8\)，取 0.6，<b>梯度有效</b>。虽然 \(\rho\) 已经跑出区间，但这是“好动作的概率下降了”，目标要把它推回来，不能截断。</p></div></div>
+    <div class="row"><b>🎯 设计动机</b><div><p>它把 TRPO 的约束“翻译”成目标函数本身的形状：越过区间的一侧变成平的，没有梯度。一个简单的一阶优化器就能用。新问题：这不是硬约束（见 5.4），\(\epsilon\) 也需要调。</p></div></div>
+    <div class="row"><b>⚠️ 常见误区</b><div><ul style="margin:.2em 0">
+      <li>“clip 会把 \(\rho\) 限制在区间内。”不会：它只是让越界的样本不再产生梯度，\(\rho\) 的数值照样可能跑出去。</li>
+      <li>“只要 \(\rho\) 在区间外，梯度就为 0。”不对：只有“朝着目标改善的方向”越界才截断，例如 \(\At&gt;0\) 且 \(\rho&lt;1-\epsilon\) 仍有梯度。</li>
+      <li>“min 是多余的，只用 clip 就够了。”见 5.3。</li>
+    </ul></div></div>
+    <div class="row"><b>💻 对应代码</b><div>
+<script type="text/x-code" data-lang="python" data-title="clip 目标的实现（对应式 5.2）">
+pg_loss1 = -adv * ratio
+pg_loss2 = -adv * torch.clamp(ratio, 1 - clip_coef, 1 + clip_coef)
+pg_loss  = torch.max(pg_loss1, pg_loss2).mean()
+# 目标取 min(ρA, clip(ρ)A) 做梯度上升；损失是它的相反数，所以 min 变成 max
+</script></div></div>
+    <div class="row"><b>✅ 小测</b><div><details class="qa"><summary>Â=+1，ρ=1.5，ε=0.2：目标值与梯度？</summary><div class="dbody">\(\rho\At=1.5\)，\(\clip(1.5)\At=1.2\)，\(\min=1.2\)；因为取到的是常数分支，梯度为 0。</div></details></div></div>
+  </div>
+
+  <div class="widget" id="w-clip">
+    <div class="wt">交互实验：Clip 目标函数实验室</div>
+    <div class="wb">
+      <div class="ctrl">
+        <label>ε（clip 范围）<input type="range" id="clip-eps" min="0.05" max="0.5" step="0.01" value="0.2"><output></output></label>
+        <label>优势 Â（可为负）<input type="range" id="clip-A" min="-3" max="3" step="0.1" value="2"><output></output></label>
+        <label>概率比 ρ<input type="range" id="clip-r" min="0" max="2" step="0.01" value="1.3"><output></output></label>
+      </div>
+      <div class="presets">
+        <button class="btn sm" data-p="2,1.3">A=+2, ρ=1.3</button>
+        <button class="btn sm" data-p="2,0.7">A=+2, ρ=0.7</button>
+        <button class="btn sm" data-p="-2,1.3">A=−2, ρ=1.3</button>
+        <button class="btn sm" data-p="-2,0.7">A=−2, ρ=0.7</button>
+      </div>
+      <p style="margin:.5em 0 .1em"><b>目标值曲线</b>：虚线是未截断的 ρÂ 和 clip 版本 clip(ρ)Â，粗线是二者取小（即 L<sub>t</sub>）；灰带是 [1−ε, 1+ε]。</p>
+      <div id="clip-plot"></div>
+      <p style="margin:.5em 0 .1em"><b>梯度 ∂L/∂ρ</b>：被截断的区域为 0。</p>
+      <div id="clip-grad"></div>
+      <div class="readout" id="clip-read"></div>
+    </div>
+  </div>
+
+  <h3>5.3 min 的作用：悲观下界 <span class="tag y">🟡 进阶</span></h3>
+  <p>先看只用 clip、不用 min 会怎样：\(\clip(\rho,1-\epsilon,1+\epsilon)\At\)。当 \(\At&gt;0\) 且 \(\rho&lt;1-\epsilon\) 时，clip 值是常数 \((1-\epsilon)\At\)，梯度为 0，策略再也不会去修复“好动作概率下降”这个错误；当 \(\At&lt;0\) 且 \(\rho&gt;1+\epsilon\) 时同理，“坏动作概率上升”也得不到惩罚。</p>
+  <p>加上 min 之后，目标永远满足 \(\Lclip_t\le\rho_t\At\)，它是未截断代理目标的<b>悲观下界</b>：</p>
+  <ul>
+    <li><b>改善超过区间的部分</b>：不计入（被 clip 压平）。</li>
+    <li><b>恶化的部分</b>：全额计入（不被 clip 保护）。</li>
+  </ul>
+  <p>也就是说，策略可以“白拿”区间内的改善，但越过区间的额外收益被拿走，越过去的错误则照样被惩罚。这是一种“忽略好事、不忽略坏事”的保守设计。</p>
+
+  <h3>5.4 clip 不是硬约束 <span class="tag y">🟡 进阶</span></h3>
+  <p>这是 PPO 最容易被误解的地方。实际训练中 \(\rho\) 完全可能超出 \([1-\epsilon,1+\epsilon]\)，原因有：</p>
+  <ol>
+    <li><b>别的样本的梯度会带着它走。</b>截断只是让“这个样本自己”不再贡献梯度，但参数是共享的，其他样本的梯度更新参数时，会顺带改变这个样本的概率。</li>
+    <li><b>一步就可能跨出区间。</b>某个 minibatch step 的学习率太大，一次更新就能越界；clip 只在越界之后才起作用。</li>
+    <li><b>优化器的动量。</b>Adam 的一阶、二阶矩有惯性，梯度归零后参数仍可能继续沿惯性移动。</li>
+  </ol>
+  <p><b>这意味着：</b>PPO 的稳定性并非完全来自 clip 本身。实践中大家会同时监控 <code>clipfrac</code>（被截断样本比例）和 <code>approx_kl</code>，必要时用 <code>target_kl</code> 提前停止本批数据的更新（第 9、10 章）。</p>
+  <details class="deep"><summary><span class="tag r">🔴 深入</span> 研究怎么说：clip 之外的“代码级优化”有多重要</summary><div class="dbody">
+    <p>Engstrom 等人（2020，arXiv:2005.12729）做了消融实验：PPO 相对 TRPO 的性能提升，很大一部分可以归因于代码层面的优化（价值裁剪、奖励缩放、学习率退火、正交初始化等），而不是 clip 目标本身；他们还观察到 PPO 的概率比并不总是被限制在区间内。这一结论提醒我们：想复现 PPO 的效果，不能只实现式 (5.2)，第 9 章的工程细节同样重要。这是一项经验研究的结论，具体幅度随环境而异。</p>
+  </div></details>
+
+  <h3>5.5 PPO-Penalty（自适应 KL 惩罚）简述 <span class="tag y">🟡 进阶</span></h3>
+  <p>论文还提出另一个变体：不用 clip，而是把 KL 作为惩罚项加入目标，并自适应调整系数 \(\beta\)：</p>
+  \[L^{\text{KLPEN}}(\theta)=\Eh_t\Big[\rho_t(\theta)\At-\beta\,\KL\big(\pio(\cdot\mid s_t)\,\Vert\,\pit(\cdot\mid s_t)\big)\Big]\tag{5.3}\]
+  <p>每轮更新后计算实际的平均 KL \(d\)：若 \(d&lt;d_{\text{targ}}/1.5\)，则 \(\beta\leftarrow\beta/2\)（惩罚太重，放松）；若 \(d&gt;1.5\,d_{\text{targ}}\)，则 \(\beta\leftarrow2\beta\)（惩罚太轻，收紧）。</p>
+  <div class="tbl"><table>
+    <tr><th></th><th>TRPO</th><th>PPO-Penalty</th><th>PPO-Clip</th></tr>
+    <tr><td>如何限制策略变化</td><td>硬约束 KL ≤ δ</td><td>目标里加 KL 惩罚，\(\beta\) 自适应</td><td>目标形状：越界后无收益</td></tr>
+    <tr><td>优化方式</td><td>二阶（共轭梯度 + 线搜索）</td><td>一阶</td><td>一阶</td></tr>
+    <tr><td>额外超参</td><td>\(\delta\)</td><td>\(d_{\text{targ}}\)、\(\beta\) 初值与调整规则</td><td>\(\epsilon\)</td></tr>
+    <tr><td>论文实验结论</td><td>基线</td><td>表现不如 Clip</td><td>表现最好，实现最简单</td></tr>
+  </table></div>
+  <p>因此业界默认的“PPO”指的是 PPO-Clip。不过 KL 惩罚的思想在 RLHF 里非常重要（第 11 章）。</p>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>\(\Lclip=\Eh[\min(\rho\At,\clip(\rho,1-\epsilon,1+\epsilon)\At)]\)：好动作最多奖励到 \(\rho=1+\epsilon\)，坏动作最多惩罚到 \(\rho=1-\epsilon\)，越界的一侧梯度为 0。</li>
+    <li>min 让目标成为未截断目标的悲观下界：忽略越界的“好处”，保留越界的“坏处”。</li>
+    <li>clip 不是硬约束；\(\rho\) 仍可能越界，所以要监控 clipfrac 与 approx_kl，并依赖第 9 章的工程细节。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch5"></div>
+</section>
+
+<section class="chapter" id="ch6" data-title="完整损失函数">
+  <header class="ch-head"><div class="kick">第 6 章</div><h2>完整损失函数</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>策略目标（第 5 章）有了，但训练还需要给 critic 一个回归目标，还要防止策略过早变得确定。本章把三者合成一个可以直接 <code>backward()</code> 的损失，并说明各系数的作用。</div>
+
+  <h3>6.1 三个目标，三件事 <span class="tag g">🟢 基础</span></h3>
+  <div class="tbl"><table>
+    <tr><th>项</th><th>解决什么</th><th>直觉</th></tr>
+    <tr><td>策略项 \(\Lclip\)</td><td>让好动作更常出现，且步子别太大</td><td>“做对事”</td></tr>
+    <tr><td>价值项 \(L^V\)</td><td>让 critic 估得准，才能算出可靠的优势</td><td>“估准分”</td></tr>
+    <tr><td>熵项 \(\mathcal H\)</td><td>不让策略过早变成确定性，保留探索</td><td>“留余地”</td></tr>
+  </table></div>
+
+  <h3>6.2 核心概念：完整目标 <span class="tag y">🟡 进阶</span></h3>
+  <div class="tpl">
+    <div class="row"><b>💡 一句话直觉</b><div><p>总损失 = 策略损失 + 价值损失（权重 \(c_v\)）− 熵奖励（权重 \(c_e\)）。</p></div></div>
+    <div class="row"><b>🏠 生活类比</b><div><p>学生的综合评价：解题正确率（策略）、对自己分数的预估是否准确（价值）、是否愿意尝试新方法（熵）。三者加权，缺一都会出问题。</p></div></div>
+    <div class="row"><b>📐 正式公式</b><div><p>📄 论文（式 9）是一个要<b>最大化</b>的目标：</p>\[L^{\text{CLIP+VF+S}}(\theta)=\Eh_t\Big[L^{\text{CLIP}}_t(\theta)-c_1L^{\text{VF}}_t(\theta)+c_2\,\mathcal H[\pit](s_t)\Big],\quad L^{\text{VF}}_t=\big(V_\theta(s_t)-V^{\text{targ}}_t\big)^2\tag{6.1}\]<p>🛠 实现里习惯写成要<b>最小化</b>的损失：</p>\[\mathcal L(\theta,\phi)=-\Lclip(\theta)+c_v\,L^V(\phi)-c_e\,\bar{\mathcal H}(\theta),\qquad L^V=\tfrac12\Eh_t\big[(V_\phi(s_t)-\hat G_t)^2\big]\tag{6.2}\]<p>\(\hat G_t=\At+V_{\text{old}}(s_t)\) 来自式 (3.4)；\(\bar{\mathcal H}\) 是 minibatch 内策略熵的平均。注意两个版本的符号约定与系数不同：论文 \(c_1=1\) 且没有 \(\tfrac12\)，CleanRL 取 \(c_v=0.5\) 且带 \(\tfrac12\)，等效系数相差 4 倍，这是实现差异，不是错误。</p></div></div>
+    <div class="row"><b>🧮 手算例子</b><div><p>三步寻宝（不做优势标准化）：</p>
+      <p>策略项：\(\min\) 值 \([0.6816,\ 0.2295,\ 0.6]\)，平均 \(0.5037\)，所以 \(-\Lclip=-0.5037\)。</p>
+      <p>价值项：设 critic 还没更新，\(V=[2.0,1.5,1.0]\)，目标 \(\hat G=[2.568,1.755,2.0]\)，误差 \([0.568,0.255,1.0]\)，\(L^V=\tfrac12\times\frac{0.3227+0.0650+1.0}{3}=0.2313\)。</p>
+      <p>熵项：假设平均熵 \(0.6\)，\(c_e=0.01\)，贡献 \(-0.006\)。</p>
+      <p>\(c_v=0.5\)：\(\mathcal L=-0.5037+0.5\times0.2313-0.006=-0.3941\)。</p></div></div>
+    <div class="row"><b>🎯 设计动机</b><div><p>把三个目标放进一个标量损失，一次 <code>backward()</code> 同时更新 actor 与 critic，也便于二者共享网络。新问题：多个损失项的相对尺度需要权衡（6.3）。</p></div></div>
+    <div class="row"><b>⚠️ 常见误区</b><div><ul style="margin:.2em 0">
+      <li>把策略损失当成“越小越好”的进度指标：它的正负没有意义，因为标准化后的优势均值接近 0，策略损失经常在 0 附近晃动。要看进度，应看回报、KL、熵。</li>
+      <li>漏掉符号转换：论文要最大化 \(\Lclip\)，实现里要最小化 \(-\Lclip\)。</li>
+    </ul></div></div>
+    <div class="row"><b>💻 对应代码</b><div>
+<script type="text/x-code" data-lang="python" data-title="总损失（对应式 6.2）">
+loss = pg_loss - ent_coef * entropy.mean() + vf_coef * v_loss
+</script></div></div>
+    <div class="row"><b>✅ 小测</b><div><details class="qa"><summary>训练中 policy loss 一直在 0 附近，说明没学到东西吗？</summary><div class="dbody">不能这么判断。优势标准化后均值为 0，且 \(\rho\approx1\)，策略损失天然在 0 附近。有没有在学，要看 episodic return 是否上升、approx_kl 与 clipfrac 是否合理（第 10 章）。</div></details></div></div>
+  </div>
+
+  <h3>6.3 各项系数的作用 <span class="tag y">🟡 进阶</span></h3>
+  <p><b>价值系数 \(c_v\)。</b>若 actor 与 critic 是两个独立网络，Adam 对每个参数做梯度尺度归一化，\(c_v\) 对 critic 的更新影响很小。但如果两者共享主干，或者使用全局梯度裁剪（<code>max_grad_norm</code>），\(c_v\) 就会改变两个梯度的相对大小，需要调。</p>
+  <p><b>熵系数 \(c_e\)。</b>太大：策略长期保持随机，学不稳；太小：熵很快塌缩，过早收敛到次优。离散动作常取 0.01，连续控制（MuJoCo 风格）常取 0。</p>
+  <div class="box c"><span class="bt">🧮 高斯策略的熵</span>
+    <p>每个动作维度：\(\mathcal H=\tfrac12\ln(2\pi e\,\sigma^2)=\tfrac12+\tfrac12\ln(2\pi)+\ln\sigma\)。\(\sigma=0.5\) 时 \(\mathcal H=0.726\)。多维独立时对各维求和。</p>
+    <p>它对 \(\ln\sigma\) 的导数恒为 1，所以熵奖励对 \(\ln\sigma\) 是一个恒定的“变大”推力，这就是它抵抗方差塌缩的方式。</p></div>
+
+  <details class="deep"><summary><span class="tag r">🔴 深入</span> value clipping 的争议</summary><div class="dbody">
+    <p>🛠 OpenAI baselines 的实现还对价值函数做了类似策略的“裁剪”：</p>
+    \[V_{\text{clip}}=V_{\text{old}}+\clip\big(V_\phi-V_{\text{old}},-\epsilon,\epsilon\big),\qquad L^V=\tfrac12\Eh\big[\max\big((V_\phi-\hat G)^2,\ (V_{\text{clip}}-\hat G)^2\big)\big]\]
+    <p>📄 论文本身没有这一项。后续的大规模实证研究（如 Andrychowicz 等 2020，arXiv:2006.05990，以及 Engstrom 等 2020）没有发现它带来稳定收益，部分结果甚至显示它会降低性能。需要注意，这个裁剪的单位是“回报的数值尺度”，而 \(\epsilon=0.2\) 是为概率比设计的，二者量纲不同，所以它是否合理本身就有疑问。本教程的代码默认关闭它（<code>--no-clip-vloss</code>），并保留开关供你实验。</p>
+  </div></details>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>总损失 \(=-\Lclip+c_vL^V-c_e\bar{\mathcal H}\)，一次反向传播同时训练 actor 和 critic。</li>
+    <li>论文与常见实现在符号方向和系数上不同（\(c_1=1\) 对 \(c_v=0.5\times\tfrac12\)），不要混用。</li>
+    <li>policy loss 的数值没有进度意义；value clipping 是实现里的争议性增项。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch6"></div>
+</section>
+
+<section class="chapter" id="ch7" data-title="完整算法流程与超参数">
+  <header class="ch-head"><div class="kick">第 7 章</div><h2>完整算法流程与超参数</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>把前几章的零件装成一台完整的机器：数据从哪里来，怎么流动，每个超参数管哪一段。读完这章，你能在纸上把整个训练循环画出来。</div>
+
+  <h3>7.1 伪代码 <span class="tag y">🟡 进阶</span></h3>
+  <script type="text/x-code" data-lang="text" data-title="PPO（Clip 版）伪代码">
+初始化 actor θ、critic φ
+for iteration = 1, 2, ... :
+
+    # ── 阶段 1：采样。θ_old 就是此刻的 θ，整轮内保持不变 ──
+    N 个环境并行，每个跑 T 步，存下：
+        s_t, a_t, log π_θold(a_t|s_t), r_t, done_t, V_old(s_t)
+
+    # ── 阶段 2：算优势与价值目标（不需要梯度）──
+    用 critic 估 V(s_T) 作为末尾的 bootstrap
+    从后往前用 式(3.1)、式(3.3) 得 Â_t；  Ĝ_t = Â_t + V_old(s_t)
+
+    # ── 阶段 3：优化，对这一批数据重复 K 个 epoch ──
+    for epoch = 1..K:
+        把 B = N·T 个样本打乱，切成若干 minibatch（每个 M 个）
+        for 每个 minibatch:
+            重新前向，得到 log π_θ(a_t|s_t)、V_φ(s_t)、熵
+            ρ_t = exp(log π_θ − log π_θold)                    # 式(5.1)
+            (可选) 在 minibatch 内把 Â 标准化
+            L = −L_CLIP + c_v·L_V − c_e·H                      # 式(6.2)
+            反向传播 → 梯度裁剪 → Adam 更新
+        (可选) 若 approx_kl > 1.5 × target_kl：提前结束 epoch 循环
+</script>
+
+  <h3>7.2 数据流：点击每一步看细节 <span class="tag y">🟡 进阶</span></h3>
+  <div class="widget" id="w-flow">
+    <div class="wt">交互图：PPO 的一次迭代</div>
+    <div class="wb">
+      <div class="flow" id="flow-chips"></div>
+      <div id="flow-detail"></div>
+    </div>
+  </div>
+
+  <h3>7.3 一轮迭代的算术 <span class="tag g">🟢 基础</span></h3>
+  <div class="box c"><span class="bt">🧮 手算：CleanRL 在 CartPole 上的默认配置</span>
+    <p>\(N=4\) 个环境，\(T=128\) 步：\(B=NT=512\) 个样本。切成 4 个 minibatch：\(M=128\)。\(K=4\) 个 epoch：每轮迭代共 \(4\times4=16\) 次梯度更新。总共 500,000 个环境步，迭代次数 \(\lfloor500000/512\rfloor=976\) 轮。</p>
+    <p>换一组：\(N=8,\ T=256\)，则 \(B=2048\)；切成 8 个 minibatch 时 \(M=256\)；\(K=4\) 时每轮 \(8\times4=32\) 次更新；跑 100 万步约 \(\lfloor10^6/2048\rfloor=488\) 轮。</p></div>
+
+  <h3>7.4 超参数一览 <span class="tag y">🟡 进阶</span></h3>
+  <p>下表的“常见取值”来自 PPO 论文（Atari 与 MuJoCo 设置）和 CleanRL 的 <code>ppo.py</code> 默认值，是起点而非定论。</p>
+  <div class="tbl"><table>
+    <tr><th>超参数</th><th>常见取值</th><th>含义</th><th>调大会…</th><th>调小会…</th></tr>
+    <tr><td><code>num_envs</code> \(N\)</td><td>CleanRL 4；论文 Atari 8</td><td>并行环境数</td><td>数据更多样、梯度更稳，单轮更慢</td><td>数据相关性强，噪声大</td></tr>
+    <tr><td><code>num_steps</code> \(T\)</td><td>Atari 128；MuJoCo 2048</td><td>每环境每轮采样步数</td><td>批更大，GAE 看得更远，更新次数变少</td><td>更新更频繁，但视野短、噪声大</td></tr>
+    <tr><td><code>update_epochs</code> \(K\)</td><td>论文 Atari 3；MuJoCo 10；CleanRL 4</td><td>每批数据的复用轮数</td><td>样本效率高，但 \(\rho\) 偏离更多，易对这批数据过拟合</td><td>更保守，样本利用率低</td></tr>
+    <tr><td><code>num_minibatches</code></td><td>4（MuJoCo 论文 minibatch=64）</td><td>每批切成几份</td><td>每次更新更噪，更新次数更多</td><td>更新更平滑，次数更少</td></tr>
+    <tr><td><code>learning_rate</code></td><td>2.5e-4～3e-4</td><td>Adam 学习率</td><td>学得快，KL 容易失控</td><td>稳，但慢</td></tr>
+    <tr><td><code>gamma</code> \(\gamma\)</td><td>0.99</td><td>折扣因子</td><td>更远视，方差更大</td><td>更短视</td></tr>
+    <tr><td><code>gae_lambda</code> \(\lambda\)</td><td>0.95</td><td>GAE 参数</td><td>偏差小、方差大</td><td>方差小、依赖 critic</td></tr>
+    <tr><td><code>clip_coef</code> \(\epsilon\)</td><td>0.2（Atari 0.1）</td><td>clip 范围</td><td>允许更大的策略变化</td><td>更保守</td></tr>
+    <tr><td><code>ent_coef</code> \(c_e\)</td><td>离散 0.01；MuJoCo 常取 0</td><td>熵奖励系数</td><td>更探索，收敛慢</td><td>熵易塌缩</td></tr>
+    <tr><td><code>vf_coef</code> \(c_v\)</td><td>CleanRL 0.5；论文 \(c_1=1\)</td><td>价值损失系数</td><td>critic 学得更重</td><td>critic 学得慢，优势不准</td></tr>
+    <tr><td><code>max_grad_norm</code></td><td>0.5</td><td>全局梯度范数上限</td><td>更少裁剪，风险是爆梯度</td><td>更强限制，更新变小</td></tr>
+    <tr><td><code>target_kl</code></td><td>默认关闭；Spinning Up 用 0.01 并在 KL 超过 1.5 倍时早停</td><td>每批数据允许的 KL 上限</td><td>更晚停</td><td>更早停，更保守</td></tr>
+    <tr><td><code>norm_adv</code>、<code>anneal_lr</code></td><td>通常都开</td><td>优势标准化、学习率线性退火</td><td colspan="2">第 9 章解释为什么要开</td></tr>
+  </table></div>
+
+  <h3>7.5 手算计算器：把整条链路走一遍 <span class="tag y">🟡 进阶</span></h3>
+  <p>输入一条短轨迹，逐步看到：回报 → TD 误差 → GAE 优势 → 概率比 → clip 损失。默认值就是三步寻宝，你可以改成自己的数字验证理解。</p>
+  <div class="widget" id="w-calc">
+    <div class="wt">交互实验：PPO 手算计算器</div>
+    <div class="wb">
+      <div class="ctrl" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+        <label>奖励 \(r_0,\dots,r_{T-1}\)（逗号分隔）<input type="text" id="calc-r" value="1, 0, 2"></label>
+        <label>critic 估值 \(V(s_0),\dots,V(s_{T-1})\)<input type="text" id="calc-v" value="2.0, 1.5, 1.0"></label>
+        <label>末尾 \(V(s_T)\)（终止填 0）<input type="text" id="calc-vt" value="0"></label>
+        <label>旧策略概率 \(\pio(a_t\mid s_t)\)<input type="text" id="calc-po" value="0.50, 0.40, 0.25"></label>
+        <label>新策略概率 \(\pit(a_t\mid s_t)\)<input type="text" id="calc-pn" value="0.65, 0.36, 0.15"></label>
+      </div>
+      <div class="ctrl" style="margin-top:.6em">
+        <label>γ<input type="number" id="calc-g" value="0.9" step="0.01" min="0" max="1"></label>
+        <label>λ<input type="number" id="calc-l" value="0.95" step="0.01" min="0" max="1"></label>
+        <label>ε<input type="number" id="calc-e" value="0.2" step="0.01" min="0.01" max="1"></label>
+        <label style="flex-direction:row;align-items:center;gap:.5em"><input type="checkbox" id="calc-norm"> 在这批数据内标准化 Â</label>
+      </div>
+      <div class="presets"><button class="btn sm" id="calc-reset">载入三步寻宝</button></div>
+      <div id="calc-out" style="margin-top:.6em"></div>
+    </div>
+  </div>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>每轮迭代：采样 \(N\times T\) 步 → 算 GAE 与价值目标 → 对这批数据做 \(K\) 个 epoch 的 minibatch 更新 → 带着新策略进入下一轮。</li>
+    <li>\(\theta_{\text{old}}\) 在一轮内固定；\(\rho_t\) 衡量当前 \(\theta\) 相对它的偏离，这是整个算法的“尺子”。</li>
+    <li>一轮的梯度步数 \(=K\times\)minibatch 数，批大小 \(B=NT\)，这些量决定了样本复用与稳定性之间的平衡。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch7"></div>
+</section>
+
+<section class="chapter" id="ch8" data-title="从零实现 PPO（PyTorch）">
+  <header class="ch-head"><div class="kick">第 8 章</div><h2>从零实现 PPO（PyTorch + gymnasium）</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>把前七章的公式变成能跑的代码。我们写一个单文件 <code>ppo.py</code>，先走通离散动作（CartPole），再用同一个文件扩展到连续动作（高斯策略）。每一段代码都标注了对应的章节与公式。</div>
+
+  <h3>8.1 环境、依赖与运行方式 <span class="tag g">🟢 基础</span></h3>
+  <script type="text/x-code" data-lang="bash" data-title="安装依赖">
+pip install "torch>=2.0" "gymnasium==0.29.1" "numpy<2"
+</script>
+  <div class="box d"><span class="bt">🔬 版本提醒</span>
+    <p>本教程的 done 处理基于 gymnasium 0.29.1 向量环境的行为：回合结束时在<b>同一步</b>自动 reset，<code>next_obs</code> 已是新回合的第一帧，并通过 <code>nonterminal</code> 掩码屏蔽 bootstrap。gymnasium ≥ 1.0 的向量环境默认改为“下一步 reset”，会多出一个无意义的 transition，直接套用本代码会引入偏差。如果你要用新版本，请查阅其文档中关于 autoreset 模式的说明并相应调整。<code>numpy&lt;2</code> 是因为 gymnasium 0.29.1 与 NumPy 2 存在兼容问题。</p>
+    <p>我在写作环境里没有联网安装 PyTorch 与 gymnasium，所以没有端到端运行训练；其中不依赖这两个库的部分（GAE、概率比与 clip 的数值、全部手算例子）已用 NumPy 逐一验证，Python 语法也已通过编译检查。如果你运行时遇到问题，请对照第 10 章排查，也欢迎把报错发给我。</p></div>
+  <script type="text/x-code" data-lang="bash" data-title="运行">
+# 离散动作：CartPole-v1
+python ppo.py --env-id CartPole-v1
+
+# 连续动作：Pendulum-v1（起点配置，沿用 MuJoCo 风格的超参数）
+python ppo.py --env-id Pendulum-v1 --total-timesteps 1000000 --num-envs 1 \
+    --num-steps 2048 --num-minibatches 32 --update-epochs 10 \
+    --learning-rate 3e-4 --ent-coef 0.0
+</script>
+  <p>下面的 7 段代码按顺序拼起来就是完整的 <code>ppo.py</code>。你可以逐段阅读，也可以一键复制全部：</p>
+  <p><button class="btn" data-copyall="ppo.py">复制完整 ppo.py</button></p>
+
+  <h3>8.2 逐段实现 <span class="tag y">🟡 进阶</span></h3>
+  <h4>① 参数（超参数对照第 7.4 节）</h4>
+  <script type="text/x-code" data-lang="python" data-file="ppo.py" data-title="ppo.py ① 导入与参数 · 对应 §7.4 超参数表">
+# ppo.py —— 单文件 PPO：同时支持离散动作与连续动作
+# 依赖：python>=3.9, torch>=2.0, gymnasium==0.29.1, numpy<2
+import argparse
+import random
+import time
+from collections import deque
+
+import gymnasium as gym
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.distributions import Categorical, Normal
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--env-id", type=str, default="CartPole-v1")
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--total-timesteps", type=int, default=500_000)
+    p.add_argument("--learning-rate", type=float, default=2.5e-4)
+    p.add_argument("--num-envs", type=int, default=4)            # N：并行环境数
+    p.add_argument("--num-steps", type=int, default=128)         # T：每环境每轮步数
+    p.add_argument("--update-epochs", type=int, default=4)       # K：每批数据更新轮数
+    p.add_argument("--num-minibatches", type=int, default=4)
+    p.add_argument("--gamma", type=float, default=0.99)          # γ
+    p.add_argument("--gae-lambda", type=float, default=0.95)     # λ
+    p.add_argument("--clip-coef", type=float, default=0.2)       # ε
+    p.add_argument("--ent-coef", type=float, default=0.01)       # c_e
+    p.add_argument("--vf-coef", type=float, default=0.5)         # c_v
+    p.add_argument("--max-grad-norm", type=float, default=0.5)
+    p.add_argument("--target-kl", type=float, default=None)      # 设了就启用 KL 早停
+    p.add_argument("--anneal-lr", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--norm-adv", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--clip-vloss", action=argparse.BooleanOptionalAction, default=False)
+    return p.parse_args()
+</script>
+  <h4>② 环境工厂</h4>
+  <p>连续动作环境多加几层包装：把动作裁到合法范围、对观测做在线标准化、对奖励做缩放（第 9 章解释原因）。<code>RecordEpisodeStatistics</code> 放在最里层，这样记录到的是<b>原始</b>回报，不受奖励缩放影响。</p>
+  <script type="text/x-code" data-lang="python" data-file="ppo.py" data-title="ppo.py ② 环境工厂 · 对应 §9 观测与奖励归一化">
+def make_env(env_id, gamma):
+    def thunk():
+        env = gym.make(env_id)
+        env = gym.wrappers.RecordEpisodeStatistics(env)       # 记录原始回报
+        if isinstance(env.action_space, gym.spaces.Box):      # 连续动作才需要
+            env = gym.wrappers.ClipAction(env)                # 送进环境前把动作裁剪到合法范围
+            env = gym.wrappers.NormalizeObservation(env)      # 观测在线标准化
+            env = gym.wrappers.TransformObservation(env, lambda o: np.clip(o, -10, 10))
+            env = gym.wrappers.NormalizeReward(env, gamma=gamma)  # 奖励按折扣回报的标准差缩放
+            env = gym.wrappers.TransformReward(env, lambda r: np.clip(r, -10, 10))
+        return env
+    return thunk
+</script>
+  <h4>③ 策略与价值网络</h4>
+  <p>actor 与 critic 是两个独立网络。离散动作输出 logits，用 <code>Categorical</code>；连续动作输出均值，并用一个与状态无关的可学习 <code>log σ</code> 参数，用 <code>Normal</code>。多维动作的各维相互独立，所以 log 概率和熵都沿动作维求和。</p>
+  <script type="text/x-code" data-lang="python" data-file="ppo.py" data-title="ppo.py ③ Agent · 对应 §1.3 策略、§6 熵">
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    nn.init.orthogonal_(layer.weight, std)          # 正交初始化
+    nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+
+class Agent(nn.Module):
+    def __init__(self, envs):
+        super().__init__()
+        obs_dim = int(np.prod(envs.single_observation_space.shape))
+        self.discrete = isinstance(envs.single_action_space, gym.spaces.Discrete)
+        out_dim = (envs.single_action_space.n if self.discrete
+                   else int(np.prod(envs.single_action_space.shape)))
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(obs_dim, 64)), nn.Tanh(),
+            layer_init(nn.Linear(64, 64)), nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
+        )
+        self.actor = nn.Sequential(
+            layer_init(nn.Linear(obs_dim, 64)), nn.Tanh(),
+            layer_init(nn.Linear(64, 64)), nn.Tanh(),
+            layer_init(nn.Linear(64, out_dim), std=0.01),   # 输出层小初始化：初始策略接近均匀
+        )
+        if not self.discrete:
+            self.actor_logstd = nn.Parameter(torch.zeros(1, out_dim))   # 状态无关的 log σ
+
+    def get_value(self, x):
+        return self.critic(x)
+
+    def get_action_and_value(self, x, action=None):
+        if self.discrete:
+            dist = Categorical(logits=self.actor(x))
+        else:
+            mean = self.actor(x)
+            dist = Normal(mean, self.actor_logstd.expand_as(mean).exp())
+        if action is None:
+            action = dist.sample()
+        logprob, entropy = dist.log_prob(action), dist.entropy()
+        if not self.discrete:                       # 各维独立：log 概率与熵按动作维求和
+            logprob, entropy = logprob.sum(1), entropy.sum(1)
+        return action, logprob, entropy, self.critic(x)
+</script>
+  <h4>④ 初始化与缓冲区</h4>
+  <p>缓冲区的形状是 <code>(T, N)</code>：第一维是时间，第二维是并行环境。这个布局让 GAE 的反向递推可以对所有环境同时进行。</p>
+  <script type="text/x-code" data-lang="python" data-file="ppo.py" data-title="ppo.py ④ main：初始化 · 对应 §7.3 批大小算术">
+def main():
+    args = parse_args()
+    random.seed(args.seed); np.random.seed(args.seed); torch.manual_seed(args.seed)
+    device = torch.device("cpu")        # 网络很小，CPU 往往更快
+
+    envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.gamma) for _ in range(args.num_envs)])
+    agent = Agent(envs).to(device)
+    optimizer = torch.optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+    T, N = args.num_steps, args.num_envs
+    batch_size = T * N                                    # B = N·T
+    assert batch_size % args.num_minibatches == 0, "batch_size 必须能被 num_minibatches 整除"
+    minibatch_size = batch_size // args.num_minibatches   # M
+    num_updates = args.total_timesteps // batch_size
+    obs_shape = envs.single_observation_space.shape
+    act_shape = envs.single_action_space.shape            # 离散动作时是 ()
+
+    obs = torch.zeros((T, N) + obs_shape)
+    actions = torch.zeros((T, N) + act_shape)
+    logprobs = torch.zeros((T, N))        # log π_θold(a_t|s_t)
+    rewards = torch.zeros((T, N))
+    dones = torch.zeros((T, N))           # dones[t]=1：执行 a_t 之后回合结束
+    values = torch.zeros((T, N))          # V_old(s_t)
+
+    global_step, start = 0, time.time()
+    recent_returns = deque(maxlen=20)
+    next_obs, _ = envs.reset(seed=args.seed)
+    next_obs = torch.as_tensor(next_obs, dtype=torch.float32)
+</script>
+  <h4>⑤ 阶段 1：采样</h4>
+  <p>采样时用 <code>torch.no_grad()</code>：我们只需要“当时的”<code>logprob</code> 与 <code>value</code> 作为常数。如果漏掉，旧 log 概率会带着计算图，后面的 <code>backward()</code> 会出错或把梯度流到不该去的地方。</p>
+  <script type="text/x-code" data-lang="python" data-file="ppo.py" data-title="ppo.py ⑤ 阶段 1：采样 · 对应 §7.1 阶段 1">
+    for update in range(1, num_updates + 1):
+        if args.anneal_lr:                                    # 学习率线性退火到 0
+            frac = 1.0 - (update - 1.0) / num_updates
+            optimizer.param_groups[0]["lr"] = frac * args.learning_rate
+
+        # ───── 阶段 1：采样（θ_old = 当前 θ）─────
+        for step in range(T):
+            global_step += N
+            obs[step] = next_obs
+            with torch.no_grad():
+                action, logprob, _, value = agent.get_action_and_value(next_obs)
+            values[step] = value.flatten()
+            actions[step] = action
+            logprobs[step] = logprob
+            next_obs_np, reward, terminated, truncated, infos = envs.step(action.cpu().numpy())
+            done = np.logical_or(terminated, truncated)       # 简化：把“超时截断”也当作结束
+            rewards[step] = torch.as_tensor(reward, dtype=torch.float32)
+            dones[step] = torch.as_tensor(done, dtype=torch.float32)
+            next_obs = torch.as_tensor(next_obs_np, dtype=torch.float32)
+            if "final_info" in infos:
+                for info in infos["final_info"]:
+                    if info is not None and "episode" in info:
+                        recent_returns.append(float(np.mean(info["episode"]["r"])))
+</script>
+  <h4>⑥ 阶段 2：GAE</h4>
+  <script type="text/x-code" data-lang="python" data-file="ppo.py" data-title="ppo.py ⑥ 阶段 2：优势与价值目标 · 对应 §3 式(3.1)(3.3)(3.4)">
+        # ───── 阶段 2：计算优势与价值目标（不需要梯度）─────
+        with torch.no_grad():
+            next_value = agent.get_value(next_obs).flatten()  # V(s_T)，用来 bootstrap 末尾
+            advantages = torch.zeros_like(rewards)
+            last = torch.zeros(N)
+            for t in reversed(range(T)):
+                nonterminal = 1.0 - dones[t]                  # 回合结束：不 bootstrap，也截断递推
+                next_v = next_value if t == T - 1 else values[t + 1]
+                delta = rewards[t] + args.gamma * next_v * nonterminal - values[t]        # 式(3.1)
+                last = delta + args.gamma * args.gae_lambda * nonterminal * last           # 式(3.3)
+                advantages[t] = last
+            returns = advantages + values                                                  # 式(3.4)
+
+        # 展平：(T, N, ...) → (B, ...)
+        b_obs = obs.reshape((-1,) + obs_shape)
+        b_logprobs = logprobs.reshape(-1)
+        b_actions = actions.reshape((-1,) + act_shape)
+        b_advantages = advantages.reshape(-1)
+        b_returns = returns.reshape(-1)
+        b_values = values.reshape(-1)
+</script>
+  <h4>⑦ 阶段 3：K 个 epoch 的 minibatch 更新，以及监控</h4>
+  <p>请特别留意三处：① 更新时把<b>同一个</b> <code>b_actions[mb]</code> 传回网络，重新计算这批动作在新策略下的 log 概率，否则 <code>ratio</code> 就是在比较两个不同的动作；② <code>pg_loss</code> 里用 <code>max</code> 是因为损失是目标的相反数；③ <code>approx_kl</code> 与 <code>clipfrac</code> 只用于监控，放在 <code>no_grad</code> 里。</p>
+  <script type="text/x-code" data-lang="python" data-file="ppo.py" data-title="ppo.py ⑦ 阶段 3：优化与监控 · 对应 §5 式(5.1)(5.2)、§6 式(6.2)、§10">
+        # ───── 阶段 3：K 个 epoch × minibatch 更新 ─────
+        b_inds = np.arange(batch_size)
+        clipfracs = []
+        for epoch in range(args.update_epochs):
+            np.random.shuffle(b_inds)
+            for s in range(0, batch_size, minibatch_size):
+                mb = b_inds[s:s + minibatch_size]
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb], b_actions[mb])
+                logratio = newlogprob - b_logprobs[mb]
+                ratio = logratio.exp()                                                    # 式(5.1)
+                with torch.no_grad():                                                     # 仅用于监控
+                    approx_kl = ((ratio - 1) - logratio).mean()
+                    clipfracs.append(((ratio - 1.0).abs() > args.clip_coef).float().mean().item())
+
+                mb_adv = b_advantages[mb]
+                if args.norm_adv:                                                         # minibatch 内标准化
+                    mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
+
+                pg_loss1 = -mb_adv * ratio                                                # 式(5.2)
+                pg_loss2 = -mb_adv * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+
+                newvalue = newvalue.view(-1)
+                if args.clip_vloss:                                                       # 可选，有争议
+                    v_unclipped = (newvalue - b_returns[mb]) ** 2
+                    v_clipped = b_values[mb] + torch.clamp(newvalue - b_values[mb],
+                                                           -args.clip_coef, args.clip_coef)
+                    v_loss = 0.5 * torch.max(v_unclipped, (v_clipped - b_returns[mb]) ** 2).mean()
+                else:
+                    v_loss = 0.5 * ((newvalue - b_returns[mb]) ** 2).mean()               # 式(6.2)
+
+                entropy_loss = entropy.mean()
+                loss = pg_loss - args.ent_coef * entropy_loss + args.vf_coef * v_loss    # 式(6.2)
+
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                optimizer.step()
+
+            if args.target_kl is not None and approx_kl.item() > args.target_kl:
+                break                                                                     # KL 早停
+
+        # ───── 监控 ─────
+        y_pred, y_true = b_values.numpy(), b_returns.numpy()
+        var_y = np.var(y_true)
+        explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+        avg_ret = np.mean(recent_returns) if recent_returns else float("nan")
+        print(f"update {update}/{num_updates}  step {global_step}  return(avg20) {avg_ret:8.1f}  "
+              f"entropy {entropy_loss.item():.3f}  v_loss {v_loss.item():.3f}  "
+              f"kl {approx_kl.item():.4f}  clipfrac {np.mean(clipfracs):.3f}  "
+              f"ev {explained_var:.3f}  sps {int(global_step / (time.time() - start))}")
+
+    envs.close()
+
+
+if __name__ == "__main__":
+    main()
+</script>
+
+  <h3>8.3 从离散扩展到连续：到底改了什么 <span class="tag y">🟡 进阶</span></h3>
+  <p>上面的文件已经同时支持两种动作空间，实际差异只有这几处：</p>
+  <div class="tbl"><table>
+    <tr><th>位置</th><th>离散（CartPole）</th><th>连续（Pendulum）</th></tr>
+    <tr><td>策略分布</td><td><code>Categorical(logits)</code></td><td><code>Normal(mean, exp(log σ))</code></td></tr>
+    <tr><td>策略参数</td><td>网络输出 logits</td><td>网络输出均值，另有状态无关的可学习 <code>log σ</code></td></tr>
+    <tr><td>log 概率与熵</td><td>标量</td><td>各动作维独立，按维求和</td></tr>
+    <tr><td>动作形状</td><td><code>()</code></td><td><code>(act_dim,)</code></td></tr>
+    <tr><td>环境包装</td><td>无</td><td>ClipAction、观测标准化、奖励缩放</td></tr>
+    <tr><td>常见超参</td><td>\(T=128\)，\(K=4\)，\(c_e=0.01\)</td><td>\(T=2048\)，\(K=10\)，\(c_e=0\)（MuJoCo 风格）</td></tr>
+  </table></div>
+  <div class="box d"><span class="bt">🔬 为什么 log σ 是状态无关的参数</span>这是 PPO 在连续控制里最常见的做法：简单、稳定，且熵项对 \(\ln\sigma\) 的梯度恒定（第 6 章）。也可以让网络同时输出 \(\sigma(s)\)，但更容易出现方差塌缩或爆炸。另外，我们把<b>未裁剪的</b>采样动作存入缓冲区、计算 log 概率，由 <code>ClipAction</code> 在送入环境前才裁剪；如果改用 tanh 压缩动作，则需要额外加上变量变换的 Jacobian 修正项。</div>
+  <p>预期现象（仅供参考，随种子与超参波动很大）：CartPole-v1 的随机策略平均回报只有二十多，最高 500，训练若正常，回报会明显上升并向 500 靠拢；Pendulum-v1 的随机策略回报大约在 −1200 量级，训练后期应显著改善。Pendulum 对超参较敏感，若不收敛请先看第 10 章。</p>
+
+  <h3>8.4 单元检验：GAE 递推与定义是否一致 <span class="tag y">🟡 进阶</span></h3>
+  <p>写强化学习代码最危险的是“能跑但悄悄错了”。下面这段只依赖 NumPy，用最朴素的方式按定义 \(\sum(\gamma\lambda)^l\delta_{t+l}\) 重算一遍，并与反向递推对比，还特意加入了回合中途结束的情形。养成给核心公式写小测试的习惯。</p>
+  <script type="text/x-code" data-lang="python" data-title="test_gae.py：递推实现 vs 按定义直接求和">
+import numpy as np
+
+def gae_recursive(r, v, v_last, done, gamma, lam):
+    T = len(r); adv = np.zeros(T); last = 0.0
+    for t in reversed(range(T)):
+        nonterm = 1.0 - done[t]
+        next_v = v_last if t == T - 1 else v[t + 1]
+        delta = r[t] + gamma * next_v * nonterm - v[t]
+        last = delta + gamma * lam * nonterm * last
+        adv[t] = last
+    return adv
+
+def gae_bruteforce(r, v, v_last, done, gamma, lam):
+    """直接按定义 Â_t = Σ_l (γλ)^l δ_{t+l}；遇到回合结束就停止求和"""
+    T = len(r); adv = np.zeros(T)
+    for t in range(T):
+        total = 0.0
+        for l in range(T - t):
+            k = t + l
+            next_v = v_last if k == T - 1 else v[k + 1]
+            delta = r[k] + gamma * next_v * (1 - done[k]) - v[k]
+            total += (gamma * lam) ** l * delta
+            if done[k]:
+                break
+        adv[t] = total
+    return adv
+
+rng = np.random.default_rng(0)
+r, v = rng.normal(size=10), rng.normal(size=10)
+done = np.array([0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0])       # 第 3、8 步之后回合结束
+a1 = gae_recursive(r, v, 0.3, done, 0.99, 0.95)
+a2 = gae_bruteforce(r, v, 0.3, done, 0.99, 0.95)
+print("一致：", np.allclose(a1, a2))                       # 应输出 一致： True
+</script>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>代码结构就是第 7 章的三个阶段：采样（<code>no_grad</code>）→ GAE 反向递推 → K 个 epoch 的 minibatch 更新。</li>
+    <li>离散到连续只需替换分布与包装器：<code>Categorical</code> 换成 <code>Normal</code>，log 概率与熵按维求和，并加观测与奖励归一化。</li>
+    <li>关键易错点：采样不带梯度、更新时复用同一批动作、损失符号、<code>done</code> 掩码；给 GAE 这类核心公式写单元测试。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch8"></div>
+</section>
+
+<section class="chapter" id="ch9" data-title="工程细节：PPO 的“隐藏配方”">
+  <header class="ch-head"><div class="kick">第 9 章</div><h2>工程细节：PPO 的“隐藏配方”</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>只实现式 (5.2) 往往跑不出好结果。社区总结的 <i>The 37 Implementation Details of Proximal Policy Optimization</i>（Huang 等，2022，ICLR Blog Track）列出了大量论文里没写、但对效果影响很大的细节。本章精选最关键的几项，讲清它为什么有效，以及去掉之后常见的现象。</div>
+
+  <h3>9.1 论文做法与常见实现的差异 <span class="tag y">🟡 进阶</span></h3>
+  <p>下表凡是“论文没有”的地方，都是实现者后来加的。读论文、读代码时，要把这两层分开。</p>
+  <div class="tbl"><table>
+    <tr><th>项目</th><th><span class="tag p" style="margin:0">📄 论文</span></th><th><span class="tag p" style="margin:0">🛠 常见实现</span></th></tr>
+    <tr><td>优势标准化</td><td>未提及</td><td>几乎都有，通常在 minibatch 内做</td></tr>
+    <tr><td>价值裁剪</td><td>没有</td><td>baselines 有；是否使用有争议（第 6 章）</td></tr>
+    <tr><td>全局梯度裁剪（0.5）</td><td>没有</td><td>几乎都有</td></tr>
+    <tr><td>学习率</td><td>Atari 实验中随训练线性退火；MuJoCo 实验为固定值</td><td>常默认线性退火到 0</td></tr>
+    <tr><td>观测、奖励归一化</td><td>未提及</td><td>连续控制几乎必备（VecNormalize 一类）</td></tr>
+    <tr><td>网络结构</td><td>式 (6.1) 针对策略与价值共享参数的情形</td><td>许多实现使用分离的 actor 与 critic</td></tr>
+    <tr><td>初始化与优化器</td><td>未提及</td><td>正交初始化；Adam 的 \(\epsilon=10^{-5}\)</td></tr>
+    <tr><td>熵系数</td><td>公式里有 \(c_2\)；MuJoCo 设置中未使用</td><td>离散常 0.01，连续常 0</td></tr>
+  </table></div>
+
+  <h3>9.2 六项最关键的细节 <span class="tag y">🟡 进阶</span></h3>
+
+  <h4>① 多环境并行采样</h4>
+  <p><b>做法：</b>\(N\) 个环境同时运行，每轮收集 \(N\times T\) 条经验（代码里 <code>(T, N)</code> 的缓冲区）。</p>
+  <p><b>为什么有效：</b>同一环境相邻时刻的样本高度相关；把不同环境的样本放在一起，批内样本更接近独立，梯度方差更小。批更大，也让每轮的统计更稳。</p>
+  <p><b>去掉后：</b>若只用 \(N=1\)，需要用很大的 \(T\) 才能得到足够多样的批，否则梯度噪声明显增大。</p>
+
+  <h4>② 正交初始化与输出层小初始化</h4>
+  <p><b>做法：</b>隐藏层用正交初始化（gain \(\sqrt2\)）；策略输出层 gain 取 0.01；价值输出层 gain 取 1；偏置为 0。</p>
+  <p><b>为什么有效：</b>策略输出层很小，初始 logits 接近 0，初始策略近似均匀，熵约为 \(\ln n\)，探索充分，而且第一轮更新时 \(\pit\approx\pio\)，KL 很小。正交初始化让信号在各层间传播时尺度稳定。</p>
+  <p><b>去掉后：</b>初始策略可能已经偏向某些动作，早期学习变慢或更不稳定。这类影响因环境而异。</p>
+
+  <h4>③ 优势标准化</h4>
+  <p><b>做法：</b>在每个 minibatch 内 \(\hat A\leftarrow(\hat A-\mu)/(\sigma+10^{-8})\)。</p>
+  <p><b>为什么有效：</b>它让策略损失的尺度与奖励量级无关，同一组学习率与 \(\epsilon\) 能在不同环境里工作；同时保证每批里大约一半样本被推高、一半被压低。注意它会把优势的绝对大小抹掉，只保留相对大小。</p>
+  <p><b>去掉后：</b>奖励尺度大的任务里，策略梯度过大，\(\rho\) 很快冲出区间；尺度小的任务里则更新几乎不动。minibatch 很小时，标准化本身的噪声也要留意。</p>
+
+  <h4>④ 学习率线性退火</h4>
+  <p><b>做法：</b>学习率从初值线性降到 0。</p>
+  <p><b>为什么有效：</b>前期需要大步探索，后期要在好策略附近细调，小步更不容易把已学到的东西冲掉。</p>
+  <p><b>去掉后：</b>常见现象是后期回报波动大，难以稳定在高位。</p>
+
+  <h4>⑤ 全局梯度裁剪</h4>
+  <p><b>做法：</b>把所有参数的梯度当成一个向量，若范数超过 0.5 就整体缩放到 0.5。</p>
+  <p><b>为什么有效：</b>个别批次可能出现极大的梯度（例如异常大的价值误差），一步就能毁掉策略。裁剪限制了单步更新的最大幅度，是对 clip 机制的补充。</p>
+  <p><b>去掉后：</b>偶发的梯度尖峰会导致回报骤降，且难以复现。</p>
+
+  <h4>⑥ 观测归一化</h4>
+  <p><b>做法：</b>用运行均值与方差把观测标准化，再裁剪到 \([-10,10]\)。</p>
+  <p><b>为什么有效：</b>连续控制的观测各维量纲差异很大（角度、速度、力），不归一化会让网络难以训练。</p>
+  <p><b>去掉后：</b>在连续控制任务上，常见性能明显下降。需要注意：统计量会随训练变化（非平稳），评估和部署时要使用训练时保存的统计量。</p>
+
+  <h3>9.3 其他重要细节 <span class="tag y">🟡 进阶</span></h3>
+  <div class="tbl"><table>
+    <tr><th>细节</th><th>做法</th><th>为什么 / 去掉后的常见现象</th></tr>
+    <tr><td>奖励缩放</td><td>除以折扣回报的运行标准差（不减均值），再裁剪</td><td>让价值目标的量级稳定，critic 更容易拟合。去掉后价值损失可能很大，梯度裁剪被它主导，策略学得慢</td></tr>
+    <tr><td>Adam \(\epsilon=10^{-5}\)</td><td>比默认 \(10^{-8}\) 大</td><td>提高数值稳定性，影响通常不大</td></tr>
+    <tr><td>终止与截断的区分</td><td>真终止：bootstrap 为 0；时间到期（truncated）：应对最后一帧的 \(V\) 做 bootstrap</td><td>我们的代码把两者都当作 done，是为了简洁；在“超时很频繁”的任务里会引入偏差，更严谨的做法是用向量环境返回的 final observation 估值</td></tr>
+    <tr><td>KL 早停</td><td>设 <code>target_kl</code>，批内 KL 过大就停止后续 epoch</td><td>弥补 clip 不是硬约束的缺陷（5.4）。去掉后在激进超参下更容易出现策略崩溃</td></tr>
+    <tr><td>价值裁剪</td><td>见第 6 章</td><td>争议项，默认关闭</td></tr>
+    <tr><td>minibatch 洗牌</td><td>每个 epoch 重新打乱</td><td>避免每次都按同样顺序、同样组合看数据，降低相关性</td></tr>
+  </table></div>
+  <div class="box d"><span class="bt">🔬 这说明了什么</span>Engstrom 等（2020）的研究表明，PPO 相对 TRPO 的优势有相当一部分来自这类代码级优化，而不是 clip 本身（5.4）。所以在复现论文时，如果结果对不上，先检查这些细节，而不是怀疑公式。</div>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>论文给的是骨架，实现里的优势标准化、梯度裁剪、归一化、退火、正交初始化才是让它稳定的血肉。</li>
+    <li>每一项细节都有明确动机：降低样本相关性、稳住尺度、限制单步冲击、让后期细调。</li>
+    <li>读代码时要分清“论文有的”与“实现者加的”，这类差异经常是复现结果对不上的原因。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch9"></div>
+</section>
+
+<section class="chapter" id="ch10" data-title="训练诊断：看懂曲线，排查故障">
+  <header class="ch-head"><div class="kick">第 10 章</div><h2>训练诊断：看懂曲线，排查故障</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>训练跑起来了，但回报不涨、忽然崩溃、或者 NaN。本章告诉你每个监控量代表什么，常见故障在曲线上长什么样，以及按什么顺序排查。</div>
+
+  <h3>10.1 七个监控量 <span class="tag y">🟡 进阶</span></h3>
+  <div class="tbl"><table>
+    <tr><th>指标</th><th>定义</th><th>健康时大致是</th><th>异常信号</th></tr>
+    <tr><td>episodic return</td><td>每个回合的原始回报（未被奖励缩放）</td><td>整体上升，带噪声</td><td>长期不涨；涨了又崩</td></tr>
+    <tr><td>policy loss</td><td>\(-\Lclip\)</td><td>在 0 附近晃动，正负不表示好坏</td><td>只有配合 KL、clipfrac 才有意义</td></tr>
+    <tr><td>value loss</td><td>\(\tfrac12\Eh[(V_\phi-\hat G)^2]\)</td><td>随回报量级变化，整体可控、先升后降很常见</td><td>持续爆炸；或一直很大</td></tr>
+    <tr><td>entropy</td><td>策略熵均值</td><td>起点接近 \(\ln n\)（离散），随训练缓慢下降</td><td>很快塌到 0；或始终不降</td></tr>
+    <tr><td>approx_kl</td><td>\(\Eh[(\rho-1)-\ln\rho]\)，是 \(\KL(\pio\Vert\pit)\) 的低方差估计</td><td>经验上每次更新常在 \(10^{-3}\sim10^{-2}\) 量级</td><td>持续远大于 0.02～0.05，说明步子太大</td></tr>
+    <tr><td>clipfrac</td><td>\(|\rho-1|&gt;\epsilon\) 的样本占比</td><td>经验上常在 0.01～0.3</td><td>≈0：几乎没有更新；很高（如 &gt;0.5）：过于激进</td></tr>
+    <tr><td>explained variance</td><td>\(1-\Var(\hat G-V)/\Var(\hat G)\)</td><td>随训练逐步趋近 1</td><td>≤0：critic 还不如一个常数；波动剧烈</td></tr>
+  </table></div>
+  <p>说明：approx_kl 取自 Schulman 的博文 <i>Approximating KL Divergence</i> 中的低方差估计（常称 k3）；代码里同时算的 <code>old_approx_kl=\(\Eh[-\ln\rho]\)</code> 是方差较大的 k1。表里的“健康范围”是社区的经验法则，不是定理，不同环境差别很大，不要机械套用。</p>
+  <div class="box c"><span class="bt">🧮 手算：approx_kl 的两种估计</span>某样本 \(\rho=1.1\)：k1 \(=-\ln1.1=-0.0953\)，k3 \(=(1.1-1)-\ln1.1=0.0047\)。k3 恒为非负，每个样本都是 KL 的“正向”贡献，所以方差更小。</div>
+
+  <h3>10.2 常见故障：症状、原因、排查 <span class="tag y">🟡 进阶</span></h3>
+
+  <h4>故障 A：回报一直不涨</h4>
+  <p><b>症状：</b>return 在初始水平徘徊；可能伴随 entropy 几乎不变。</p>
+  <p><b>可能原因：</b>学习率过小或过大；奖励尺度不当（没有缩放）；critic 没学会（explained variance≈0）；观测未归一化；实现 bug（见下）。</p>
+  <p><b>排查步骤：</b></p>
+  <ol>
+    <li>先在最简单的环境（CartPole）上确认代码本身没问题，再换到目标环境。</li>
+    <li>检查初始 entropy 是否接近 \(\ln n\)；若远低于此，输出层初始化有问题。</li>
+    <li>看 approx_kl 与 clipfrac：都≈0，说明更新几乎没发生（学习率、梯度裁剪、优势接近 0）；都很大，说明在乱跳。</li>
+    <li>看 explained variance：长期≤0，先解决 critic（奖励缩放、学习率、<code>vf_coef</code>）。</li>
+    <li>排查实现：采样是否在 <code>no_grad</code> 下；更新时是否把同一批动作传回去；损失符号；<code>done</code> 掩码；优势是否 <code>detach</code>。</li>
+  </ol>
+
+  <h4>故障 B：熵塌缩</h4>
+  <p><b>症状：</b>entropy 很快接近 0，return 停在次优水平；连续动作时 \(\sigma\) 很快变得极小。</p>
+  <p><b>可能原因：</b>熵系数太小；学习率太大；没有优势标准化导致梯度过大；奖励里有“捷径”被策略很快锁定。</p>
+  <p><b>对策：</b>适当增大 <code>ent_coef</code>、降低学习率、开启 <code>norm_adv</code>；连续动作可给 \(\ln\sigma\) 设下界。</p>
+
+  <h4>故障 C：价值发散</h4>
+  <p><b>症状：</b>value loss 持续变大，explained variance 变成大负数。</p>
+  <p><b>可能原因：</b>奖励量级很大而未缩放；学习率或 <code>vf_coef</code> 过大；梯度裁剪过松；done / 截断处理错误，导致价值目标有系统性偏差。</p>
+  <p><b>对策：</b>启用奖励缩放；降低学习率；检查 GAE 里的 <code>nonterminal</code> 掩码；必要时才考虑 value clipping。</p>
+
+  <h4>故障 D：回报先涨后崩（策略崩溃）</h4>
+  <p><b>症状：</b>return 上升后骤降且难以恢复；崩溃前 approx_kl 与 clipfrac 往往已经偏高。</p>
+  <p><b>可能原因：</b>学习率太大；\(K\) 太大或 minibatch 太小导致对一批数据过度更新；\(\epsilon\) 太大；批太小，优势估计噪声大。</p>
+  <p><b>对策：</b>降低学习率、减少 <code>update_epochs</code>、设置 <code>target_kl</code> 早停、加大批；保存检查点以便回退。</p>
+
+  <h4>故障 E：出现 NaN</h4>
+  <p><b>常见来源：</b>连续动作里 \(\ln\sigma\) 过小或过大；观测或奖励里出现 inf；学习率过大造成参数爆炸；对零方差的量做了除法。</p>
+  <p><b>排查：</b>打印每层输出与梯度范数，定位第一个出现 NaN 的位置，再倒推原因。</p>
+
+  <h3>10.3 一个很有用的自检：对单批数据反复优化 <span class="tag y">🟡 进阶</span></h3>
+  <p>取一批数据，关闭采样，只反复做优化（比如 100 步）。如果实现正确，你应该看到：目标 \(\Lclip\) 上升，\(\rho\) 逐步偏离 1，clipfrac 变大，approx_kl 变大并最终趋于平缓。如果 clipfrac 始终为 0，说明学习率太小或梯度没传回去；如果 KL 无限增大且 clipfrac 也不饱和，说明 clip 没有起作用，检查 <code>ratio</code> 的计算与 <code>clamp</code> 的参数。这也是直观感受“clip 不是硬约束”的好办法。</p>
+
+  <h3>10.4 一个排查顺序（可当清单用） <span class="tag g">🟢 基础</span></h3>
+  <ol>
+    <li>环境本身对不对：随机策略的回报是否合理？观测、奖励的量级是多少？</li>
+    <li>先在 CartPole 上验证代码，通过后再换任务。</li>
+    <li>看 entropy 起点与走向，再看 approx_kl、clipfrac，判断更新是太小、合适还是太大。</li>
+    <li>看 explained variance，确认 critic 是否可信。</li>
+    <li>逐项检查第 9 章的细节是否都开了，尤其是归一化、优势标准化、梯度裁剪。</li>
+    <li>一次只改一个超参数，并用几个随机种子对比，避免被运气误导。</li>
+  </ol>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>看进度用 return、entropy、approx_kl、clipfrac、explained variance，policy loss 的正负没有意义。</li>
+    <li>approx_kl 和 clipfrac 告诉你步子大小：几乎为 0 是没更新，持续偏大是太激进。</li>
+    <li>排查按“环境 → 简单任务验证 → 更新幅度 → critic → 工程细节”的顺序，一次只改一个变量。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch10"></div>
+</section>
+
+<section class="chapter" id="ch11" data-title="PPO 与大模型 RLHF">
+  <header class="ch-head"><div class="kick">第 11 章</div><h2>PPO 与大模型 RLHF</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>InstructGPT 一类的对齐流程里，PPO 是怎么套到语言模型上的？本章把前面学过的 RL 概念一一对应到“生成文本”这件事上，讲清四个模型的分工与 KL 惩罚，并比较 GRPO、DPO 与 PPO 的区别。</div>
+
+  <h3>11.1 把文本生成看成 token 级的 MDP <span class="tag g">🟢 基础</span></h3>
+  <div class="box a"><span class="bt">🏠 类比</span>语言模型写回复，就像一个人一个字一个字地写作文。写完一整篇，老师（奖励模型）给一个总分；老师不会在每个字旁边打分，但会检查你是不是离“正常写法”跑得太偏。</div>
+  <div class="tbl"><table>
+    <tr><th>RL 概念</th><th>在 RLHF 中对应</th></tr>
+    <tr><td>策略 \(\pit\)</td><td>语言模型，输出下一个 token 的分布</td></tr>
+    <tr><td>状态 \(s_t\)</td><td>提示词 \(x\) 加上已生成的 token \(y_{&lt;t}\)</td></tr>
+    <tr><td>动作 \(a_t\)</td><td>下一个 token \(y_t\)（离散，动作空间 = 词表）</td></tr>
+    <tr><td>转移</td><td>确定性：把新 token 接在后面</td></tr>
+    <tr><td>回合</td><td>一次完整回复，遇到结束符或长度上限即结束</td></tr>
+    <tr><td>奖励</td><td>奖励模型对整句的打分，通常放在最后一个 token；每个 token 还有 KL 惩罚</td></tr>
+    <tr><td>\(\gamma\)</td><td>常取 1（回复很短，且奖励只出现在末尾）</td></tr>
+    <tr><td>价值 \(V\)</td><td>critic 对每个 token 位置输出一个估值</td></tr>
+  </table></div>
+
+  <h3>11.2 四个模型各管什么 <span class="tag y">🟡 进阶</span></h3>
+  <div class="tbl"><table>
+    <tr><th>模型</th><th>是否更新</th><th>作用</th></tr>
+    <tr><td><b>Actor</b>（策略 \(\pit\)）</td><td>是</td><td>生成回复，被 PPO 优化。初始化自监督微调（SFT）模型</td></tr>
+    <tr><td><b>Critic</b>（价值 \(V_\phi\)）</td><td>是</td><td>逐 token 估计价值，用于算 GAE。常与 actor 同规模，或共享主干再加一个价值头</td></tr>
+    <tr><td><b>Reference</b>（\(\pi_{\text{ref}}\)）</td><td>否（冻结）</td><td>通常就是 SFT 模型，用来计算 KL 惩罚，约束 actor 别跑偏</td></tr>
+    <tr><td><b>Reward Model</b>（奖励模型）</td><td>否（冻结）</td><td>对完整回复打分，代表人类偏好</td></tr>
+  </table></div>
+  <p>这意味着训练时要同时放下四个大模型，还要在线生成大量文本，所以内存与吞吐是工程上的主要挑战，这也是后来出现 GRPO 等省掉 critic 的方法的动因之一。</p>
+
+  <h3>11.3 KL 惩罚 <span class="tag y">🟡 进阶</span></h3>
+  <p>如果只最大化奖励模型的分数，actor 会学会钻奖励模型的空子（reward hacking），或者让语言能力退化，因为奖励模型只在“像样的回复”附近可靠。解决办法是对偏离参考模型加惩罚。常见做法是把它放进逐 token 的奖励里：</p>
+  \[r_t=-\beta\Big[\log\pit(a_t\mid s_t)-\log\pi_{\text{ref}}(a_t\mid s_t)\Big]\ \ (t&lt;T),\qquad r_T=r_{\text{RM}}(x,y)-\beta\Big[\log\pit(a_T\mid s_T)-\log\pi_{\text{ref}}(a_T\mid s_T)\Big]\tag{11.1}\]
+  <p>这对应于优化 \(\E[r_{\text{RM}}(x,y)]-\beta\,\KL(\pit\Vert\pi_{\text{ref}})\)。\(\beta\) 越大越保守，越小越容易被奖励模型“带偏”。得到这些奖励之后，接下来的步骤与前十章完全一样：逐 token 做 GAE，用 token 级概率比与 clip 更新，只是对 prompt 与填充位置要掩码掉。</p>
+  <div class="box c"><span class="bt">🧮 手算：一条 3 个 token 的回复</span>
+    <p>\(\beta=0.1\)，actor 的 log 概率 \([-1.0,-0.5,-2.0]\)，参考模型 \([-1.2,-0.9,-1.8]\)，奖励模型总分 \(+2.0\)。</p>
+    <p>每个 token 的 \(\log\pit-\log\pi_{\text{ref}}=[0.2,\ 0.4,\ -0.2]\)，惩罚 \(=-0.1\times\) 它 \(=[-0.02,\ -0.04,\ +0.02]\)。</p>
+    <p>最后一个 token 再加上总分：奖励序列 \(r=[-0.02,\ -0.04,\ 2.02]\)。</p></div>
+  <div class="box d"><span class="bt">🔬 InstructGPT 的 PPO-ptx</span>Ouyang 等（2022）还在目标里混入了预训练数据上的语言建模梯度：\(\E[r_{\text{RM}}-\beta\log\tfrac{\pi^{\text{RL}}}{\pi^{\text{SFT}}}]+\gamma_{\text{ptx}}\,\E_{x\sim D_{\text{pretrain}}}[\log\pi^{\text{RL}}(x)]\)，用来缓解对齐之后在公开 NLP 任务上性能下降的问题。</div>
+
+  <h3>11.4 与 GRPO、DPO 的区别与联系 <span class="tag y">🟡 进阶</span></h3>
+  <div class="tbl"><table>
+    <tr><th></th><th>PPO</th><th>GRPO</th><th>DPO</th></tr>
+    <tr><td>需要 critic</td><td>需要</td><td>不需要</td><td>不需要</td></tr>
+    <tr><td>需要奖励信号</td><td>奖励模型（或其他打分）</td><td>奖励模型或规则奖励</td><td>不显式训练奖励模型，直接用偏好对</td></tr>
+    <tr><td>数据</td><td>在线采样</td><td>在线采样，每个 prompt 采一组回复</td><td>离线的偏好数据</td></tr>
+    <tr><td>优势来源</td><td>逐 token 的 GAE</td><td>组内奖励标准化：\(\hat A_i=(r_i-\bar r)/\mathrm{std}(r)\)，同一回复的所有 token 共享</td><td>无显式优势</td></tr>
+    <tr><td>核心机制</td><td>clip 目标</td><td>沿用 PPO 的 clip 目标；KL 作为损失项而非放进奖励</td><td>偏好对上的逻辑回归式损失</td></tr>
+  </table></div>
+  <p><b>GRPO</b>（DeepSeekMath，Shao 等 2024）是 PPO 的变体：用同一个 prompt 采样多条回复，拿组内相对奖励当优势，省掉 critic 的显存与训练成本；代价是每个 prompt 要多次采样，且优势是序列级的，粒度比逐 token 的 GAE 粗。</p>
+  <p><b>DPO</b>（Rafailov 等 2023）则完全绕开了“在线采样 + RL”：它利用 KL 正则目标的最优解形式，把奖励改写成策略与参考模型的对数比，直接在偏好对 \((y_w,y_l)\) 上最小化</p>
+  \[\mathcal L_{\text{DPO}}=-\log\sigma\!\Big(\beta\log\tfrac{\pit(y_w\mid x)}{\pi_{\text{ref}}(y_w\mid x)}-\beta\log\tfrac{\pit(y_l\mid x)}{\pi_{\text{ref}}(y_l\mid x)}\Big)\]
+  <p>它更简单稳定，但属于离线方法，策略自己产生的新样本不参与训练，效果高度依赖偏好数据的质量与覆盖。</p>
+  <details class="deep"><summary><span class="tag r">🔴 深入</span> 为什么 KL 正则目标的最优策略长这样，DPO 又是怎么推出来的</summary><div class="dbody">
+    <p>固定 prompt \(x\)，目标 \(\max_\pi\ \E_{y\sim\pi}[r(x,y)]-\beta\,\KL(\pi\Vert\pi_{\text{ref}})\)。定义 \(\pi^*(y\mid x)=\pi_{\text{ref}}(y\mid x)e^{r(x,y)/\beta}/Z(x)\)，其中 \(Z(x)\) 是归一化常数。把目标改写：</p>
+    \[\E_{y\sim\pi}\Big[r-\beta\log\tfrac{\pi}{\pi_{\text{ref}}}\Big]=-\beta\,\E_{y\sim\pi}\Big[\log\tfrac{\pi}{\pi_{\text{ref}}e^{r/\beta}}\Big]=-\beta\,\KL(\pi\Vert\pi^*)+\beta\log Z(x)\]
+    <p>\(\log Z\) 与 \(\pi\) 无关，所以最大化目标等价于最小化 \(\KL(\pi\Vert\pi^*)\)，最优解就是 \(\pi=\pi^*\)。反过来 \(r(x,y)=\beta\log\tfrac{\pi^*(y\mid x)}{\pi_{\text{ref}}(y\mid x)}+\beta\log Z(x)\)。把它代入 Bradley–Terry 偏好模型 \(P(y_w\succ y_l)=\sigma(r(x,y_w)-r(x,y_l))\)，两个回复的 \(\log Z(x)\) 相消，就得到上面的 DPO 损失。</p>
+  </div></details>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>RLHF 把每个 token 当作动作：状态是 prompt 加前缀，奖励模型的总分放在末尾，每个 token 再加 \(-\beta\) 倍的 KL 惩罚。</li>
+    <li>actor 与 critic 被训练，reference 与奖励模型冻结；之后的 GAE 与 clip 更新与前十章一模一样，只是在 token 级进行。</li>
+    <li>GRPO 用组内相对奖励省掉 critic，DPO 用偏好对的闭式损失绕开在线 RL；它们都在回答“如何更省地做同一件事”。</li>
+  </ol></div>
+  <div class="quiz" data-quiz="ch11"></div>
+</section>
+
+<section class="chapter" id="ch12" data-title="总结、速查表与自测">
+  <header class="ch-head"><div class="kick">第 12 章</div><h2>总结、速查表与自测</h2></header>
+  <div class="problem"><b>本章解决什么问题</b>把全部内容收拢成一张图、一页纸和一套题，检验你是否真的掌握了。</div>
+
+  <h3>12.1 算法谱系 <span class="tag g">🟢 基础</span></h3>
+  <div class="lineage">
+    <div><b>REINFORCE</b><span>用 \(G_t\) 当权重做策略梯度。问题：方差大，数据只能用一次。</span></div>
+    <div><b>+ baseline</b><span>减去 \(b(s)\)（常取 \(V\)），不引入偏差，降方差。</span></div>
+    <div><b>Actor-Critic</b><span>用学出来的 critic 提供 \(V\) 与 TD 误差。降方差，但引入对 critic 的偏差依赖。</span></div>
+    <div><b>+ GAE</b><span>用 \(\lambda\) 在 TD 与蒙特卡洛之间平滑折中。</span></div>
+    <div><b>TRPO</b><span>用 KL 信赖域约束每步的策略变化。稳定，但需要二阶方法，复杂。</span></div>
+    <div><b>PPO</b><span>用 clip 目标在一阶方法里近似信赖域，可以对同一批数据做多轮 minibatch 更新。</span></div>
+    <div><b>RLHF 中的 PPO，之后的 GRPO</b><span>token 级 MDP，加 KL 惩罚；GRPO 去掉 critic，用组内相对奖励估优势。</span></div>
+  </div>
+
+  <h3>12.2 一页纸速查表 <span class="tag g">🟢 基础</span></h3>
+  <div class="cheat">
+    <div><b>目标</b>最大化 \(J(\theta)=\E_{\tau\sim\pit}[\sum\gamma^tr_t]\)；梯度 \(\E[\sum\nabla\log\pit(a_t\mid s_t)\,\At]\)。</div>
+    <div><b>优势</b>\(\delta_t=r_t+\gamma V_{t+1}-V_t\)；\(\At=\delta_t+\gamma\lambda\hat A_{t+1}\)；价值目标 \(\hat G_t=\At+V_t\)。</div>
+    <div><b>概率比</b>\(\rho_t=\exp(\log\pit-\log\pio)\)；\(\rho=1\) 表示没变。</div>
+    <div><b>Clip 目标</b>\(\min(\rho\At,\ \clip(\rho,1\pm\epsilon)\At)\)。\(A&gt;0\)：\(\rho&gt;1+\epsilon\) 时梯度为 0；\(A&lt;0\)：\(\rho&lt;1-\epsilon\) 时梯度为 0。</div>
+    <div><b>总损失</b>\(-\Lclip+c_vL^V-c_e\bar{\mathcal H}\)；常用 \(\epsilon=0.2,\ c_v=0.5,\ c_e=0.01\)。</div>
+    <div><b>流程</b>采样 \(N\times T\) → GAE → \(K\) epoch × minibatch 更新 → 下一轮。批 \(B=NT\)。</div>
+    <div><b>必备细节</b>优势标准化、梯度裁剪 0.5、学习率退火、正交初始化、观测与奖励归一化。</div>
+    <div><b>诊断</b>return↑、entropy 缓降、approx_kl 与 clipfrac 适中、explained variance→1。</div>
+    <div><b>RLHF</b>token 为动作；奖励 = RM 总分 − \(\beta\)·逐 token KL；四个模型：actor、critic、reference、RM。</div>
+  </div>
+
+  <h3>12.3 公式总表 <span class="tag y">🟡 进阶</span></h3>
+  <div class="tbl"><table>
+    <tr><th>编号</th><th>公式</th><th>含义</th><th>章节</th></tr>
+    <tr><td class="n">(1.1)</td><td>\(J(\theta)=\E_{\tau\sim\pit}[\sum_t\gamma^tr_t]\)</td><td>优化目标</td><td>1.7</td></tr>
+    <tr><td class="n">(2.1)</td><td>\(\nabla J=\E[\sum_t\nabla\log\pit(a_t\mid s_t)\Psi_t]\)</td><td>策略梯度的统一形式</td><td>2.1</td></tr>
+    <tr><td class="n">(2.3)</td><td>\(\nabla J=\E[(\sum_t\nabla\log\pit)\,R(\tau)]\)</td><td>REINFORCE</td><td>2.2</td></tr>
+    <tr><td class="n">(2.4)</td><td>权重换成 \(G_t\)</td><td>reward-to-go</td><td>2.5</td></tr>
+    <tr><td class="n">(2.5)</td><td>权重换成 \(G_t-b(s_t)\)</td><td>baseline，无偏</td><td>2.6</td></tr>
+    <tr><td class="n">(3.1)</td><td>\(\delta_t=r_t+\gamma V(s_{t+1})-V(s_t)\)</td><td>TD 误差</td><td>3.2</td></tr>
+    <tr><td class="n">(3.2)(3.3)</td><td>\(\At=\sum(\gamma\lambda)^l\delta_{t+l}=\delta_t+\gamma\lambda\hat A_{t+1}\)</td><td>GAE 与其递推</td><td>3.4</td></tr>
+    <tr><td class="n">(3.4)</td><td>\(\hat G_t=\At+V_{\text{old}}(s_t)\)</td><td>价值目标（λ-return）</td><td>3.5</td></tr>
+    <tr><td class="n">(4.1)</td><td>\(\E_{\pit}[f]=\E_{\pio}[\tfrac{\pit}{\pio}f]\)</td><td>重要性采样</td><td>4.2</td></tr>
+    <tr><td class="n">(4.2)</td><td>\(L^{\text{IS}}=\Eh[\rho_t\At]\)</td><td>代理目标</td><td>4.2</td></tr>
+    <tr><td class="n">(4.3)</td><td>\(\max\Eh[\rho_t\At]\) s.t. \(\Eh[\KL]\le\delta\)</td><td>TRPO</td><td>4.4</td></tr>
+    <tr><td class="n">(5.1)</td><td>\(\rho_t=\pit/\pio\)</td><td>概率比</td><td>5.1</td></tr>
+    <tr><td class="n">(5.2)</td><td>\(\Lclip=\Eh[\min(\rho\At,\clip(\rho,1\pm\epsilon)\At)]\)</td><td>PPO-Clip</td><td>5.2</td></tr>
+    <tr><td class="n">(5.3)</td><td>\(\Eh[\rho\At-\beta\KL]\)</td><td>PPO-Penalty</td><td>5.5</td></tr>
+    <tr><td class="n">(6.2)</td><td>\(-\Lclip+c_vL^V-c_e\bar{\mathcal H}\)</td><td>实现里的总损失</td><td>6.2</td></tr>
+    <tr><td class="n">(11.1)</td><td>\(r_t=-\beta[\log\pit-\log\pi_{\text{ref}}]\)，末尾加 \(r_{\text{RM}}\)</td><td>RLHF 逐 token 奖励</td><td>11.3</td></tr>
+  </table></div>
+
+  <h3>12.4 自测题（22 题） <span class="tag y">🟡 进阶</span></h3>
+  <p>先自己做，再点开看解答。标签：<span class="tag g" style="margin:0">概念</span> <span class="tag y" style="margin:0">手算</span> <span class="tag r" style="margin:0">代码排错</span> <span class="tag p" style="margin:0">开放思考</span></p>
+
+  <details class="qa"><summary><span class="tag g">概念</span> 1. 为什么减去 baseline \(b(s)\) 不会引入偏差？</summary><div class="dbody">新增项的期望是 \(b(s)\sum_a\pit(a\mid s)\nabla\log\pit(a\mid s)=b(s)\nabla\sum_a\pit(a\mid s)=b(s)\nabla1=0\)。关键是 \(b\) 不依赖动作，才能提到求和号外面。</div></details>
+  <details class="qa"><summary><span class="tag g">概念</span> 2. \(\gamma\) 与 \(\lambda\) 的作用有什么不同？</summary><div class="dbody">\(\gamma\) 定义问题本身：未来奖励值多少，改变它就改变了要优化的目标。\(\lambda\) 只是 GAE 估计器的旋钮，在固定 \(\gamma\) 下权衡偏差与方差；\(\lambda&lt;1\) 的偏差只在 critic 不准时出现。</div></details>
+  <details class="qa"><summary><span class="tag g">概念</span> 3. \(\At&gt;0\) 且 \(\rho&gt;1+\epsilon\) 时，\(\Lclip\) 对这个样本的梯度是什么？为什么？</summary><div class="dbody">梯度为 0。此时 \(\min(\rho\At,(1+\epsilon)\At)\) 取到常数 \((1+\epsilon)\At\)。含义：这个好动作的概率已经涨够了，继续涨没有额外收益。</div></details>
+  <details class="qa"><summary><span class="tag g">概念</span> 4. clip 是硬约束吗？说出一个让 \(\rho\) 越界的原因。</summary><div class="dbody">不是。例如：其他样本的梯度通过共享参数改变了该样本的概率；某一步学习率过大一次性越界；Adam 的动量让参数在梯度归零后仍继续移动。因此要监控 clipfrac，并可用 <code>target_kl</code> 早停。</div></details>
+  <details class="qa"><summary><span class="tag g">概念</span> 5. 为什么代码里用 <code>(newlogprob - oldlogprob).exp()</code> 而不是直接做概率相除？</summary><div class="dbody">模型天然输出 log 概率；对数差再取指数在数值上更稳定（概率很小时直接相除容易下溢），而且连续多维动作的联合概率是各维相乘，用 log 相加最方便。</div></details>
+  <details class="qa"><summary><span class="tag g">概念</span> 6. 优势标准化做了什么？有什么副作用？</summary><div class="dbody">在 minibatch 内把优势变成均值 0、标准差 1，使策略损失的尺度与奖励量级无关，也使约一半样本被推高、一半被压低。副作用：抹掉优势的绝对大小，只保留相对大小；minibatch 太小时标准化本身的噪声会变大。论文未提这一步，是实现细节。</div></details>
+  <details class="qa"><summary><span class="tag g">概念</span> 7. PPO 是 on-policy 还是 off-policy？</summary><div class="dbody">通常归为 on-policy，更准确地说是“近似 on-policy”：数据来自 \(\pio\)，重要性采样与 clip 使得它能在 \(\pit\approx\pio\) 的范围内被复用 \(K\) 轮；一旦两个策略差距过大，数据就失效了。</div></details>
+  <details class="qa"><summary><span class="tag g">概念</span> 8. RLHF 的 PPO 里哪些模型会被更新，哪些冻结？</summary><div class="dbody">更新：actor 与 critic。冻结：reference（用于 KL 惩罚）和奖励模型（打分）。</div></details>
+
+  <details class="qa"><summary><span class="tag y">手算</span> 9. \(\epsilon=0.2\)，\(\At=-1.5\)，\(\rho=1.5\)：求 \(\Lclip_t\) 并判断梯度是否被截断。</summary><div class="dbody">\(\rho\At=-2.25\)，\(\clip(1.5)\At=1.2\times(-1.5)=-1.8\)，取 min 得 \(-2.25\)，是未截断分支，梯度有效（梯度为 \(\At\rho\nabla\log\pit\)，方向是降低这个坏动作的概率）。</div></details>
+  <details class="qa"><summary><span class="tag y">手算</span> 10. \(r=[1,0,2]\)，\(V=[2,1.5,1]\)，\(\gamma=0.9\)，终止后 \(V=0\)：分别求 \(\lambda=0\) 与 \(\lambda=1\) 的优势。</summary><div class="dbody">\(\delta=[0.35,-0.6,1.0]\)。\(\lambda=0\)：\(\hat A=\delta=[0.35,-0.6,1.0]\)。\(\lambda=1\)：\(\hat A_2=1\)，\(\hat A_1=-0.6+0.9\times1=0.3\)，\(\hat A_0=0.35+0.9\times0.3=0.62\)，即 \([0.62,0.3,1.0]\)，与 \(G_t-V(s_t)\) 一致。</div></details>
+  <details class="qa"><summary><span class="tag y">手算</span> 11. 三个动作 logits 全为 0，采到第 3 个动作，权重 \(\Psi=1.5\)：求对 logits 的梯度。</summary><div class="dbody">\(\nabla_z\log\pi(a)=e_a-\pi=[-\tfrac13,-\tfrac13,\tfrac23]\)，乘 1.5 得 \([-0.5,-0.5,1.0]\)。</div></details>
+  <details class="qa"><summary><span class="tag y">手算</span> 12. \(N=8,\ T=256\)，8 个 minibatch，\(K=4\)：求 \(B\)、\(M\)、每轮梯度更新次数；跑 \(10^6\) 步要多少轮？</summary><div class="dbody">\(B=2048\)，\(M=256\)，每轮 \(8\times4=32\) 次更新，\(\lfloor10^6/2048\rfloor=488\) 轮。</div></details>
+  <details class="qa"><summary><span class="tag y">手算</span> 13. 某样本 \(\rho=1.1\)，求 approx_kl 的 k1 与 k3 估计。</summary><div class="dbody">k1 \(=-\ln1.1=-0.0953\)；k3 \(=(\rho-1)-\ln\rho=0.1-0.0953=0.0047\)。k3 非负，方差更小。</div></details>
+  <details class="qa"><summary><span class="tag y">手算</span> 14. 高斯策略 \(\sigma=0.5\)，一维动作，求熵；再求 \(\gamma=0.99,\lambda=0.95\) 时 GAE 的有效视野。</summary><div class="dbody">熵 \(=\tfrac12\ln(2\pi e\cdot0.25)=0.726\)。有效视野 \(\approx1/(1-\gamma\lambda)=1/(1-0.9405)\approx16.8\) 步。</div></details>
+  <details class="qa"><summary><span class="tag y">手算</span> 15. RLHF：\(\beta=0.1\)，actor log 概率 \([-1.0,-0.5,-2.0]\)，参考 \([-1.2,-0.9,-1.8]\)，奖励模型总分 2.0。写出三个 token 的奖励。</summary><div class="dbody">KL 项 \(=[0.2,0.4,-0.2]\)，惩罚 \(=[-0.02,-0.04,+0.02]\)，末尾加 2.0：\(r=[-0.02,-0.04,2.02]\)。</div></details>
+
+  <details class="qa"><summary><span class="tag r">代码排错</span> 16. 训练一开始就报 “Trying to backward through the graph a second time”，下面的采样代码有什么问题？</summary><div class="dbody">
+<script type="text/x-code" data-lang="python" data-title="采样阶段">
+action, logprob, _, value = agent.get_action_and_value(next_obs)   # 没有 torch.no_grad()
+logprobs[step] = logprob
+values[step] = value.flatten()
+</script>
+    <p><b>答案：</b>缺少 <code>torch.no_grad()</code>（或 <code>detach</code>）。旧的 log 概率与价值带着计算图被存进缓冲区，之后每个 minibatch 反向传播都会沿着它们回到采样时的图，导致重复反向传播的报错、显存增长，并让梯度流向不该去的路径。采样应包在 <code>with torch.no_grad():</code> 里。</p></div></details>
+  <details class="qa"><summary><span class="tag r">代码排错</span> 17. 训练回报像随机一样上下乱跳，找出问题。</summary><div class="dbody">
+<script type="text/x-code" data-lang="python" data-title="更新阶段">
+_, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb])   # 少传了动作
+ratio = (newlogprob - b_logprobs[mb]).exp()
+</script>
+    <p><b>答案：</b>没有传入 <code>b_actions[mb]</code>，函数会重新采样新动作，<code>ratio</code> 比较的是“新采的动作在新策略下的概率”与“另一个旧动作在旧策略下的概率”，毫无意义。应传入 <code>b_actions[mb]</code>。</p></div></details>
+  <details class="qa"><summary><span class="tag r">代码排错</span> 18. 这段 clip 损失与第 5 章的目标有什么区别？</summary><div class="dbody">
+<script type="text/x-code" data-lang="python" data-title="策略损失">
+pg_loss1 = -mb_adv * ratio
+pg_loss2 = -mb_adv * torch.clamp(ratio, 1 - eps, 1 + eps)
+pg_loss = torch.min(pg_loss1, pg_loss2).mean()
+</script>
+    <p><b>答案：</b>损失是目标的相反数，原目标取 min，对应损失应取 max。用 min 会让保护方向反过来：\(A&gt;0\) 且 \(\rho\) 很大时，\(-A\rho\) 更小，被选中的是未截断分支，clip 在该截断时不起作用，该保护的地方反而没保护。</p></div></details>
+  <details class="qa"><summary><span class="tag r">代码排错</span> 19. 价值函数的 explained variance 很差，GAE 里哪里漏了？</summary><div class="dbody">
+<script type="text/x-code" data-lang="python" data-title="GAE">
+delta = rewards[t] + gamma * next_v - values[t]
+last = delta + gamma * lam * last
+advantages[t] = last
+</script>
+    <p><b>答案：</b>漏了 <code>nonterminal</code> 掩码。回合结束处仍然用下一回合的 \(V\) 做 bootstrap，并把后面的优势递推过来，优势“跨回合泄漏”，价值目标出现系统性偏差。应写成 <code>delta = r + γ·next_v·(1−done) − v</code>，<code>last = delta + γλ·(1−done)·last</code>。</p></div></details>
+
+  <details class="qa"><summary><span class="tag p">开放思考</span> 20. \(\epsilon\to0\) 与 \(\epsilon\to\infty\) 分别会发生什么？</summary><div class="dbody">\(\epsilon\) 很小：样本的 \(\rho\) 稍一偏离 1 就被截断，每轮能走的距离极小，学习很慢。\(\epsilon\to\infty\)：clip 永不触发，退化成对 \(L^{\text{IS}}\) 做多轮无约束优化，\(\rho\) 无界、策略极易崩溃。\(\epsilon\) 是在“步子够大”与“足够稳”之间的折中。</div></details>
+  <details class="qa"><summary><span class="tag p">开放思考</span> 21. 为什么 PPO 可以把同一批数据用 \(K\) 轮，而 REINFORCE 不行？</summary><div class="dbody">REINFORCE 的梯度估计是在当前 \(\pit\) 下取的期望，\(\theta\) 一变，旧数据就不再服从新分布，也没有修正手段。PPO 用重要性采样修正动作概率，并用 clip 把 \(\pit\) 限制在 \(\pio\) 附近，使这些数据在有限几轮内仍近似有效。但 \(K\) 不能无限大，因为状态分布与优势估计都会逐渐过时。</div></details>
+  <details class="qa"><summary><span class="tag p">开放思考</span> 22. 设计一个实验验证“clip 在你的实现里确实起作用”，并说明要注意什么。</summary><div class="dbody">做对比：clip 开（\(\epsilon=0.2\)）对 clip 基本关闭（\(\epsilon\) 取很大），其他设置、随机种子完全相同，多个种子重复。比较 approx_kl、clipfrac、回报曲线的稳定性；另可对单批数据反复优化，看 \(\rho\) 的分布与 clipfrac 随步数的变化。注意控制变量：优势标准化、梯度裁剪等也在稳定训练，不能把效果全算给 clip（回顾 5.4 与 9.3 中 Engstrom 等人的发现）。</div></details>
+
+  <h3>12.5 进阶阅读 <span class="tag g">🟢 基础</span></h3>
+  <ol class="refs">
+    <li>Schulman, Wolski, Dhariwal, Radford, Klimov. <i>Proximal Policy Optimization Algorithms</i>. 2017. arXiv:1707.06347.</li>
+    <li>Schulman, Moritz, Levine, Jordan, Abbeel. <i>High-Dimensional Continuous Control Using Generalized Advantage Estimation</i>. 2015. arXiv:1506.02438.</li>
+    <li>Schulman, Levine, Moritz, Jordan, Abbeel. <i>Trust Region Policy Optimization</i>. 2015. arXiv:1502.05477.</li>
+    <li>Huang 等. <i>The 37 Implementation Details of Proximal Policy Optimization</i>. ICLR Blog Track, 2022.（配套实现：CleanRL 的 <code>ppo.py</code>）</li>
+    <li>Engstrom 等. <i>Implementation Matters in Deep Policy Gradients: A Case Study on PPO and TRPO</i>. 2020. arXiv:2005.12729.</li>
+    <li>Andrychowicz 等. <i>What Matters In On-Policy Reinforcement Learning? A Large-Scale Empirical Study</i>. 2020. arXiv:2006.05990.</li>
+    <li>Ouyang 等. <i>Training language models to follow instructions with human feedback</i>（InstructGPT）. 2022. arXiv:2203.02155.</li>
+    <li>Shao 等. <i>DeepSeekMath</i>（提出 GRPO）. 2024. arXiv:2402.03300.</li>
+    <li>Rafailov 等. <i>Direct Preference Optimization</i>. 2023. arXiv:2305.18290.</li>
+    <li>Sutton &amp; Barto. <i>Reinforcement Learning: An Introduction</i>（第 2 版）；OpenAI Spinning Up 文档；John Schulman 的博文 <i>Approximating KL Divergence</i>。</li>
+  </ol>
+  <p class="foot">文献信息请以原文为准。教程中的经验法则（如 approx_kl、clipfrac 的健康范围、超参数起点）来自社区实践，会随任务而变，只是排查问题时的参照，不是定理。</p>
+
+  <div class="summary"><b>本章三句话总结</b><ol>
+    <li>REINFORCE → baseline → Actor-Critic → GAE → TRPO → PPO，每一步都在解决上一步遗留的一个具体问题。</li>
+    <li>PPO = 策略梯度 + GAE + 重要性采样 + clip，再加上第 9 章那些让它稳定的工程细节。</li>
+    <li>能做对 22 道自测题、写出并调通 <code>ppo.py</code>，就说明你已经掌握了它。</li>
+  </ol></div>
+</section>
+
+<p class="foot">本教程为单文件 HTML，公式由 MathJax 渲染，无需额外资源即可阅读（首次加载需要联网获取 MathJax 与字体）。阅读进度仅保存在你的浏览器本地。</p>
+</main></div>
+<script>
+(function () {
+'use strict';
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+function ts(el) {
+  if (!window.MathJax || !window.MathJax.typesetPromise) return;
+  const p = (MathJax.startup && MathJax.startup.promise) ? MathJax.startup.promise : Promise.resolve();
+  p.then(() => MathJax.typesetPromise(el ? [el] : undefined)).catch(() => {});
+}
+window.PPO = { $, $$, ts };
+
+/* ---------- 主题 ---------- */
+const root = document.documentElement;
+function cycleTheme() {
+  const cur = root.getAttribute('data-theme');
+  const sysDark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+  const eff = cur || (sysDark ? 'dark' : 'light');
+  root.setAttribute('data-theme', eff === 'dark' ? 'light' : 'dark');
+}
+['#theme-btn', '#theme-btn2'].forEach(s => { const b = $(s); if (b) b.addEventListener('click', cycleTheme); });
+
+/* ---------- 菜单（移动端） ---------- */
+$('#menu-btn').addEventListener('click', () => document.body.classList.toggle('menu'));
+$('#scrim').addEventListener('click', () => document.body.classList.remove('menu'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.body.classList.remove('menu'); });
+
+/* ---------- 速通 / 精通 ---------- */
+function setMode(m) {
+  document.body.setAttribute('data-mode', m);
+  $$('[data-mode-set]').forEach(b => b.classList.toggle('on', b.getAttribute('data-mode-set') === m));
+}
+$$('[data-mode-set]').forEach(b => b.addEventListener('click', () => setMode(b.getAttribute('data-mode-set'))));
+setMode('full');
+
+/* ---------- 目录 ---------- */
+const chapters = $$('section.chapter');
+const tocList = $('#toc-list');
+chapters.forEach(ch => {
+  const n = ch.id.replace('ch', '');
+  const a = document.createElement('a');
+  a.className = 'ch'; a.href = '#' + ch.id; a.dataset.ch = ch.id;
+  a.textContent = n + '. ' + (ch.dataset.title || '');
+  tocList.appendChild(a);
+  const sub = document.createElement('div'); sub.className = 'sub';
+  $$('h3', ch).forEach((h, i) => {
+    if (!h.id) h.id = ch.id + '-s' + (i + 1);
+    const c = h.cloneNode(true); $$('.tag', c).forEach(t => t.remove());
+    const sa = document.createElement('a'); sa.href = '#' + h.id; sa.textContent = c.textContent.trim();
+    sub.appendChild(sa);
+  });
+  tocList.appendChild(sub);
+});
+$('#toc').addEventListener('click', e => { if (e.target.closest('a')) document.body.classList.remove('menu'); });
+
+/* ---------- 进度条、章节高亮、阅读进度记忆 ---------- */
+const KEY = 'ppo-tutorial-progress-v1';
+let active = null, ticking = false;
+function save(id) { try { localStorage.setItem(KEY, id); } catch (e) {} }
+function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+function mark(id) {
+  $$('#toc a.ch').forEach(a => a.classList.toggle('active', a.dataset.ch === id));
+  const a = $('#toc a.ch.active');
+  if (a) { const t = $('#toc'); t.scrollTop = Math.max(0, a.offsetTop - 120); }
+}
+function onScroll() {
+  ticking = false;
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  $('#bar').style.width = (max > 0 ? Math.min(100, window.scrollY / max * 100) : 0) + '%';
+  let cur = chapters[0];
+  for (const s of chapters) { if (s.getBoundingClientRect().top <= 160) cur = s; }
+  if (window.scrollY < 200) cur = chapters[0];
+  if (cur && cur.id !== active) { active = cur.id; mark(active); if (window.scrollY > 600) save(active); }
+}
+window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+window.addEventListener('resize', onScroll);
+onScroll();
+const saved = load();
+if (saved && saved !== 'ch0' && document.getElementById(saved)) {
+  const el = document.getElementById(saved);
+  const b = document.createElement('button');
+  b.className = 'btn sm'; b.type = 'button';
+  b.textContent = '继续上次阅读：第 ' + saved.replace('ch', '') + ' 章';
+  b.addEventListener('click', () => el.scrollIntoView({ behavior: 'smooth' }));
+  $('#resume').appendChild(b);
+}
+
+/* ---------- 代码块：高亮与复制 ---------- */
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const PY = /(#.*$)|("""[\s\S]*?"""|'''[\s\S]*?'''|[fF]?"(?:[^"\\\n]|\\.)*"|[fF]?'(?:[^'\\\n]|\\.)*')|\b(def|class|return|if|elif|else|for|while|in|not|and|or|is|import|from|as|with|None|True|False|break|continue|lambda|pass|try|except|raise|global|assert)\b|\b(self|np|torch|nn|gym|args|range|len|print|int|float|bool|min|max|sum|isinstance|super|reversed)\b|\b(\d+(?:\.\d+)?(?:e-?\d+)?)\b/gm;
+function hlPy(src) {
+  let out = '', last = 0, m; PY.lastIndex = 0;
+  while ((m = PY.exec(src))) {
+    out += esc(src.slice(last, m.index));
+    const cls = m[1] ? 'c' : m[2] ? 's' : m[3] ? 'k' : m[4] ? 'b' : 'n';
+    out += '<span class="t-' + cls + '">' + esc(m[0]) + '</span>';
+    last = PY.lastIndex;
+    if (m[0].length === 0) PY.lastIndex++;
+  }
+  return out + esc(src.slice(last));
+}
+function hlPlain(src) {
+  return src.split('\n').map(line => {
+    const i = line.indexOf('#');
+    return i < 0 ? esc(line) : esc(line.slice(0, i)) + '<span class="t-c">' + esc(line.slice(i)) + '</span>';
+  }).join('\n');
+}
+function copy(text, btn) {
+  const orig = btn.textContent;
+  const done = () => { btn.textContent = '已复制'; setTimeout(() => { btn.textContent = orig; }, 1400); };
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = '请手动复制'; }
+    ta.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
+}
+const RAW = {};
+$$('script[type="text/x-code"]').forEach(sc => {
+  const code = sc.textContent.replace(/^\n/, '').replace(/\s+$/, '');
+  const lang = sc.dataset.lang || 'python', title = sc.dataset.title || '', file = sc.dataset.file;
+  if (file) (RAW[file] = RAW[file] || []).push(code);
+  const fig = document.createElement('figure'); fig.className = 'code';
+  fig.innerHTML = '<figcaption><span></span><button type="button">复制</button></figcaption><pre><code></code></pre>';
+  fig.querySelector('span').textContent = title || lang;
+  fig.querySelector('code').innerHTML = lang === 'python' ? hlPy(code) : hlPlain(code);
+  const btn = fig.querySelector('button');
+  btn.addEventListener('click', () => copy(code, btn));
+  sc.replaceWith(fig);
+});
+$$('[data-copyall]').forEach(b => b.addEventListener('click', () => {
+  const f = b.getAttribute('data-copyall');
+  if (RAW[f]) copy(RAW[f].join('\n\n') + '\n', b);
+}));
+
+/* ---------- 章末小测 ---------- */
+const R = String.raw;
+const QUIZ = {
+  ch1: { q: R`三步寻宝：奖励 \(r=[1,0,2]\)，\(\gamma=0.9\)。回报 \(G_0\) 是多少？`, o: [
+    { t: '3.0', ok: false, w: R`这是不打折的总和 \(1+0+2\)。折扣因子会让越晚到手的奖励权重越小。` },
+    { t: '2.62', ok: true, w: R`\(G_0=1+0.9\times0+0.9^2\times2=2.62\)；也可以用递推 \(G_0=r_0+\gamma G_1=1+0.9\times1.8\)。` },
+    { t: '2.8', ok: false, w: R`这是把最后一项的折扣写成了 \(\gamma^1\)（\(1+0.9\times2\)）。第三步的奖励要乘 \(\gamma^2\)。` },
+    { t: '1.8', ok: false, w: R`这是 \(G_1\)，即从第 1 步开始的回报，不是 \(G_0\)。` } ] },
+  ch2: { q: R`为什么在策略梯度的权重里减去只依赖状态的 baseline \(b(s)\)，不会改变梯度的期望？`, o: [
+    { t: R`因为 \(b(s)\) 是常数，所以对梯度没有贡献`, ok: false, w: R`\(b(s)\) 可以随状态变化，并不是常数。关键是它不依赖动作。` },
+    { t: R`因为 \(\E_{a\sim\pit}[\nabla\log\pit(a\mid s)]=0\)，而 \(b(s)\) 不依赖 \(a\)，可以提到期望外面`, ok: true, w: R`\(\sum_a\pit\nabla\log\pit=\nabla\sum_a\pit=\nabla1=0\)，所以新增项的期望恒为 0。` },
+    { t: '因为 baseline 越接近真实回报越好', ok: false, w: '这说的是方差更小，不是无偏。无偏性来自 baseline 与动作无关。' },
+    { t: '因为梯度裁剪会把它的影响抵消掉', ok: false, w: '两者无关。无偏性是一个数学恒等式，不依赖任何裁剪。' } ] },
+  ch3: { q: R`保持 \(\gamma\) 不变，把 GAE 的 \(\lambda\) 从 0.9 调到 0.99，大体会怎样？`, o: [
+    { t: '偏差变小，方差变大', ok: true, w: R`\(\lambda\) 越大，越多地使用真实奖励、越少依赖 critic 的自举估值，偏差降低；累积的随机性更多，方差升高。` },
+    { t: '偏差变大，方差变小', ok: false, w: R`方向反了。\(\lambda\to0\) 才更依赖 critic：方差更小、偏差更大。` },
+    { t: '两者都不变', ok: false, w: R`\(\lambda\) 改变权重 \((\gamma\lambda)^l\) 的衰减速度，有效视野 \(1/(1-\gamma\lambda)\) 会随之变化。` },
+    { t: '只影响价值函数，不影响优势', ok: false, w: R`GAE 本身就是优势估计，\(\lambda\) 直接决定它的形态，并通过 \(\hat G=\hat A+V\) 间接影响价值目标。` } ] },
+  ch4: { q: R`对代理目标 \(L^{\text{IS}}=\Eh[\rho_t\At]\) 做很多轮不加约束的梯度上升，最可能发生什么？`, o: [
+    { t: R`对 \(\At>0\) 的样本，\(\rho\) 被越拉越大，策略对这批数据过拟合，之后性能可能崩溃`, ok: true, w: R`目标对 \(\rho\) 是线性的，没有任何东西阻止策略远离 \(\pio\)；而优势与状态分布只在 \(\pio\) 附近可信。` },
+    { t: '目标会自动收敛到最优策略', ok: false, w: R`代理目标只在 \(\tho\) 附近近似真目标，远离之后它与真实回报脱钩。` },
+    { t: R`没有变化，因为 \(\rho\) 恒等于 1`, ok: false, w: R`采样时 \(\rho=1\)，但随着 \(\theta\) 更新它会偏离 1，这正是问题所在。` },
+    { t: '梯度恒为 0', ok: false, w: R`在 \(\tho\) 处代理目标的梯度恰好等于策略梯度，不为 0。` } ] },
+  ch5: { q: R`\(\epsilon=0.2\)，\(\At=+1\)，\(\rho=1.5\)。\(\Lclip\) 对这个样本的梯度是什么？`, o: [
+    { t: R`\(\At\rho\nabla\log\pit\)，照常更新`, ok: false, w: R`那是未截断分支。\(\At>0\) 且 \(\rho>1+\epsilon\) 时，min 取到的是 clip 分支。` },
+    { t: '0（被截断）', ok: true, w: R`\(\min(1.5,\ 1.2\times1)=1.2\) 是常数分支，梯度为 0：好动作的概率已经涨够了。` },
+    { t: R`把 \(\rho\) 强制拉回 1.2`, ok: false, w: R`clip 不会修改 \(\rho\) 的数值，只是让这个样本不再产生梯度；\(\rho\) 仍可能留在 1.5。` },
+    { t: '负梯度，惩罚这个动作', ok: false, w: '好动作不会因为涨得多而被惩罚，只是超过区间后不再奖励。' } ] },
+  ch6: { q: '训练日志里 policy loss 一直在 0 附近上下晃动。最合理的结论是？', o: [
+    { t: '策略没有学到东西', ok: false, w: R`优势标准化后均值≈0，且 \(\rho\approx1\)，策略损失本来就在 0 附近，学得好时也是这样。` },
+    { t: '不能据此判断，应结合 return、approx_kl、clipfrac、entropy 一起看', ok: true, w: '策略损失不是回报，它的数值与正负没有“越小越好”的含义。' },
+    { t: '损失越接近 0，策略越好', ok: false, w: '它不是进度指标，接近 0 并不代表更好。' },
+    { t: '说明学习率太大', ok: false, w: '学习率是否合适，要看 approx_kl 与 clipfrac，而不是 policy loss。' } ] },
+  ch7: { q: R`\(N=4,\ T=128\)，切成 4 个 minibatch，\(K=4\)。一轮迭代共做多少次梯度更新？`, o: [
+    { t: '4', ok: false, w: '这只是一个 epoch 里 minibatch 的个数。' },
+    { t: '512', ok: false, w: R`这是批大小 \(B=NT\)，不是更新次数。` },
+    { t: '16', ok: true, w: R`每个 epoch 有 4 个 minibatch，共 \(K=4\) 个 epoch，所以 \(4\times4=16\) 次。` },
+    { t: '128', ok: false, w: R`128 是 \(T\)，也恰好是每个 minibatch 的大小 \(512/4\)，不是更新次数。` } ] },
+  ch8: { q: '更新阶段为什么要把 b_actions[mb] 传回网络？', o: [
+    { t: '为了让网络再采样一次动作', ok: false, w: R`再采样得到的是新动作，\(\rho\) 就变成在比较两个不同的动作。` },
+    { t: R`在新策略下重新计算这批旧动作的 log 概率，才能得到有意义的 \(\rho\)`, ok: true, w: R`\(\rho_t=\pit(a_t\mid s_t)/\pio(a_t\mid s_t)\) 的分子分母必须是同一个 \(a_t\)。` },
+    { t: '为了节省显存', ok: false, w: '与显存无关。' },
+    { t: '为了计算价值函数', ok: false, w: '价值函数只依赖状态，不需要动作。' } ] },
+  ch9: { q: '关于“优势标准化”，下面哪项正确？', o: [
+    { t: '它是 PPO 论文里的核心组成部分', ok: false, w: '论文没有提到它，这是实现者加入的细节。' },
+    { t: '它让策略损失的尺度与奖励量级无关，但会抹掉优势的绝对大小', ok: true, w: '这正是它的作用与代价：只保留相对大小。' },
+    { t: '它会让 critic 的价值损失变小', ok: false, w: R`优势标准化只作用于策略损失，价值目标 \(\hat G\) 用的是未标准化的优势。` },
+    { t: '只有离散动作任务才需要它', ok: false, w: '连续动作任务同样适用，与动作空间无关。' } ] },
+  ch10: { q: 'approx_kl 与 clipfrac 都几乎等于 0，更可能说明什么？', o: [
+    { t: '训练已经完美收敛', ok: false, w: '收敛时也应有一定波动；而且如果 return 没有相应提升，就不是收敛。' },
+    { t: '策略正在剧烈震荡', ok: false, w: '剧烈震荡时这两个指标会很大。' },
+    { t: '几乎没有发生有效更新（学习率过小、优势近乎 0、梯度被过度裁剪等）', ok: true, w: '这两个指标度量的就是“策略这一轮变了多少”。' },
+    { t: 'critic 太强了', ok: false, w: 'critic 的质量应看 explained variance。' } ] },
+  ch11: { q: R`RLHF 的 PPO 里，每个 token 的奖励为什么要加上 \(-\beta\) 倍的 KL 项？`, o: [
+    { t: '为了让训练更快', ok: false, w: '它是约束项，不是加速项，通常还会让每步更保守。' },
+    { t: '防止 actor 过度偏离参考模型，避免钻奖励模型的空子或语言能力退化', ok: true, w: '奖励模型只在“像样的回复”附近可靠，KL 惩罚把策略拴在参考模型附近。' },
+    { t: '因为奖励模型只能输出 KL 作为分数', ok: false, w: '奖励模型输出的是对整句的偏好分数，KL 是我们额外加上的惩罚。' },
+    { t: '为了减少 critic 的参数量', ok: false, w: '与参数量无关。' } ] }
+};
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+$$('.quiz[data-quiz]').forEach(el => {
+  const d = QUIZ[el.dataset.quiz]; if (!d) return;
+  el.innerHTML = '<div class="qh">章末小测</div><div class="qq"></div><div class="opts"></div>';
+  $('.qq', el).innerHTML = d.q;
+  const box = $('.opts', el);
+  shuffle(d.o.slice()).forEach(o => {
+    const w = document.createElement('div'); w.className = 'opt';
+    const b = document.createElement('button'); b.type = 'button'; b.innerHTML = o.t;
+    const y = document.createElement('div'); y.className = 'why';
+    y.innerHTML = (o.ok ? '<b>正确。</b>' : '<b>不对。</b>') + o.w;
+    w.appendChild(b); w.appendChild(y);
+    b.addEventListener('click', () => {
+      w.classList.add(o.ok ? 'ok' : 'no', 'shown');
+      if (o.ok) $$('.opt', box).forEach(x => x.classList.add('shown'));
+      ts(w.parentNode);
+    });
+    box.appendChild(w);
+  });
+});
+})();
+</script>
+<script>
+(function () {
+'use strict';
+const { $, $$, ts } = window.PPO;
+const R = String.raw;
+const fmtN = (x, d) => {
+  d = d === undefined ? 3 : d;
+  if (!isFinite(x)) return x > 0 ? '∞' : '-∞';
+  const s = Number(x).toFixed(d);
+  return /^-0(\.0+)?$/.test(s) ? s.slice(1) : s;
+};
+const par = (x, d) => (x < 0 ? '(' + fmtN(x, d) + ')' : fmtN(x, d));
+const sum = a => a.reduce((s, v) => s + v, 0);
+const clip = (x, lo, hi) => Math.min(Math.max(x, lo), hi);
+
+/* ---------- 通用：滑块绑定 ---------- */
+function bind(root, fn) {
+  const ins = $$('input[type=range]', root);
+  const upd = () => {
+    ins.forEach(i => {
+      const o = i.parentElement.querySelector('output');
+      if (o) o.textContent = Number(i.value).toFixed((i.step.split('.')[1] || '').length);
+    });
+    fn();
+  };
+  ins.forEach(i => i.addEventListener('input', upd));
+  upd();
+  return upd;
+}
+
+/* ---------- 通用：SVG 图表 ---------- */
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / p, step = (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(Math.round(v / step) * step);
+  return out;
+}
+const tickTxt = t => String(Number(t.toFixed(2)));
+function chart(o) {
+  const W = o.W || 640, H = o.H || 260, m = { l: 46, r: 14, t: 12, b: 36 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const X = v => m.l + (v - o.x[0]) / (o.x[1] - o.x[0]) * iw;
+  const Y = v => m.t + (1 - (v - o.y[0]) / (o.y[1] - o.y[0])) * ih;
+  let s = '<svg class="plot" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + (o.label || '图表') + '">';
+  (o.bands || []).forEach(b => { s += '<rect x="' + X(b.x0) + '" y="' + m.t + '" width="' + (X(b.x1) - X(b.x0)) + '" height="' + ih + '" style="fill:var(--bg2)" opacity=".9"/>'; });
+  (o.xt || []).forEach(t => { s += '<line x1="' + X(t) + '" x2="' + X(t) + '" y1="' + m.t + '" y2="' + (m.t + ih) + '" style="stroke:var(--line)"/><text x="' + X(t) + '" y="' + (H - 18) + '" text-anchor="middle">' + tickTxt(t) + '</text>'; });
+  (o.yt || []).forEach(t => { s += '<line x1="' + m.l + '" x2="' + (m.l + iw) + '" y1="' + Y(t) + '" y2="' + Y(t) + '" style="stroke:var(--line)"/><text x="' + (m.l - 6) + '" y="' + (Y(t) + 4) + '" text-anchor="end">' + tickTxt(t) + '</text>'; });
+  if (o.y[0] < 0 && o.y[1] > 0) s += '<line x1="' + m.l + '" x2="' + (m.l + iw) + '" y1="' + Y(0) + '" y2="' + Y(0) + '" style="stroke:var(--muted)" stroke-width="1.3"/>';
+  (o.vl || []).forEach(v => { s += '<line x1="' + X(v) + '" x2="' + X(v) + '" y1="' + m.t + '" y2="' + (m.t + ih) + '" style="stroke:var(--muted)" stroke-dasharray="3 4"/>'; });
+  (o.bars || []).forEach(b => { s += '<rect x="' + X(b.x0) + '" y="' + Y(b.y1) + '" width="' + (X(b.x1) - X(b.x0)) + '" height="' + Math.max(0, Y(b.y0 || 0) - Y(b.y1)) + '" style="fill:' + (b.c || 'var(--accent)') + '"/>'; });
+  (o.lines || []).forEach(l => {
+    const d = l.pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join('');
+    s += '<path d="' + d + '" fill="none" style="stroke:' + l.c + '" stroke-width="' + (l.w || 2) + '"' + (l.dash ? ' stroke-dasharray="' + l.dash + '"' : '') + ' stroke-linejoin="round" stroke-linecap="round"/>';
+  });
+  (o.dots || []).forEach(d => { s += '<circle cx="' + X(d.x) + '" cy="' + Y(d.y) + '" r="' + (d.r || 6) + '" style="fill:' + d.c + ';stroke:var(--panel)" stroke-width="2"/>'; });
+  (o.texts || []).forEach(t => { s += '<text class="lab" x="' + X(t.x) + '" y="' + Y(t.y) + '" text-anchor="' + (t.a || 'start') + '" style="fill:' + (t.c || 'var(--fg)') + '">' + t.t + '</text>'; });
+  if (o.xl) s += '<text x="' + (m.l + iw / 2) + '" y="' + (H - 2) + '" text-anchor="middle" class="lab">' + o.xl + '</text>';
+  return s + '</svg>';
+}
+const ACC = 'var(--accent)', WARN = 'var(--warn)', BAD = 'var(--bad)', OK = 'var(--ok)', MUT = 'var(--muted)';
+
+/* ---------- 首屏：clip 形状（A=+2, ε=0.2） ---------- */
+(function () {
+  const root = $('#hero-plot'); if (!root) return;
+  const A = 2, eps = 0.2;
+  const L = r => Math.min(r * A, clip(r, 1 - eps, 1 + eps) * A);
+  const draw = () => {
+    const r = +$('#hero-r').value;
+    const pts = [], pu = [];
+    for (let x = 0; x <= 2.0001; x += 0.01) { pts.push([x, L(x)]); pu.push([x, x * A]); }
+    const u = r * A, c = clip(r, 1 - eps, 1 + eps) * A, active = u <= c;
+    root.innerHTML = chart({
+      W: 640, H: 270, x: [0, 2], y: [0, 4.3], xt: [0, 0.5, 1, 1.5, 2], yt: [0, 1, 2, 3, 4], vl: [1],
+      bands: [{ x0: 1 - eps, x1: 1 + eps }],
+      lines: [{ pts: pu, c: MUT, dash: '5 5', w: 1.6 }, { pts: pts, c: ACC, w: 3.4 }],
+      dots: [{ x: r, y: Math.min(u, c), c: active ? OK : BAD, r: 7 }],
+      texts: [{ x: 1.02, y: 4.05, t: '灰带 = [1−ε, 1+ε]', c: MUT }, { x: 1.3, y: 0.35, t: '虚线：不加 clip 的 ρÂ', c: MUT }],
+      xl: '概率比 ρ（横轴）与目标值（纵轴）', label: 'PPO-Clip 目标函数的形状'
+    });
+    $('#hero-read').innerHTML = 'ρ = ' + fmtN(r, 2) + '：ρÂ = ' + fmtN(u, 2) + '，clip 后 = ' + fmtN(c, 2) + '，目标取 ' + fmtN(Math.min(u, c), 2) +
+      '。梯度 ' + (active ? '<span class="pill good">有效</span>，策略还在被推动。' : '<span class="pill bad">等于 0</span>，好动作已经涨过 1+ε，不再有收益。');
+  };
+  bind($('#hero-r').closest('.wb'), draw);
+})();
+
+/* ---------- Clip 目标函数实验室 ---------- */
+(function () {
+  const root = $('#w-clip'); if (!root) return;
+  const eps = $('#clip-eps'), A = $('#clip-A'), r = $('#clip-r');
+  const upd = bind(root, () => {
+    const e = +eps.value, a = +A.value, p = +r.value, lo = 1 - e, hi = 1 + e;
+    const L = x => Math.min(x * a, clip(x, lo, hi) * a);
+    const G = x => (x * a <= clip(x, lo, hi) * a ? a : 0);
+    const pu = [], pc = [], pm = [], pg = [];
+    for (let x = 0; x <= 2.0001; x += 0.005) { pu.push([x, x * a]); pc.push([x, clip(x, lo, hi) * a]); pm.push([x, L(x)]); pg.push([x, G(x)]); }
+    const span = Math.max(0.5, Math.abs(a)) * 0.35;
+    const y0 = Math.min(0, 2 * a) - span, y1 = Math.max(0, 2 * a) + span;
+    const u = p * a, c = clip(p, lo, hi) * a, m = Math.min(u, c), active = u <= c;
+    $('#clip-plot').innerHTML = chart({
+      W: 640, H: 270, x: [0, 2], y: [y0, y1], xt: [0, 0.5, 1, 1.5, 2], yt: niceTicks(y0, y1, 5), vl: [1],
+      bands: [{ x0: lo, x1: hi }],
+      lines: [{ pts: pu, c: MUT, dash: '5 5', w: 1.5 }, { pts: pc, c: WARN, dash: '2 4', w: 2 }, { pts: pm, c: ACC, w: 3.4 }],
+      dots: [{ x: p, y: m, c: active ? OK : BAD }],
+      texts: [{ x: 0.04, y: y1 - span * 0.5, t: '灰虚线 ρÂ　橙点线 clip(ρ)Â　蓝粗线 = min', c: MUT }],
+      xl: '概率比 ρ', label: 'Clip 目标值曲线'
+    });
+    const gy0 = Math.min(0, a) - 0.5 - Math.abs(a) * 0.2, gy1 = Math.max(0, a) + 0.5 + Math.abs(a) * 0.2;
+    $('#clip-grad').innerHTML = chart({
+      W: 640, H: 150, x: [0, 2], y: [gy0, gy1], xt: [0, 0.5, 1, 1.5, 2], yt: niceTicks(gy0, gy1, 3), vl: [1],
+      bands: [{ x0: lo, x1: hi }], lines: [{ pts: pg, c: ACC, w: 3 }],
+      dots: [{ x: p, y: G(p), c: active ? OK : BAD, r: 5 }], xl: '概率比 ρ（纵轴：∂L/∂ρ）', label: '梯度随 ρ 的变化'
+    });
+    let why;
+    if (a === 0) why = 'Â = 0：这个样本没有任何好坏之分，梯度恒为 0。';
+    else if (a > 0 && p > hi) why = '好动作的概率已经涨过 1+ε：超出的部分没有额外收益，梯度为 0。';
+    else if (a > 0 && p < lo) why = '好动作的概率反而降低了：这里照常有梯度，把它推回来（min 保留了“恶化”的部分）。';
+    else if (a < 0 && p < lo) why = '坏动作的概率已经压低过 1−ε：继续压没有额外收益，梯度为 0。';
+    else if (a < 0 && p > hi) why = '坏动作的概率反而升高了：照常惩罚，梯度有效。';
+    else why = 'ρ 在 [1−ε, 1+ε] 之内：与不加 clip 的目标完全一样，梯度有效。';
+    $('#clip-read').innerHTML =
+      'ρ·Â = ' + fmtN(p, 2) + '×' + par(a, 1) + ' = <b>' + fmtN(u, 3) + '</b>；clip(ρ)·Â = ' + fmtN(clip(p, lo, hi), 2) + '×' + par(a, 1) + ' = <b>' + fmtN(c, 3) + '</b>；' +
+      'L = min = <b>' + fmtN(m, 3) + '</b>（' + (u === c ? '两者相同' : active ? '取未截断分支 ρÂ' : '取 clip 分支') + '）。<br>' +
+      '梯度 ∂L/∂ρ：' + (active ? '<span class="pill good">有效，等于 Â = ' + fmtN(a, 1) + '</span>' : '<span class="pill bad">被截断，等于 0</span>') + '　' + why;
+  });
+  $$('.presets button[data-p]', root).forEach(b => b.addEventListener('click', () => {
+    const [aa, rr] = b.dataset.p.split(',').map(Number);
+    A.value = aa; r.value = rr; upd();
+  }));
+})();
+
+/* ---------- GAE：γ 与 λ ---------- */
+(function () {
+  const root = $('#w-gae'); if (!root) return;
+  const Rw = [1, 0, 2], Vv = [2, 1.5, 1], Vt = 0;
+  const gaeAt = (g, l) => {
+    const V = Vv.concat([Vt]), d = Rw.map((x, t) => x + g * V[t + 1] - V[t]), A = [0, 0, 0]; let last = 0;
+    for (let t = 2; t >= 0; t--) { last = d[t] + g * l * last; A[t] = last; }
+    return A;
+  };
+  const mcAt = g => {
+    const G = [0, 0, 0]; let nx = 0; for (let t = 2; t >= 0; t--) { nx = Rw[t] + g * nx; G[t] = nx; }
+    return G.map((x, t) => x - Vv[t]);
+  };
+  bind(root, () => {
+    const g = +$('#gae-g').value, l = +$('#gae-l').value, gl = Math.min(g * l, 0.9999);
+    const bars = []; for (let k = 0; k < 20; k++) bars.push({ x0: k + 0.12, x1: k + 0.88, y0: 0, y1: Math.pow(gl, k) });
+    $('#gae-w').innerHTML = chart({ W: 640, H: 190, x: [0, 20], y: [0, 1.08], xt: [0, 5, 10, 15, 20], yt: [0, 0.5, 1], bars, xl: 'l：δ 距当前时刻 t 有多远', label: 'GAE 权重' });
+    const gg = Math.min(g, 0.9995), v1 = 1 / (1 - gg * gg), B = [], Vr = [];
+    for (let x = 0; x <= 1.0001; x += 0.01) {
+      B.push([x, gg * (1 - x) / (1 - gg * x)]);
+      Vr.push([x, (1 / (1 - Math.pow(Math.min(gg * x, 0.9999), 2))) / v1]);
+    }
+    const bl = gg * (1 - l) / (1 - gg * l), vl = (1 / (1 - Math.pow(Math.min(gg * l, 0.9999), 2))) / v1;
+    $('#gae-c').innerHTML = chart({
+      W: 640, H: 230, x: [0, 1], y: [0, 1.05], xt: [0, 0.25, 0.5, 0.75, 1], yt: [0, 0.5, 1],
+      lines: [{ pts: B, c: ACC, w: 3 }, { pts: Vr, c: WARN, w: 3 }],
+      dots: [{ x: l, y: bl, c: ACC }, { x: l, y: vl, c: WARN }],
+      texts: [{ x: 0.04, y: 0.64, t: '蓝：对 critic 的依赖 B(λ)（偏差来源）', c: ACC }, { x: 0.04, y: 0.52, t: '橙：噪声累积（方差来源，已归一化）', c: WARN }],
+      xl: 'λ', label: '偏差与方差随 λ 的变化'
+    });
+    const cur = gaeAt(g, l), td = gaeAt(g, 0), mc = mcAt(g);
+    const row = (n, a) => '<tr><td>' + n + '</td>' + a.map(x => '<td class="n">' + fmtN(x, 3) + '</td>').join('') + '</tr>';
+    $('#gae-read').innerHTML = '有效视野 1/(1−γλ) ≈ <b>' + fmtN(1 / (1 - gl), 1) + '</b> 步；γλ = ' + fmtN(g * l, 3) + '。三步寻宝的优势估计（V(s₃)=0）：' +
+      '<div class="tbl"><table><tr><th>估计</th><th>Â₀</th><th>Â₁</th><th>Â₂</th></tr>' +
+      row('当前 λ = ' + fmtN(l, 2), cur) + row('λ = 0（TD 误差 δ）', td) + row('λ = 1（G − V，蒙特卡洛）', mc) + '</table></div>';
+  });
+})();
+
+/* ---------- 重要性采样 ---------- */
+(function () {
+  const root = $('#w-is'); if (!root) return;
+  const po = [0.5, 0.3, 0.2], f = [1, 3, 0], N = 100, REP = 300;
+  const zs = [0, 1, 2].map(i => $('#is-z' + i));
+  const newP = () => { const e = po.map((p, i) => p * Math.exp(+zs[i].value)), s = sum(e); return e.map(x => x / s); };
+  const sample = () => { const u = Math.random(); return u < po[0] ? 0 : u < po[0] + po[1] ? 1 : 2; };
+  function run() {
+    const pn = newP(), rho = pn.map((p, i) => p / po[i]);
+    const trueNew = sum(pn.map((p, i) => p * f[i])), trueOld = sum(po.map((p, i) => p * f[i]));
+    const est = [], ess = [];
+    for (let k = 0; k < REP; k++) {
+      let s = 0, w1 = 0, w2 = 0;
+      for (let n = 0; n < N; n++) { const a = sample(); s += rho[a] * f[a]; w1 += rho[a]; w2 += rho[a] * rho[a]; }
+      est.push(s / N); ess.push(w1 * w1 / w2);
+    }
+    const mu = sum(est) / REP, sd = Math.sqrt(sum(est.map(x => (x - mu) * (x - mu))) / (REP - 1)), essM = sum(ess) / REP;
+    const kl = sum(po.map((p, i) => p * Math.log(p / pn[i]))), mx = Math.max.apply(null, rho);
+    let h = '';
+    for (let i = 0; i < 3; i++) {
+      h += '<div style="margin:.55em 0"><div style="font-size:.9em">动作 ' + (i + 1) + '（回报 f=' + f[i] + '）　旧 ' + fmtN(po[i], 3) + '　新 ' + fmtN(pn[i], 3) + '　<b>ρ = ' + fmtN(rho[i], 2) + '</b></div>' +
+        '<div style="display:flex;gap:6px;align-items:center"><div style="flex:1;background:var(--bg2);height:12px"><div style="width:' + (po[i] * 100) + '%;height:12px;background:var(--muted)"></div></div></div>' +
+        '<div style="display:flex;gap:6px;align-items:center;margin-top:3px"><div style="flex:1;background:var(--bg2);height:12px"><div style="width:' + (pn[i] * 100) + '%;height:12px;background:var(--accent)"></div></div></div></div>';
+    }
+    h = '<div style="font-size:.85em;color:var(--muted)">灰条：旧策略；蓝条：新策略</div>' + h;
+    $('#is-bars').innerHTML = h;
+    const poor = essM / N < 0.5;
+    $('#is-read').innerHTML =
+      '<b>新策略下的真值</b> E<sub>新</sub>[f] = ' + fmtN(trueNew, 3) + '；直接用旧数据的平均（不加权）约为 ' + fmtN(trueOld, 3) + '，是错的。<br>' +
+      '<b>重要性采样估计</b>（每次用 ' + N + ' 个旧策略样本，重复 ' + REP + ' 次）：均值 ' + fmtN(mu, 3) + '，标准差 <b>' + fmtN(sd, 3) + '</b>。均值接近真值，说明无偏；标准差越大，单次估计越不可靠。<br>' +
+      '平均有效样本数 ESS ≈ <b>' + fmtN(essM, 1) + ' / ' + N + '</b>；max ρ = ' + fmtN(mx, 2) + '；KL(旧‖新) = ' + fmtN(kl, 3) + '。' +
+      (poor ? '<br><span class="pill bad">权重已很不均匀</span> 新旧策略相距较远，少数样本主导了估计，这就是必须限制 ρ 的原因。' : '<br><span class="pill good">权重较均匀</span> 新旧策略很接近，旧数据仍然很好用。');
+  }
+  bind(root, run);
+  const set = v => { zs.forEach((z, i) => { z.value = v[i]; }); run(); zs.forEach(z => { const o = z.parentElement.querySelector('output'); if (o) o.textContent = Number(z.value).toFixed(2); }); };
+  $('#is-p0').addEventListener('click', () => set([0, 0, 0]));
+  $('#is-p1').addEventListener('click', () => set([-0.2, 0.3, 0]));
+  $('#is-p2').addEventListener('click', () => set([-1.5, 1.5, -1.0]));
+  $('#is-re').addEventListener('click', run);
+})();
+
+/* ---------- PPO 数据流 ---------- */
+(function () {
+  const root = $('#w-flow'); if (!root) return;
+  const S = [
+    { n: '① 初始化', h: R`<p><b>做什么：</b>随机初始化 actor（参数 \(\theta\)）与 critic（参数 \(\phi\)）。此刻采样要用的 \(\theta_{\text{old}}\) 就等于当前的 \(\theta\)。</p><p><b>要点：</b>策略输出层用很小的初始化（gain 0.01），初始策略近似均匀，熵 ≈ \(\ln n\)。</p><p><b>常见坑：</b>输出层初始化过大，一开始策略就很极端，探索不足。</p>` },
+    { n: '② 并行采样', h: R`<p><b>输入：</b>\(N\) 个环境，当前策略 \(\pio\)。<b>输出：</b>每个环境跑 \(T\) 步，存下 \(s_t,a_t,\log\pio(a_t\mid s_t),r_t,\text{done}_t,V_{\text{old}}(s_t)\)。</p><p><b>张量形状：</b>obs <code>(T, N, obs_dim)</code>，logprobs / rewards / dones / values <code>(T, N)</code>。</p><p><b>常见坑：</b>采样必须在 <code>torch.no_grad()</code> 下进行；漏掉会让旧 log 概率带着计算图。</p>` },
+  { n: '③ 估计优势', h: R`<p><b>做什么：</b>用 critic 估 \(V(s_T)\) 作为末尾的 bootstrap，然后从后往前递推：</p>\[\delta_t=r_t+\gamma V_{t+1}(1-\text{done}_t)-V_t,\qquad\hat A_t=\delta_t+\gamma\lambda(1-\text{done}_t)\hat A_{t+1}\]<p>再得到价值目标 \(\hat G_t=\hat A_t+V_{\text{old}}(s_t)\)。</p><p><b>常见坑：</b>忘了用 done 掩码，优势会跨回合泄漏。</p>` },
+  { n: '④ 整理成批', h: R`<p><b>做什么：</b>把 \((T,N)\) 展平成 \(B=NT\) 个样本。每个 epoch 重新打乱，切成 minibatch。</p><p><b>可选：</b>在每个 minibatch 内对 \(\hat A\) 做标准化。</p><p><b>要点：</b>一轮内这批数据是固定的，所有后续更新都以它为准，\(\theta_{\text{old}}\) 不变。</p>` },
+  { n: '⑤ K 个 epoch 优化', h: R`<p><b>对每个 minibatch：</b>用当前 \(\theta\) 重新前向，得到新的 \(\log\pit(a_t\mid s_t)\)、\(V_\phi(s_t)\)、熵；算 \(\rho_t=\exp(\log\pit-\log\pio)\)；</p>\[\mathcal L=-\Lclip+c_vL^V-c_e\bar{\mathcal H}\]<p>反向传播，全局梯度裁剪，Adam 更新。同时记录 approx_kl、clipfrac 用于监控。</p><p><b>常见坑：</b>更新时必须把同一批 <code>b_actions[mb]</code> 传回网络；损失符号别写反。</p>` },
+  { n: '⑥ 早停与下一轮', h: R`<p><b>可选早停：</b>若 approx_kl 超过 <code>target_kl</code>，停止剩余 epoch，防止策略走得太远。</p><p><b>进入下一轮：</b>学习率按计划退火；用刚更新好的 \(\theta\) 作为新的 \(\theta_{\text{old}}\) 重新采样，旧数据全部丢弃（on-policy）。回到 ②。</p>` }
+  ];
+  const chips = $('#flow-chips'), det = $('#flow-detail');
+  S.forEach((s, i) => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = s.n;
+    b.addEventListener('click', () => {
+      $$('button', chips).forEach(x => x.classList.remove('on')); b.classList.add('on');
+      det.innerHTML = '<b>' + s.n + '</b>' + s.h; ts(det);
+    });
+    chips.appendChild(b);
+    if (i < S.length - 1) { const a = document.createElement('i'); a.textContent = '→'; chips.appendChild(a); }
+  });
+  det.innerHTML = '点击上面的任一步骤，查看它的输入、输出、张量形状与常见坑。';
+})();
+
+/* ---------- 手算计算器 ---------- */
+(function () {
+  const root = $('#w-calc'); if (!root) return;
+  const el = {}; ['r', 'v', 'vt', 'po', 'pn', 'g', 'l', 'e'].forEach(k => { el[k] = $('#calc-' + k); });
+  const nm = $('#calc-norm'), out = $('#calc-out');
+  const DEF = { r: '1, 0, 2', v: '2.0, 1.5, 1.0', vt: '0', po: '0.50, 0.40, 0.25', pn: '0.65, 0.36, 0.15', g: '0.9', l: '0.95', e: '0.2' };
+  const parse = s => s.split(/[,，\s]+/).filter(Boolean).map(Number);
+  const line = x => '<div style="margin:.15em 0;overflow-x:auto">' + x + '</div>';
+  function run() {
+    const r = parse(el.r.value), v = parse(el.v.value), vt = parse(el.vt.value)[0], po = parse(el.po.value), pn = parse(el.pn.value);
+    const g = +el.g.value, l = +el.l.value, e = +el.e.value, T = r.length;
+    const bad = !(T > 0) || [r, v, po, pn].some(a => a.some(x => !isFinite(x))) || !isFinite(vt) || v.length !== T || po.length !== T || pn.length !== T ||
+      po.some(x => x <= 0) || pn.some(x => x <= 0) || !isFinite(g + l + e) || e <= 0;
+    if (bad) { out.innerHTML = '<div class="box w"><span class="bt">输入有误</span>请保证奖励、估值、新旧概率的个数相同（都等于 T），用逗号分隔，概率必须大于 0，ε 必须大于 0。</div>'; return; }
+    const V = v.concat([vt]);
+    const G = new Array(T + 1); G[T] = vt; for (let t = T - 1; t >= 0; t--) G[t] = r[t] + g * G[t + 1];
+    const d = r.map((x, t) => x + g * V[t + 1] - V[t]);
+    const A = new Array(T); let last = 0; for (let t = T - 1; t >= 0; t--) { last = d[t] + g * l * last; A[t] = last; }
+    let An = A.slice(), mu = 0, sd = 1;
+    if (nm.checked) { mu = sum(A) / T; sd = T > 1 ? Math.sqrt(sum(A.map(x => (x - mu) * (x - mu))) / (T - 1)) : 1; An = A.map(x => (x - mu) / (sd + 1e-8)); }
+    const rho = pn.map((x, t) => x / po[t]), lo = 1 - e, hi = 1 + e;
+    const rows = rho.map((p, t) => { const u = p * An[t], cl = clip(p, lo, hi), c = cl * An[t]; return { p, u, cl, c, m: Math.min(u, c), act: u <= c }; });
+    const loss = -sum(rows.map(x => x.m)) / T;
+    let h = '';
+    h += '<div class="box n"><span class="bt">① 回报 \\(G_t=r_t+\\gamma G_{t+1}\\)（末尾 \\(G_T=V(s_T)\\)）</span>';
+    for (let t = T - 1; t >= 0; t--) h += line(R`\(G_{${t}}=${fmtN(r[t], 2)}+${fmtN(g, 2)}\times${par(G[t + 1])}=${fmtN(G[t])}\)`);
+    h += '</div><div class="box n"><span class="bt">② TD 误差 \\(\\delta_t=r_t+\\gamma V(s_{t+1})-V(s_t)\\)</span>';
+    for (let t = 0; t < T; t++) h += line(R`\(\delta_{${t}}=${fmtN(r[t], 2)}+${fmtN(g, 2)}\times${par(V[t + 1], 2)}-${par(V[t], 2)}=${fmtN(d[t])}\)`);
+    h += '</div><div class="box n"><span class="bt">③ GAE 优势 \\(\\hat A_t=\\delta_t+\\gamma\\lambda\\hat A_{t+1}\\)（从后往前，\\(\\hat A_T=0\\)）</span>';
+    for (let t = T - 1; t >= 0; t--) {
+      const nx = t === T - 1 ? 0 : A[t + 1];
+      h += line(R`\(\hat A_{${t}}=${par(d[t])}+${fmtN(g * l, 4)}\times${par(nx)}=${fmtN(A[t])}\)`);
+    }
+    if (nm.checked) {
+      h += '</div><div class="box n"><span class="bt">③′ 标准化 \\(\\hat A\\leftarrow(\\hat A-\\mu)/(\\sigma+10^{-8})\\)</span>';
+      h += line(R`\(\mu=${fmtN(mu)},\ \sigma=${fmtN(sd)}\)（样本标准差，除以 \(T-1\)）`);
+      for (let t = 0; t < T; t++) h += line(R`\(\hat A^{\text{norm}}_{${t}}=(${fmtN(A[t])}-${par(mu)})/${fmtN(sd)}=${fmtN(An[t])}\)`);
+    }
+    h += '</div><div class="box n"><span class="bt">④ 概率比 \\(\\rho_t=\\pi_\\theta/\\pi_{\\theta_{\\text{old}}}\\)</span>';
+    for (let t = 0; t < T; t++) h += line(R`\(\rho_{${t}}=${fmtN(pn[t], 3)}/${fmtN(po[t], 3)}=${fmtN(rho[t])}\)`);
+    h += '</div><div class="box n"><span class="bt">⑤ clip 目标 \\(\\min(\\rho\\hat A,\\ \\operatorname{clip}(\\rho,' + fmtN(lo, 2) + ',' + fmtN(hi, 2) + ')\\hat A)\\)</span>';
+    h += '<div class="tbl"><table><tr><th>t</th><th>\\(\\hat A\\)</th><th>\\(\\rho\\)</th><th>\\(\\rho\\hat A\\)</th><th>\\(\\operatorname{clip}(\\rho)\\hat A\\)</th><th>\\(L_t=\\min\\)</th><th>梯度</th></tr>';
+    rows.forEach((x, t) => {
+      h += '<tr><td class="n">' + t + '</td><td class="n">' + fmtN(An[t]) + '</td><td class="n">' + fmtN(x.p) + '</td><td class="n">' + fmtN(x.u) + '</td><td class="n">' + fmtN(x.c) + '</td><td class="n">' + fmtN(x.m) + '</td><td>' +
+        (x.act ? '<span class="pill good">有效</span>' : '<span class="pill bad">被截断（0）</span>') + '</td></tr>';
+    });
+    h += '</table></div></div><div class="box c"><span class="bt">⑥ 汇总</span>';
+    h += line(R`\(\Lclip=\tfrac1T\sum_tL_t=${fmtN(-loss)}\)，策略损失 \(-\Lclip=${fmtN(loss)}\)`);
+    h += line('价值目标 \\(\\hat G_t=\\hat A_t+V(s_t)\\)（用未标准化的 \\(\\hat A\\)）：' + A.map((x, t) => '\\(\\hat G_{' + t + '}=' + fmtN(x + V[t]) + '\\)').join('，'));
+    h += '</div>';
+    out.innerHTML = h; ts(out);
+  }
+  let tm = null;
+  const sched = () => { clearTimeout(tm); tm = setTimeout(run, 220); };
+  Object.keys(el).forEach(k => el[k].addEventListener('input', sched));
+  nm.addEventListener('change', run);
+  $('#calc-reset').addEventListener('click', () => { Object.keys(DEF).forEach(k => { el[k].value = DEF[k]; }); nm.checked = false; run(); });
+  run();
+})();
+})();
+</script>
+<script src="../imported-navigation.js?v=20261020" defer></script></body>
+</html>

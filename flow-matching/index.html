@@ -1,0 +1,1706 @@
+<!doctype html>
+<html lang="zh-CN" data-notebook-import="flow">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>从噪声到动作：VLA 中的流匹配深度解析</title>
+<meta name="description" content="面向机器人 VLA 的流匹配（Flow Matching）深度讲解：原理、公式、可运行代码、π0 / GR00T / SmolVLA 等应用，含两个可交互实验。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;600;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']], processEscapes: true, tags: 'none' },
+  svg: { fontCache: 'global' },
+  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+};
+</script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+:root{
+  --bg:#f2f4f9; --surface:#ffffff; --surface-2:#e9ecf5;
+  --ink:#141a2c; --muted:#566079; --line:#d6dce9;
+  --noise:#4b51d4; --noise-ink:#3a3fb8; --noise-soft:#e4e6fa;
+  --data:#e08a00; --data-ink:#8f5400; --data-soft:#fcefd2;
+  --bad:#cf3a55; --ok:#12805c;
+  --code-bg:#121830; --code-ink:#dde3f4; --code-line:#262f55;
+  --font-serif:"Noto Serif SC","Songti SC","STSong","Source Han Serif SC","SimSun",Georgia,serif;
+  --font-sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1121; --surface:#141a32; --surface-2:#1b2342;
+    --ink:#e6eaf6; --muted:#9aa4bf; --line:#283152;
+    --noise:#8f95ff; --noise-ink:#a9aeff; --noise-soft:#1d234d;
+    --data:#ffb938; --data-ink:#ffc965; --data-soft:#352a10;
+    --bad:#ff7b92; --ok:#4ed3a2;
+    --code-bg:#080c1a; --code-ink:#dde3f4; --code-line:#1d2547;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1121; --surface:#141a32; --surface-2:#1b2342;
+  --ink:#e6eaf6; --muted:#9aa4bf; --line:#283152;
+  --noise:#8f95ff; --noise-ink:#a9aeff; --noise-soft:#1d234d;
+  --data:#ffb938; --data-ink:#ffc965; --data-soft:#352a10;
+  --bad:#ff7b92; --ok:#4ed3a2;
+  --code-bg:#080c1a; --code-ink:#dde3f4; --code-line:#1d2547;
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top,0px) + 24px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-serif);font-size:17.5px;line-height:1.95;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:var(--noise-ink);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--noise);outline-offset:2px}
+::selection{background:var(--data-soft)}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+
+/* 阅读进度条：从噪声色走向数据色 */
+.progress{position:fixed;top:env(safe-area-inset-top,0px);left:0;height:3px;width:0;background:linear-gradient(90deg,var(--noise),var(--data));z-index:60;pointer-events:none}
+.theme{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:60;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;font:16px var(--font-sans);display:grid;place-items:center}
+
+/* 首屏 */
+.hero{max-width:1240px;margin:0 auto;padding:clamp(36px,7vw,88px) clamp(20px,5vw,64px) 28px;display:grid;grid-template-columns:minmax(0,1.04fr) minmax(0,1fr);gap:clamp(24px,4vw,56px);align-items:center}
+@media (max-width:900px){.hero{grid-template-columns:minmax(0,1fr)}}
+.hero h1{font-family:var(--font-serif);font-weight:900;font-size:clamp(2.9rem,8vw,6rem);line-height:1.05;letter-spacing:-.015em;margin:0 0 .3em}
+.hero .sub{font-family:var(--font-sans);font-size:clamp(1.02rem,1.9vw,1.3rem);line-height:1.7;color:var(--muted);margin:0;max-width:30em}
+.hero .meta{font-family:var(--font-sans);font-size:.9rem;color:var(--muted);margin:1.6em 0 0;line-height:1.7}
+.hero-fig{margin:0}
+.hero-fig .cv-wrap{background:var(--surface)}
+.hero-fig figcaption{font-family:var(--font-sans);font-size:.84rem;color:var(--muted);margin-top:.7rem;line-height:1.6}
+
+/* 版面 */
+.shell{max-width:1240px;margin:0 auto;padding:0 clamp(20px,5vw,64px);display:grid;grid-template-columns:190px minmax(0,1fr);gap:clamp(32px,5vw,64px)}
+@media (max-width:1100px){.shell{grid-template-columns:minmax(0,1fr)}}
+.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 28px);align-self:start;font-family:var(--font-sans);font-size:.88rem;line-height:1.5;max-height:calc(100vh - 60px);overflow:auto}
+.toc summary{cursor:pointer;font-weight:700;padding:12px 0;list-style:none}
+.toc summary::-webkit-details-marker{display:none}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:6px 0 6px 14px;color:var(--muted);text-decoration:none;border-left:2px solid var(--line)}
+.toc a:hover{color:var(--ink)}
+.toc a.on{color:var(--ink);border-left-color:var(--noise);font-weight:500}
+@media (min-width:1101px){.toc summary{display:none}}
+@media (max-width:1100px){.toc{position:static;max-height:none;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:1.6rem}}
+
+.post{min-width:0;padding-bottom:72px}
+.post>*{max-width:42rem}
+.post>.wide{max-width:62rem}
+.post>.codeblock{max-width:54rem}
+.post h2{font-family:var(--font-sans);font-weight:700;font-size:clamp(1.55rem,3.2vw,2.05rem);line-height:1.3;margin:4.6rem 0 1.1rem;letter-spacing:-.005em}
+.post h3{font-family:var(--font-sans);font-weight:700;font-size:1.2rem;line-height:1.4;margin:2.6rem 0 .7rem}
+.post p{margin:0 0 1.25em}
+.post strong{font-weight:600}
+.post ul,.post ol{padding-left:1.4em;margin:0 0 1.3em}
+.post li{margin:.35em 0}
+.post li::marker{color:var(--noise)}
+code{font-family:var(--font-mono);font-size:.84em;background:var(--surface-2);padding:.12em .4em;border-radius:4px}
+.lead{font-size:1.14em;line-height:1.9}
+.tldr{border-top:2px solid var(--ink);border-bottom:1px solid var(--line);padding:1.1rem 0 .3rem;margin:2rem 0 0}
+.tldr h2{font-size:1.05rem;margin:0 0 .5rem}
+.tldr li{font-size:.98em}
+.pull{font-family:var(--font-serif);font-size:1.22em;line-height:1.75;margin:1.8rem 0;padding:.2rem 0 .2rem 1.2rem;border-left:3px solid var(--data)}
+
+.note{font-family:var(--font-sans);font-size:.94rem;line-height:1.8;border-left:3px solid var(--noise);background:var(--surface);padding:14px 18px;margin:1.8rem 0;border-radius:0 6px 6px 0}
+.note.warn{border-left-color:var(--data)}
+.note b.t{display:block;margin-bottom:.15em;color:var(--noise-ink)}
+.note.warn b.t{color:var(--data-ink)}
+.note p{margin:0 0 .6em}
+.note p:last-child{margin:0}
+details.fold{border:1px solid var(--line);border-radius:6px;background:var(--surface);margin:1.6rem 0;font-family:var(--font-sans);font-size:.95rem}
+details.fold>summary{cursor:pointer;padding:12px 16px;font-weight:500}
+details.fold>div{padding:0 18px 10px;line-height:1.9;font-family:var(--font-serif);font-size:.98rem}
+
+mjx-container[jax="SVG"]{color:inherit}
+mjx-container[display="true"]{display:block;margin:1.25em 0 !important;overflow-x:auto;overflow-y:hidden;max-width:100%;padding:2px 0}
+
+/* 表格 */
+.tblwrap{overflow-x:auto;margin:1.8rem 0;font-family:var(--font-sans)}
+table.t{border-collapse:collapse;width:100%;min-width:680px;font-size:.9rem;line-height:1.65}
+table.t th{text-align:left;font-weight:700;padding:10px 12px;border-bottom:2px solid var(--ink);white-space:nowrap}
+table.t td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.t td:first-child{font-weight:500;white-space:nowrap}
+
+figure{margin:2.4rem 0}
+figcaption{font-family:var(--font-sans);font-size:.86rem;color:var(--muted);margin-top:.7rem;line-height:1.65}
+
+/* 交互实验 */
+.lab{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px clamp(12px,2.2vw,22px) 18px;margin:2.4rem 0;font-family:var(--font-sans)}
+.lab-title{font-weight:700;font-size:1.02rem;margin:0 0 .9rem}
+.lab-controls{display:flex;flex-wrap:wrap;gap:12px 22px;margin-bottom:12px}
+.ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lbl{font-size:.82rem;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex-wrap:nowrap}
+.seg button{font:inherit;font-size:.86rem;padding:7px 12px;border:0;background:transparent;color:var(--ink);cursor:pointer;white-space:nowrap}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--noise);color:var(--bg)}
+.cv-wrap{width:100%;position:relative;border-radius:6px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.cv-wrap canvas{display:block;width:100%}
+.lab-bar{display:flex;align-items:center;gap:12px;margin-top:12px}
+.lab-bar input[type=range]{flex:1;min-width:0;accent-color:var(--noise);height:28px}
+.btn{font:inherit;font-size:.88rem;padding:7px 14px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);border-radius:6px;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.tval{font-family:var(--font-mono);font-size:.84rem;min-width:5.4em;text-align:right;color:var(--muted)}
+.lab-extra{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-top:12px;font-size:.88rem}
+.chk{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.chk input{accent-color:var(--noise)}
+.lab-cap{font-size:.93rem;line-height:1.8;margin:12px 0 0}
+.lab-stat{font-family:var(--font-mono);font-size:.82rem;line-height:1.7;margin:10px 0 0;color:var(--muted)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.82rem;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.legend i.sq{border-radius:2px}
+
+.post h4{font-family:var(--font-sans);font-weight:700;font-size:1.04rem;line-height:1.45;margin:2.1rem 0 .55rem;color:var(--ink)}
+table.t.sm{min-width:520px}
+.m1d-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin:12px 0 2px}
+.m1d-bar i{display:block;height:100%}
+.lab .btn.ghost[data-t]{padding:5px 11px;font-size:.84rem}
+
+/* 结构图 */
+.arch{width:100%;height:auto;display:block}
+.arch text{font-family:var(--font-sans);font-size:14px;fill:var(--ink)}
+.arch .sub{font-size:12px;fill:var(--muted)}
+.arch .b{font-weight:700}
+.arch .box-vlm{fill:var(--noise-soft);stroke:var(--noise);stroke-width:1.5}
+.arch .box-exp{fill:var(--data-soft);stroke:var(--data);stroke-width:1.5}
+.arch .pill{fill:var(--surface);stroke:var(--line);stroke-width:1.3}
+.arch .edge{stroke:var(--muted);stroke-width:1.6;fill:none}
+.arch .loop{stroke:var(--data-ink);stroke-width:1.8;fill:none;stroke-dasharray:6 5}
+.arch .mk{fill:var(--muted)}
+.arch .mk2{fill:var(--data-ink)}
+.arch .loop-label{fill:var(--data-ink);font-size:12.5px}
+.plot text{font-family:var(--font-sans);font-size:12px;fill:var(--muted)}
+.plot .ax{stroke:var(--line);stroke-width:1.2;fill:none}
+.plot .curve{stroke:var(--noise);stroke-width:2.4;fill:none}
+.plot .flat{stroke:var(--muted);stroke-width:1.8;fill:none;stroke-dasharray:5 5}
+.plot .area{fill:var(--noise-soft)}
+
+/* 代码块 */
+.codeblock{margin:1.8rem 0;border-radius:8px;overflow:hidden;background:var(--code-bg);border:1px solid var(--code-line)}
+.codehead{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 14px;background:rgba(255,255,255,.04);border-bottom:1px solid var(--code-line);font:12.5px var(--font-mono);color:#8e98bd}
+.codehead button{font:inherit;color:#c9d1ee;background:transparent;border:1px solid #39426b;border-radius:4px;padding:3px 10px;cursor:pointer}
+.codehead button:hover{background:rgba(255,255,255,.07)}
+.codeblock pre{margin:0;padding:16px 18px;overflow-x:auto;font:13.3px/1.72 var(--font-mono);color:var(--code-ink);tab-size:4}
+.codeblock code{font:inherit;background:none;padding:0;color:inherit;border-radius:0}
+.hljs-keyword,.hljs-literal{color:#a3a9ff}
+.hljs-string,.hljs-regexp{color:#ffd27a}
+.hljs-number{color:#ff9f7a}
+.hljs-comment{color:#7c87b0;font-style:italic}
+.hljs-title.function_,.hljs-title.class_,.hljs-title{color:#7fe0c3}
+.hljs-built_in{color:#8fd3ff}
+.hljs-variable.language_{color:#ff9ec4}
+.hljs-meta{color:#c3a6ff}
+.hljs-params{color:var(--code-ink)}
+.hljs-subst{color:var(--code-ink)}
+@media (max-width:640px){.codeblock pre{font-size:12.2px;padding:14px}}
+
+.refs{font-family:var(--font-sans);font-size:.9rem;line-height:1.75;padding-left:1.5em}
+.refs li{margin:.5em 0}
+.foot{border-top:1px solid var(--line);padding:26px 0 70px;font-family:var(--font-sans);font-size:.84rem;color:var(--muted);line-height:1.8;max-width:42rem}
+
+@media (max-width:640px){
+  body{font-size:16.5px}
+  .lab-bar{flex-wrap:wrap}
+  .seg button{padding:8px 10px}
+}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Long+Cang&family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<link rel="stylesheet" href="../notebook-theme.css">
+<link rel="stylesheet" href="../imported-theme.css?v=20261020">
+</head>
+<body class="imported-note import-flow"><div class="collection-back" data-imported-chrome><a href="../">← 研究笔记总目录</a><span>具身智能 · 动作生成</span></div>
+<div class="progress" id="progress"></div>
+<button class="theme" id="theme" aria-label="切换明暗主题" title="切换明暗主题">◐</button>
+
+<header class="hero">
+  <div>
+    <h1>从噪声到动作</h1>
+    <p class="sub">VLA 里的流匹配（Flow Matching）：机器人的“手”为什么要靠一个速度场一步步“流”出来，以及怎样把它写成不到一百行的代码。</p>
+    <p class="meta">涵盖原理、公式、可运行代码与应用，含两个可以拖动的实验。资料截至 2026 年 10 月，预计阅读 30 分钟。</p>
+  </div>
+  <figure class="hero-fig">
+    <div class="cv-wrap"><canvas id="hero-cv" role="img" aria-label="动画：一团高斯噪声粒子沿速度场流动，最终聚成两条绕过中间空洞的弧线"></canvas></div>
+    <figcaption>
+      <span class="legend" style="margin:0"><span><i style="background:var(--noise)"></i>噪声 t=0</span><span><i style="background:var(--data)"></i>数据 t=1</span></span><br>
+      粒子沿“理想速度场”从高斯噪声流向目标分布：两条绕开中间障碍的轨迹。整篇文章讲的就是这幅图背后的东西。
+    </figcaption>
+  </figure>
+</header>
+
+<div class="shell">
+<details class="toc" id="toc">
+  <summary>目录</summary>
+  <ol>
+    <li><a href="#why">为什么需要生成式动作头</a></li>
+    <li><a href="#idea">流匹配的核心思想</a></li>
+    <li><a href="#diffusion">它和扩散是什么关系</a></li>
+    <li><a href="#vla">把流匹配装进 VLA</a></li>
+    <li><a href="#lab">动作块实验室</a></li>
+    <li><a href="#code">代码：从玩具到动作头</a></li>
+    <li><a href="#practice">工程细节与常见坑</a></li>
+    <li><a href="#apps">应用与模型版图</a></li>
+    <li><a href="#outlook">局限、前沿与延伸阅读</a></li>
+  </ol>
+</details>
+
+<main class="post">
+
+<p class="lead">一个视觉语言模型（VLM）吐出的是文字，而机器人每秒要发出几十次控制指令，每次都是一串连续的数字。把 VLM 变成 VLA（Vision-Language-Action），最核心的问题其实只有一个：<strong>动作应该以什么形式，从大模型里“长”出来？</strong></p>
+
+<p>2024 年底 Physical Intelligence 发布 π0，给出的答案是流匹配：让一个小的“动作专家”从高斯噪声出发，沿着学到的速度场走 10 步，得到一整段未来 1 秒的动作。此后 NVIDIA 的 GR00T、Hugging Face 的 SmolVLA 等一批模型沿用了这条路线。这篇文章带你从零把它弄明白。</p>
+
+<section class="tldr">
+  <h2>先说结论</h2>
+  <ul>
+    <li>机器人动作是<strong>连续、高维、多峰</strong>的。直接回归会把多个可行解“平均”成一个不可行解；离散化成 token 又慢又糙。</li>
+    <li>流匹配学一个速度场 \(v_\theta(x,t)\)，把噪声沿 ODE 推成数据。训练只是一个 MSE：<strong>预测 \(x_1-x_0\)</strong>；推理只是几步 Euler 积分。</li>
+    <li>在 VLA 里，VLM 负责“看懂与理解”，一个小模型（动作专家）负责“把噪声去噪成一整块动作”，常见做法是 4 到 10 步。</li>
+    <li>真正的难点在工程：时间步怎么采样、动作怎么归一化、相邻动作块如何衔接、延迟如何压低。</li>
+  </ul>
+</section>
+
+<h2 id="why">为什么需要生成式动作头</h2>
+
+<p>让大模型输出动作，目前有三条主流路线。先把它们摆在一起，你会看到流匹配出现的动机。</p>
+
+<div class="tblwrap wide">
+<table class="t">
+  <thead><tr><th>路线</th><th>代表工作</th><th>动作的表示</th><th>优点</th><th>痛点</th></tr></thead>
+  <tbody>
+    <tr><td>离散化 + 自回归</td><td>RT-2、OpenVLA、π0-FAST</td><td>把动作切成词表里的 token（分箱，或用 FAST 压缩）</td><td>直接复用语言模型的训练配方，规模化容易</td><td>逐 token 解码慢；分箱损失精度；高频长序列的 token 数很多</td></tr>
+    <tr><td>直接回归</td><td>ACT、OpenVLA-OFT（L1 回归）</td><td>连续向量，一次前向</td><td>快，实现简单</td><td>多峰分布会被“取平均”（ACT 额外加了 CVAE 来缓解）</td></tr>
+    <tr><td>扩散 / 流匹配</td><td>Diffusion Policy、π0、GR00T、SmolVLA</td><td>连续动作块，迭代去噪</td><td>能表达多峰分布；连续高精度；一次并行生成整块动作</td><td>需要多步迭代（但可压到 4 到 10 步，近期甚至 1 步）</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>多峰性：回归为什么会撞墙</h3>
+<p>设想机器人要把杯子送到水槽，路上有一个障碍物。遥操作员有时从左边绕，有时从右边绕，两种做法都对。如果用 MSE 去回归这些演示，网络的最优解恰好是所有演示的<strong>均值</strong>：一条笔直穿过障碍物的路线，没有任何一位演示者这样走过。这就是<strong>模式平均</strong>（mode averaging）。</p>
+<p>生成式模型的价值就在这里：它不输出一个“最可能的值”，而是学会整个分布，再从中<strong>采样出一条真实可行的轨迹</strong>。本文的第二个实验会让你亲手看到这件事。</p>
+
+<h3>动作分块：一次预测一整段</h3>
+<p>另一个关键设计是 <strong>action chunking</strong>：不是每个时刻预测一个动作，而是一次预测未来 \(H\) 步，\(A_t=[a_t,a_{t+1},\dots,a_{t+H-1}]\in\mathbb R^{H\times d}\)。π0 取 \(H=50\)，在 50 Hz 控制下相当于一秒钟。好处有三点：</p>
+<ul>
+  <li>时间一致性好，避免逐步预测带来的抖动与误差累积；</li>
+  <li>推理频率可以降到每秒几次，大模型也扛得住；</li>
+  <li>被生成的对象变成“一整条曲线”，非常适合用生成式模型建模。</li>
+</ul>
+<p>代价是块与块之间可能衔接不上，后文讲到的 RTC 就是为此而生。</p>
+
+<h2 id="idea">流匹配的核心思想</h2>
+
+<p>这一节是全文的地基。我会把每个符号、每个公式都拆开来讲，并配上可以自己动手算的小例子；只有真正用得上的公式才会出现。先忘掉机器人，只讨论一个纯粹的问题：</p>
+
+<p class="pull">手里有一堆数据（比如很多条“好的动作”），怎样造出一台机器：输入一团随机噪声，输出一个“像数据”的新样本？</p>
+
+<p>流匹配的回答是：让噪声里的每个点“<strong>走</strong>”起来，沿着一张“箭头图”一路走到数据那边去。训练要做的，就是让神经网络学会这张箭头图。下面分六步讲透它。</p>
+
+<h3>先认识符号</h3>
+<p>后面的每个公式都只用到下面这些符号，遇到不确定的随时回来查。</p>
+<div class="tblwrap">
+<table class="t" style="min-width:0">
+  <thead><tr><th>符号</th><th>它是什么</th><th>一句话解释</th></tr></thead>
+  <tbody>
+    <tr><td>\(t\)</td><td>时间</td><td>从 0 走到 1。\(t=0\) 是起点（纯噪声），\(t=1\) 是终点（数据）</td></tr>
+    <tr><td>\(x_0\)</td><td>噪声点</td><td>从标准高斯里随机抽的一个点，旅程的起点</td></tr>
+    <tr><td>\(x_1\)</td><td>数据点</td><td>从数据集里抽的一个真实样本，旅程的终点</td></tr>
+    <tr><td>\(x_t\)</td><td>\(t\) 时刻的位置</td><td>粒子在旅程中途的位置。\(x_0\)、\(x_1\) 只是 \(t=0\)、\(t=1\) 时的特例</td></tr>
+    <tr><td>\(v\)</td><td>速度，也就是“箭头”</td><td>粒子在某个位置、某个时刻该往哪个方向走、走多快</td></tr>
+    <tr><td>\(v_t(x)\)</td><td>真实速度场</td><td><strong>标准答案</strong>：\(t\) 时刻在位置 \(x\) 处的速度。我们并不知道它</td></tr>
+    <tr><td>\(v_\theta(x,t)\)</td><td>神经网络</td><td><strong>学生</strong>：\(\theta\) 是网络的参数，输入位置和时间，输出速度。目标是逼近 \(v_t\)</td></tr>
+    <tr><td>\(\mathcal N(0,I)\)</td><td>标准高斯</td><td>“最普通的随机噪声”：每一维都是均值 0、方差 1 的随机数</td></tr>
+    <tr><td>\(\mathbb E[\cdot]\)</td><td>期望</td><td>“抽很多很多次，取平均”</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>第一步：粒子、速度与 ODE</h3>
+<p>想象一团粒子，\(t=0\) 时是一团随机噪声。每个粒子在时刻 \(t\) 的位置记为 \(x_t\)。如果每个位置、每个时刻都有一个箭头，告诉粒子“往哪走、走多快”，粒子就会像树叶随风飘一样移动。这件事写成公式是：</p>
+\[ \frac{\mathrm{d}x_t}{\mathrm{d}t}=v_t(x_t) \tag{1} \]
+<p>把它拆开读：</p>
+<ul>
+  <li><strong>左边 \(\mathrm{d}x_t/\mathrm{d}t\)</strong>：位置随时间变化的快慢，即“每过一小段时间，位置变多少”，这就是速度的定义。</li>
+  <li><strong>右边 \(v_t(x_t)\)</strong>：去速度图里查箭头。下标 \(t\) 表示“取 \(t\) 时刻的那一张图”，括号里的 \(x_t\) 表示“查粒子此刻所在的那个位置”。<strong>两个 \(t\) 是同一个时刻，一个负责选图，一个负责定位。</strong></li>
+  <li><strong>整个等号</strong>：粒子的实际速度 = 速度图在它所在位置给出的箭头。</li>
+</ul>
+<p>这类“已知每个时刻、每个位置的速度，求粒子走过的路线”的方程，叫做 <strong>ODE（常微分方程）</strong>。“常”是指只对时间这一个变量求导。我们说的“解 ODE”，就是<strong>顺着箭头一步步走</strong>。怎么走？最朴素的办法（Euler 法）就是：</p>
+\[ x_{t+\delta}=x_t+\delta\cdot v_t(x_t) \tag{2} \]
+<p>读法：<strong>新位置 = 旧位置 + 步长 × 当前速度</strong>。就像开车，时速 60 公里开 0.5 小时，就前进 30 公里。这里 \(\delta\) 是步长：把时间 \([0,1]\) 平分成 \(K\) 份，\(\delta=1/K\)。</p>
+
+<div class="note"><p><b class="t">动手算一个</b>一维，一个粒子从 \(x_0=0\) 出发，假设速度图处处说“向右，速度 2”，即 \(v=2\)，取 \(K=2\)，\(\delta=0.5\)：</p>
+<p>\(t=0\)：位置 0 → 走一步：\(0+0.5\times 2=1\)（此时 \(t=0.5\)）→ 再走一步：\(1+0.5\times 2=2\)（此时 \(t=1\)）。粒子终点是 2。</p></div>
+
+<p>所以，<strong>只要有一张好的速度图，就能把噪声点送到数据那边去。</strong>生成问题于是变成：这张速度图从哪来？真实的 \(v_t\) 没人知道，所以我们让神经网络 \(v_\theta(x,t)\) 去学它。这里顺便回答一个常见的疑问：\(v_t\) 和 \(v_\theta\) 是<strong>标准答案</strong>与<strong>学生答案</strong>的关系；\(v_\theta(x,t)\) 里的 \((x,t)\) 只是把时间 \(t\) 当成输入写在了括号里，和 \(v_t\) 的下标 \(t\) 指的是同一个时间。</p>
+
+<h3>第二步：理想的训练方式，以及它为什么做不了</h3>
+<p>最直接的想法：让学生答案逼近标准答案，用“平均平方误差”来衡量：</p>
+\[ \mathcal L_{\text{FM}}(\theta)=\mathbb E_{t,\,x}\Big\lVert v_\theta(x,t)-v_t(x)\Big\rVert^2 \tag{3} \]
+<ul>
+  <li>\(v_\theta(x,t)-v_t(x)\)：学生的箭头与标准答案的箭头之差，也就是“错了多少”。</li>
+  <li>\(\lVert\cdot\rVert^2\)：把这个差的长度平方，得到误差的平方（和做回归时用的 MSE 一样）。</li>
+  <li>\(\mathbb E_{t,x}\)：对很多个“时间 + 位置”的组合取平均。</li>
+  <li>整体：学生答案与标准答案平均差多远，越小越好。</li>
+</ul>
+<p>“流匹配”（Flow Matching）这个名字就来自这里：<strong>让网络的流（速度场）去匹配真实的流</strong>。</p>
+<p>可是这个损失<strong>算不出来</strong>。因为 \(v_t(x)\) 就是我们想要找的东西，没有人给我们这份标准答案；我们手里只有数据点。这就像考试没有标准答案，没法批改。流匹配最漂亮的地方，就是绕开了这个困难。</p>
+
+<h3>第三步：把大问题拆成“有标准答案”的小问题</h3>
+<p>核心技巧：不去问“整团粒子的速度图是什么”，而去问“<strong>某一个粒子，从这里出发、到那里去，应该怎么走</strong>”。这个小问题我们是知道答案的：随机抽一个噪声点 \(x_0\) 和一个数据点 \(x_1\)，用一条直线把它们连起来，让粒子匀速走完：</p>
+\[ x_t=(1-t)\,x_0+t\,x_1 \tag{4} \]
+<p>检验一下：\(t=0\) 时 \(x_t=x_0\)，在起点；\(t=1\) 时 \(x_t=x_1\)，在终点；\(t=0.5\) 时 \(x_t=\tfrac{x_0+x_1}{2}\)，正好在中点。可以把 \(1-t\) 和 \(t\) 想成一个滑块：随着 \(t\) 从 0 增大到 1，权重一点点从 \(x_0\) 全部转移给 \(x_1\)。</p>
+<p>这个粒子的速度，就是位置对时间的变化率。对式 (4) 的 \(t\) 求导：</p>
+\[ \frac{\mathrm{d}x_t}{\mathrm{d}t}=x_1-x_0 \tag{5} \]
+<p>结果是个<strong>常数</strong>：匀速直线运动，速度 = 总位移 ÷ 总时间 = \((x_1-x_0)/1\)。这就是我们要的“有标准答案的小题”：对于这一对 \((x_0,x_1)\)，粒子在 \(t\) 时刻位于 \(x_t\)，它的速度应当是 \(x_1-x_0\)，一个我们<strong>能直接算出来</strong>的数。</p>
+
+<div class="note"><p><b class="t">动手算一个</b>一维，抽到噪声 \(x_0=-2\)、数据 \(x_1=3\)。</p>
+<p>位置：\(x_t=(1-t)(-2)+3t=-2+5t\)。\(t=0\) 时在 \(-2\)，\(t=0.4\) 时在 \(0\)，\(t=1\) 时在 \(3\)。速度：\(3-(-2)=5\)，全程不变。</p></div>
+
+<h3>第四步：训练损失，就是一次普通的回归</h3>
+<p>把“标准答案是 \(x_1-x_0\)”放进第二步的损失里，就得到真正用来训练的<strong>条件流匹配损失</strong>：</p>
+\[ \mathcal L_{\text{CFM}}(\theta)=\mathbb E_{t,\;x_0,\;x_1}\Big\lVert v_\theta(x_t,\,t)-(x_1-x_0)\Big\rVert^2,\qquad x_t=(1-t)\,x_0+t\,x_1 \tag{6} \]
+<p>一次训练迭代就是在“照着这个式子做”：</p>
+<ol>
+  <li><strong>随机抽三样东西</strong>：时间 \(t\)（在 0 到 1 之间均匀抽）、噪声 \(x_0\)（从标准高斯抽）、数据 \(x_1\)（从数据集抽一个样本）。这就是 \(\mathbb E\) 下面的 \(t,x_0,x_1\)。</li>
+  <li><strong>算出中间位置</strong> \(x_t\)，用式 (4)。</li>
+  <li><strong>让网络预测</strong>：把 \(x_t\) 和 \(t\) 喂给网络，得到预测速度 \(v_\theta(x_t,t)\)。</li>
+  <li><strong>对照标准答案</strong>：这一对的标准答案是 \(x_1-x_0\)，见式 (5)。</li>
+  <li><strong>算平方误差，反向传播</strong>，更新 \(\theta\)。重复几十万次。</li>
+</ol>
+<p>这就是一个标准的 MSE 回归：<strong>输入是 \((x_t,t)\)，标签是 \(x_1-x_0\)</strong>。没有似然，没有对抗，也没有复杂的概率推导。名字里的“条件”（Conditional），是指标准答案针对的是某一对具体的 \((x_0,x_1)\)。</p>
+
+<div class="note"><p><b class="t">动手算一个</b>接着上面的例子：\(x_0=-2\)，\(x_1=3\)，抽到 \(t=0.4\)，于是 \(x_t=0\)，标准答案是 \(5\)。</p>
+<p>假设网络现在看到 \((x_t=0,\,t=0.4)\) 输出了 \(3\)，误差平方是 \((3-5)^2=4\)。反向传播会把网络对这个输入的输出往 5 的方向推一点。这样的更新重复无数次，网络就学会了。</p></div>
+
+<h3 id="step5">第五步：关键的一点，网络学到的是“平均”</h3>
+<p>细心的你可能已经发现一个问题：训练时网络只能看到 \((x_t,t)\)，却<strong>不知道这个 \(x_t\) 是从哪一对 \((x_0,x_1)\) 来的</strong>。同一个位置、同一个时刻，可能有许多不同的配对经过，它们的标准答案各不相同。网络到底该输出哪一个？</p>
+<p>这一步是整套方法里最容易卡住的地方，所以我们拆成几小段慢慢讲：先弄清网络“看见”了什么，再澄清一个很常见的误会，然后用同一个例子算三遍（\(t=0\)、\(t=0.5\)、同一位置换不同的 \(t\)），最后自己动手拖一拖。</p>
+
+<h4>5.1　先弄清楚：网络“看见”了什么</h4>
+<p>回忆一次训练迭代：我们抽出 \((t,x_0,x_1)\)，算出 \(x_t\)，然后<strong>只把 \((x_t,t)\) 交给网络</strong>，标签是 \(x_1-x_0\)。网络的输入里没有 \(x_0\)，也没有 \(x_1\)。</p>
+<p>所以在网络眼里，一道“题”就是一个输入 \((x,t)\)。而<strong>同一道题可以在不同的训练样本里反复出现，每次配的标签却不一样</strong>，就像同一道选择题，有的答卷写 A，有的写 B。这时 MSE 回归会怎么做？</p>
+<p>固定一道题，假设它的标签有 \(n\) 个取值 \(y_1,\dots,y_n\)，网络对这道题输出一个数 \(c\)，平均平方误差是 \(\tfrac1n\sum_i (c-y_i)^2\)。对 \(c\) 求导并令其为零：\(\tfrac2n\sum_i(c-y_i)=0\)，得到 \(c=\tfrac1n\sum_i y_i\)。<strong>也就是说，对同一道题，让平方误差最小的输出，恰好是所有标签的平均值。</strong>这是回归的基本性质，不是流匹配特有的。</p>
+
+<h4>5.2　先澄清一个常见的疑问：其实有“两个平均”</h4>
+<div class="note warn"><p><b class="t">疑问：既然学的是平均，那 \(t=0\) 和 \(t=0.5\) 的平均不应该一样吗？</b>如果把所有路径的 \(x_1-x_0\) 全部拿来平均，确实永远一样。但网络学的不是这个平均。</p></div>
+<div class="tblwrap"><table class="t sm">
+<thead><tr><th></th><th>全局平均</th><th>条件平均（网络学的）</th></tr></thead>
+<tbody>
+<tr><td>平均谁</td><td>所有路径，不管它经过哪里</td><td>只有<strong>恰好经过 \((x,t)\) 这一点</strong>的路径</td></tr>
+<tr><td>写成公式</td><td>\(\mathbb E[x_1-x_0]\)</td><td>\(\mathbb E[x_1-x_0\mid x_t=x]\)</td></tr>
+<tr><td>在我们的例子里</td><td>\(\mathbb E[x_1]-\mathbb E[x_0]=0-0=0\)，对任何 \(t\)、任何位置都一样</td><td>随 \(x\) 和 \(t\) 而变，下面会算</td></tr>
+<tr><td>竖线 \(\mid\) 的作用</td><td>没有</td><td>读作“在……条件下”，相当于<strong>先筛选，再平均</strong></td></tr>
+</tbody></table></div>
+<p>所以你说得对：“取平均”这条规则从头到尾没有变。<strong>变的是：被平均的那一批路径是谁。</strong>可以把它想成一个筛子：</p>
+<ul>
+  <li>\(t=0\) 时，位置就是噪声起点，筛子几乎什么都筛不掉，所有终点的路径都在里面，平均出来是“全体的平均”。</li>
+  <li>\(t\) 越大，位置里越多地混进了 \(x_1\) 的信息，筛子越来越“挑”：站在靠近 \(+3\) 的地方，筛出来的几乎全是奔向 \(+3\) 的路径。</li>
+</ul>
+
+<h4>5.3　动手算 A：\(t=0\)，筛子是空的</h4>
+<div class="note"><p><b class="t">动手算一个：两个模式</b>一维，数据只有两种结果：\(x_1=+3\) 和 \(x_1=-3\)，各占一半（好比“从右边绕”和“从左边绕”）。噪声 \(x_0\) 照旧从标准高斯里抽。看 \(t=0\) 时的一个位置 \(x=0.5\)。</p>
+<p><b>第 1 步，谁会经过这里？</b>\(t=0\) 时 \(x_t=x_0\)，位置就是噪声本身。而噪声和终点是<strong>独立抽取</strong>的，“噪声抽到了 0.5”这件事，对终点是 \(+3\) 还是 \(-3\) 毫无暗示。所以经过 \((0.5,\,t{=}0)\) 的路径里，终点为 \(+3\) 的和终点为 \(-3\) 的<strong>各占一半</strong>。</p>
+<p><b>第 2 步，各自的标准答案。</b>终点是 \(+3\) 的那条，标准答案 \(3-0.5=2.5\)；终点是 \(-3\) 的那条，标准答案 \(-3-0.5=-3.5\)。</p>
+<p><b>第 3 步，取平均。</b>让 MSE 最小的输出 \(c\)，要最小化 \(\tfrac12(c-2.5)^2+\tfrac12(c+3.5)^2\)，答案是两个标签的平均：\(\tfrac{2.5+(-3.5)}{2}=-0.5\)。这恰好等于“数据的平均位置（0）减去当前位置（0.5）”。</p>
+<p><b>读出含义：</b>在 \(t=0\)，箭头指向的是<strong>数据的平均位置，也就是两个模式正中间那个一个数据点都没有的地方</strong>。网络没有偷懒，它在这个位置上确实无法判断该往哪边走，只能指向中间。</p></div>
+
+<h4>5.4　动手算 B：\(t=0.5\)，筛子变窄了</h4>
+<div class="note"><p>同一个例子，现在看 \(t=0.5\)，此时 \(x_t=0.5x_0+0.5x_1\)。先看两堆路径各自会落在哪里：</p>
+<p>终点是 \(+3\) 的路径：\(x_t=0.5x_0+1.5\)，而 \(x_0\) 是标准高斯，所以 \(x_t\) 服从以 \(1.5\) 为中心、标准差 \(0.5\) 的分布。终点是 \(-3\) 的路径同理，以 \(-1.5\) 为中心、标准差 \(0.5\)。<strong>两堆路径在这一刻已经基本分开了。</strong></p>
+<p><b>站在 \(x=1.5\)：</b>\(-3\) 那堆的中心在 \(-1.5\)，离这里 3，相当于 \(6\) 个标准差；\(+3\) 那堆正好以这里为中心。算下来，经过这里的路径中终点为 \(+3\) 与 \(-3\) 的比值约为 \(e^{18}\approx6.6\times10^{7}\)，实际上全部来自 \(+3\)。这些路径的 \(x_0=(1.5-1.5)/0.5=0\)，标准答案是 \(3-0=3\)。平均之后就是 \(3\)，不再有含糊，箭头明确“朝 \(+3\) 去”。</p>
+<p><b>站在 \(x=0\)（正中间）：</b>两堆路径的“尾巴”在这里相遇，各占一半。\(+3\) 的路径 \(x_0=(0-1.5)/0.5=-3\)，标准答案 \(3-(-3)=6\)；\(-3\) 的路径 \(x_0=3\)，标准答案 \(-3-3=-6\)，平均为 \(0\)。所以正中间仍然含糊。<strong>但是</strong>，\(+3\) 那堆路径落到 \(x_t<0\) 的概率只有约 \(0.13\%\)（距中心 3 个标准差），所以这个含糊的位置在 \(t=0.5\) 时几乎没有粒子会经过。</p></div>
+<p>这就是规律：<strong>含糊的地方一直存在，但随着 \(t\) 增大，含糊的区域越来越窄，也越来越“没人去”。</strong>推理时，粒子走到这里之前就已经被推向某一边了，几乎不会真的停在含糊的位置上。</p>
+
+<h4>5.5　同一个位置，只改 \(t\)：平均怎么变</h4>
+<p>为了直接回应“平均没变过”的疑问，我们把位置固定在 \(x=0.5\)，只改变时间 \(t\)，看筛出来的路径和平均答案：</p>
+<div class="tblwrap"><table class="t sm">
+<thead><tr><th>时刻 \(t\)</th><th>经过 \((0.5,t)\) 的路径中，终点为 \(+3\) 的占比</th><th>\(+3\) 路径的标准答案</th><th>\(-3\) 路径的标准答案</th><th>平均（网络输出）</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>50%</td><td>\(+2.5\)</td><td>\(-3.5\)</td><td>\(-0.5\)</td></tr>
+<tr><td>0.25</td><td>79%</td><td>\(+3.33\)</td><td>\(-4.67\)</td><td>\(+1.66\)</td></tr>
+<tr><td>0.5</td><td>99.75%</td><td>\(+5\)</td><td>\(-7\)</td><td>\(+4.97\)</td></tr>
+<tr><td>0.75</td><td>≈100%</td><td>\(+10\)</td><td>\(-14\)</td><td>\(+10.0\)</td></tr>
+</tbody></table></div>
+<p>位置始终是 \(0.5\)，网络的输出却从 \(-0.5\) 一路翻到了 \(+10\)。原因不在“平均”本身，而在<strong>能通过 \((0.5,t)\) 的路径的构成变了</strong>：\(t=0\) 时人人都路过；到 \(t=0.5\) 时，终点为 \(-3\) 的路径要么已经被拉到左边去了，要么得靠 \(x_0\) 偏离很远才能出现在 \(0.5\)，几乎被筛光了。</p>
+<p>另外注意最后一列的数值还在变大。这不是“筛子”的作用，而是直线匀速运动的几何关系：从当前位置 \(x\) 到终点 \(x_1\)，剩余距离是 \(x_1-x\)，剩余时间是 \(1-t\)，所以速度是“剩余距离 ÷ 剩余时间”。\(t\) 越大，分母越小，同样的距离要走得更快。</p>
+<details class="fold">
+  <summary>想看推导：为什么标准答案等于“剩余距离 ÷ 剩余时间”？</summary>
+  <div>
+  <p>已知 \(x_t=(1-t)x_0+t\,x_1\)，解出 \(x_0=\dfrac{x_t-t\,x_1}{1-t}\)，代入标准答案：</p>
+  \[ x_1-x_0=x_1-\frac{x_t-t\,x_1}{1-t}=\frac{x_1(1-t)-x_t+t\,x_1}{1-t}=\frac{x_1-x_t}{1-t} \]
+  <p>也就是说，一旦知道了位置 \(x_t\) 和终点 \(x_1\)，标准答案就确定了。于是条件平均（后面 5.7 会把它写成式 (7)）可以改写成一个更好记的形式：</p>
+  \[ v^{*}(x,t)=\frac{\mathbb E[\,x_1\mid x_t=x\,]-x}{1-t} \]
+  <p>读法：<strong>网络其实在“猜终点”</strong>：猜测的终点是 \(\mathbb E[x_1\mid x_t=x]\)，然后朝着猜测的终点，按“剩余距离 ÷ 剩余时间”的速度走。\(t=0\) 时，猜测的终点是全体数据的平均；\(t\) 越大，猜测越接近这条路径真正的终点。这样看，“箭头从指向正中间变成指向各自的模式”就是“猜终点越来越准”。</p>
+  </div>
+</details>
+<details class="fold">
+  <summary>想看推导：“占比”和平均是怎么算出来的（本例的闭式解）</summary>
+  <div>
+  <p>给定终点 \(x_1=a\)，\(x_t=(1-t)x_0+t\,a\) 服从均值 \(ta\)、标准差 \(1-t\) 的高斯分布。两个模式的先验各为 \(\tfrac12\)，由贝叶斯公式，经过 \((x,t)\) 的路径里终点为 \(+3\) 的占比是：</p>
+  \[ p_+(x,t)=\frac{\mathcal N(x;\,3t,\,(1-t)^2)}{\mathcal N(x;\,3t,\,(1-t)^2)+\mathcal N(x;\,-3t,\,(1-t)^2)}=\frac{1}{1+e^{-6tx/(1-t)^2}} \]
+  <p>其中用到 \((x+3t)^2-(x-3t)^2=12tx\)。代入检查：\(t=0\) 时指数为 0，占比 \(=\tfrac12\)；\(t=0.5,\,x=1.5\) 时指数为 \(18\)，占比几乎是 1。猜测的终点是 \(\mathbb E[x_1\mid x]=3p_+-3(1-p_+)=3\tanh\!\dfrac{3tx}{(1-t)^2}\)，所以</p>
+  \[ v^{*}(x,t)=\frac{3\tanh\!\big(3tx/(1-t)^2\big)-x}{1-t} \]
+  <p>上面表格里的数就是这个式子算出来的。实验一里的“完美速度场”，是把同样的思路推广到二维、任意多个数据点。</p>
+  </div>
+</details>
+
+<h4>5.6　亲手拖一拖</h4>
+<p>下面这个小实验就是上面这个一维例子。拖动<strong>时刻 \(t\)</strong> 和<strong>位置 \(x\)</strong>，观察“谁经过这里”和“平均出来的答案”怎么随之变化。建议先点一下三个预设：它们正好对应上面算过的三个例子。</p>
+
+<figure class="lab wide" id="demo-1d">
+  <p class="lab-title">小实验：一维两模式，看“筛子”如何变窄</p>
+  <div class="lab-controls">
+    <div class="ctl"><span class="lbl">预设</span>
+      <button class="btn ghost" data-t="0" data-x="0.5">t=0，x=0.5</button>
+      <button class="btn ghost" data-t="0.5" data-x="1.5">t=0.5，x=1.5</button>
+      <button class="btn ghost" data-t="0.5" data-x="0">t=0.5，x=0</button>
+    </div>
+  </div>
+  <div class="cv-wrap"><canvas id="m1d-cv" role="img" aria-label="一维两模式示意图：上半部分是终点为 +3 和 −3 的两堆路径在当前时刻的位置分布，下半部分是每个位置上两个标准答案以及它们的平均"></canvas></div>
+  <div class="lab-bar">
+    <span class="lbl" style="min-width:3.2em">时刻 t</span>
+    <input type="range" id="m1d-t" min="0" max="950" value="0" aria-label="时刻 t">
+    <span class="tval" id="m1d-tval">t = 0.00</span>
+  </div>
+  <div class="lab-bar">
+    <span class="lbl" style="min-width:3.2em">位置 x</span>
+    <input type="range" id="m1d-x" min="-500" max="500" value="50" aria-label="位置 x">
+    <span class="tval" id="m1d-xval">x = 0.50</span>
+  </div>
+  <div class="legend"><span><i style="background:var(--data)"></i>终点是 +3 的路径</span><span><i style="background:var(--noise)"></i>终点是 −3 的路径</span><span><i class="sq" style="background:var(--ink)"></i>平均（网络输出）</span></div>
+  <div class="m1d-bar" aria-hidden="true"><i id="m1d-bar-p" style="background:var(--data)"></i><i id="m1d-bar-n" style="background:var(--noise)"></i></div>
+  <p class="lab-stat" id="m1d-stat" aria-live="polite"></p>
+  <p class="lab-cap" id="m1d-cap" aria-live="polite"></p>
+</figure>
+
+<h4>怎么读这幅图</h4>
+<ul>
+  <li><strong>上半部分</strong>是“筛子”：此刻所有路径的位置分布，按终点分成两堆。竖线是你选的位置，竖线与两堆曲线相交处的高度比，就是“经过这里的路径中，各终点占多少”（下方的彩色条）。</li>
+  <li><strong>下半部分</strong>是答案：两条虚线分别是 \(+3\) 路径和 \(-3\) 路径在每个位置上的标准答案，黑色实线是按占比加权平均后的结果，也就是网络学到的 \(v^{*}(x,t)\)。</li>
+  <li><strong>把 \(t\) 拖到 0。</strong>两堆路径完全重合，占比处处是 50%，黑线正好在两条虚线的正中间，是一条斜率为 \(-1\) 的直线（\(v^{*}=-x\)）。</li>
+  <li><strong>慢慢增大 \(t\)。</strong>两堆路径向左右分开，黑线在 \(x>0\) 一侧贴向 \(+3\) 的虚线、在 \(x<0\) 一侧贴向 \(-3\) 的虚线，只在中间一条越来越窄的缝里急速过渡。那条缝就是“仍然含糊”的位置，而缝里的路径越来越少。</li>
+</ul>
+
+<h4>5.7　总结：写成公式</h4>
+<p>规律是：<strong>时间越靠后，位置本身就越能暴露终点，平均就越“尖锐”，箭头也就从“指向正中间”变成“指向各自的模式”。</strong>把这个规律写成公式，网络学到的最优解是：</p>
+\[ v^{*}(x,t)=\mathbb E\big[\,x_1-x_0\;\big|\;x_t=x\,\big] \tag{7} \]
+<p>读法：竖线 \(\mid\) 读作“在……条件下”。整句话是：<strong>在时刻 \(t\)、位置 \(x\) 这个条件下，所有可能的标准答案 \(x_1-x_0\) 的平均。</strong>理由就是 5.1 里的结论：同一道题有多个标签时，MSE 回归的最优输出就是标签的平均值，5.3 里算出的 \(-0.5\) 就是一个实例。</p>
+<p>更妙的是，这个平均<strong>恰好就是第二步里那张“想要却不知道”的真实速度图 \(v_t(x)\)</strong>。道理很直观：真实速度图要描述整团粒子在每个位置的流动方向，而经过某个位置的粒子来自不同的起终点配对，整体的流动方向自然就是它们的平均。所以，虽然我们每次只拿“一对 \((x_0,x_1)\)”的答案来训练，但大量训练之后，网络学到的恰好就是整团粒子的真实速度图。这就是式 (6) 可以代替式 (3) 的原因（Lipman 等人 2022 给出了严格证明）。</p>
+<p>两个重要的推论：</p>
+<ul>
+  <li><strong>训练时的直线会交叉</strong>（同一位置有多种答案），<strong>推理时我们沿着“平均之后”的箭头走，路径不再交叉。</strong></li>
+  <li><strong>1 步到位 = 数据平均值 = 回归；多步才能分出模式。</strong>这正是动作生成里“回归会取平均”的数学根源：只走 1 步，等于只用了 \(t=0\) 那一刻的箭头，而那一刻的箭头指向的永远是数据的平均位置。</li>
+</ul>
+<p>下面的实验把这两个视角并排放在一起，请一定亲手玩一玩。</p>
+
+<figure class="lab wide" id="demo-flow">
+  <p class="lab-title">实验一：在二维平面上看速度场如何把噪声“流”成数据</p>
+  <div class="lab-controls">
+    <div class="ctl"><span class="lbl">目标分布</span>
+      <div class="seg" data-key="shape" role="group" aria-label="目标分布">
+        <button data-v="blobs" aria-pressed="false">双峰</button>
+        <button data-v="moons" aria-pressed="true">双月</button>
+        <button data-v="ring" aria-pressed="false">圆环</button>
+      </div></div>
+    <div class="ctl"><span class="lbl">视角</span>
+      <div class="seg" data-key="mode" role="group" aria-label="视角">
+        <button data-v="train" aria-pressed="false">训练：随机配对的直线</button>
+        <button data-v="infer" aria-pressed="true">推理：沿速度场积分</button>
+      </div></div>
+    <div class="ctl" id="flow-steps-ctl"><span class="lbl">Euler 步数 K</span>
+      <div class="seg" data-key="N" role="group" aria-label="Euler 步数">
+        <button data-v="1" aria-pressed="false">1</button>
+        <button data-v="2" aria-pressed="false">2</button>
+        <button data-v="4" aria-pressed="false">4</button>
+        <button data-v="10" aria-pressed="true">10</button>
+        <button data-v="50" aria-pressed="false">50</button>
+      </div></div>
+  </div>
+  <div class="cv-wrap"><canvas id="flow-cv" role="img" aria-label="二维粒子动画，展示噪声粒子在速度场作用下流向目标分布"></canvas></div>
+  <div class="lab-bar">
+    <button class="btn" id="flow-play">播放</button>
+    <input type="range" id="flow-t" min="0" max="1000" value="0" aria-label="时间 t">
+    <span class="tval" id="flow-tval">t = 0.00</span>
+  </div>
+  <div class="lab-extra">
+    <label class="chk"><input type="checkbox" id="flow-field"> 显示速度场箭头</label>
+    <button class="btn ghost" id="flow-resample">重抽噪声</button>
+  </div>
+  <div class="legend"><span><i style="background:var(--noise)"></i>粒子（颜色随 t 由噪声色变为数据色）</span><span><i style="background:var(--data);opacity:.45"></i>目标分布的样本</span></div>
+  <p class="lab-cap" id="flow-cap" aria-live="polite"></p>
+  <details class="fold" style="margin-bottom:0">
+    <summary>这个实验里的“网络”是怎么来的？</summary>
+    <div>
+    <p>为了让你在浏览器里看到<strong>严格正确</strong>的速度场，这里没有训练神经网络，而是直接用数学上的“完美答案”：在每个位置、每个时刻，把所有数据点拿来看，判断“这个粒子最可能是奔着哪些数据点去的”（离得越近、可能性越大），然后把指向这些数据点的方向按可能性加权平均。这正是上文第五步说的“所有可能的标准答案的平均”。</p>
+    <p>它相当于“网络拟合得无限好”时的结果。真实网络会在数据点之间做插值与泛化，而不是死记每个样本，但<strong>几何直觉完全相同</strong>。</p>
+    </div>
+  </details>
+</figure>
+
+<h3>怎么读这幅图</h3>
+<ul>
+  <li><strong>先看训练视角。</strong>拖动 \(t\)，每个粒子沿着自己那对 \((x_0,x_1)\) 的直线匀速移动。注意线条交叉得有多厉害，每个交叉点就是第五步里“同一位置有多个答案”的地方。</li>
+  <li><strong>切到推理视角，把步数设为 1。</strong>所有粒子一步落到同一个点：数据的均值。双峰时它落在两峰之间的空地上，就是第五步算出的那个 \(-0.5\) 的二维版本。</li>
+  <li><strong>把步数加到 2、4、10。</strong>分布被一点点“拆开”，形状逐渐清晰。</li>
+  <li><strong>打开速度场。</strong>\(t=0\) 时所有箭头都指向均值；随着 \(t\) 增大，箭头开始指向各自的模式。<strong>“选哪一个模式”这个决定，是在中间时刻做出的。</strong></li>
+</ul>
+
+<h3>第六步：推理，就是重复式 (2)</h3>
+<p>训练完成后，生成一个新样本只需要：</p>
+<ol>
+  <li>从标准高斯抽一个点作为起点 \(x_0\)；</li>
+  <li>重复 \(K\) 次：把当前位置和时间交给网络，得到速度，再用式 (2) 向前走一步（\(\delta=1/K\)）；</li>
+  <li>走到 \(t=1\)，当前位置就是生成的样本。</li>
+</ol>
+<p>\(K\) 就是“去噪步数”，也是推理时唯一需要选的旋钮：越大越准，也越慢。π0 取 10。要说明的是，式 (4) 的条件路径是直线，但沿着“平均之后”的速度图实际走出来的轨迹一般是弯的，它们只是“比扩散模型的更直”，所以少量几步就能走得不错。</p>
+
+<h3>一个很有用的小结论：随时可以“预测终点”</h3>
+<p>站在 \(t\) 时刻的位置 \(x_t\)，如果保持当前速度不变，走完剩下的 \(1-t\) 的时间，会到哪里？</p>
+\[ \hat x_1=x_t+(1-t)\,v_\theta(x_t,t) \tag{8} \]
+<p>读法：<strong>预测终点 = 当前位置 + 剩余时间 × 当前速度</strong>（符号上的小帽子 \(\hat{\ }\) 表示“预测值”）。</p>
+<div class="note"><p><b class="t">动手算一个</b>还是那个例子：\(x_t=0\)，\(t=0.4\)，网络输出速度 \(5\)。预测终点是 \(0+(1-0.4)\times 5=3\)，恰好就是真实的 \(x_1\)。</p></div>
+<p>这说明速度预测网络同时也是一个“去噪器”：给它一个带噪的 \(x_t\)，它能告诉你对干净数据当前最好的猜测。在 \(t=0\) 时，这个猜测就是数据均值，这正是“1 步 = 回归”的原因。\(t\) 越接近 0，\(x_t\) 里关于答案的信息越少，<strong>越需要靠条件（图像、语言）来决定动作长什么样</strong>。后面讲时间采样时会用到这一点。</p>
+
+<h3>本节公式一览</h3>
+<div class="tblwrap">
+<table class="t" style="min-width:0">
+  <thead><tr><th>式</th><th>它在说什么</th><th>对应到代码里</th></tr></thead>
+  <tbody>
+    <tr><td>(1)</td><td>粒子的速度由速度图决定（ODE）</td><td>概念，不直接写成代码</td></tr>
+    <tr><td>(2)</td><td>顺着箭头一步步走（Euler 法）</td><td>采样时的 <code>x = x + dt * model(x, t)</code></td></tr>
+    <tr><td>(3)</td><td>理想的训练目标，但标准答案未知，做不了</td><td>不使用</td></tr>
+    <tr><td>(4)(5)</td><td>一对 \((x_0,x_1)\) 之间的直线路径与匀速</td><td><code>xt = (1-t)*x0 + t*x1</code>，<code>target = x1 - x0</code></td></tr>
+    <tr><td>(6)</td><td>真正使用的训练损失：对 \(x_1-x_0\) 做回归</td><td><code>cfm_loss</code></td></tr>
+    <tr><td>(7)</td><td>网络学到的是所有可能答案的平均</td><td>解释“1 步 = 回归”</td></tr>
+    <tr><td>(8)</td><td>由速度随时预测终点</td><td>解释时间采样为什么偏向噪声端</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="diffusion">它和扩散是什么关系</h2>
+
+<p>机器人领域里，Diffusion Policy 是流匹配之前的主流。两者的差别主要在“加噪路径”和“回归目标”的写法上：</p>
+
+<div class="tblwrap wide">
+<table class="t">
+  <thead><tr><th></th><th>DDPM / Diffusion Policy</th><th>流匹配（π0、GR00T、SmolVLA）</th></tr></thead>
+  <tbody>
+    <tr><td>加噪路径</td><td>\(x_t=\sqrt{\bar\alpha_t}\,x_{\text{data}}+\sqrt{1-\bar\alpha_t}\,\epsilon\)，依赖噪声日程 \(\bar\alpha_t\)</td><td>\(x_t=(1-t)\,\epsilon+t\,x_{\text{data}}\)，一条直线</td></tr>
+    <tr><td>回归目标</td><td>噪声 \(\epsilon\)（也可改为 \(x_0\) 或 \(v\)）</td><td>速度 \(x_{\text{data}}-\epsilon\)</td></tr>
+    <tr><td>采样</td><td>反向 SDE，或 DDIM 等确定性采样器</td><td>对 ODE 做 Euler 积分</td></tr>
+    <tr><td>需要调的东西</td><td>日程、总步数 \(T\)、预测类型、采样器</td><td>基本只剩时间分布与推理步数</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note warn"><p><b class="t">别神话它</b>两者并不是对立关系。在高斯路径下，扩散模型与流匹配在数学上可以互相转换（参见 Albergo 等人的随机插值框架），差别在参数化、时间调度与采样器。流匹配赢在<strong>形式简单、不容易写错、少步数下表现稳健</strong>，而不是赢在“理论上更强”。步数少也不是它的专利，DDIM 同样可以。</p></div>
+
+<h2 id="vla">把流匹配装进 VLA</h2>
+
+<p>前面讨论的 \(x\) 是二维平面上的点。到了机器人，只需要做两处替换：<strong>被生成的对象</strong>换成动作块 \(A_t\in\mathbb R^{H\times d}\)；<strong>网络多了条件</strong>，除了 \(x_t\) 和 \(t\)，还要看观测 \(o_t=[I_t^1,\dots,I_t^n,\ \ell_t,\ q_t]\)（多路相机图像、语言指令、机器人本体状态）。</p>
+
+<h3>训练：加噪、预测、回归</h3>
+<p>下面用 \(\tau\) 表示流的时间，以和机器人的真实时间 \(t\) 区分。取 \(\tau=0\) 为纯噪声，\(\tau=1\) 为真实动作：</p>
+\[ A_t^{\tau}=(1-\tau)\,\epsilon+\tau\,A_t,\qquad \epsilon\sim\mathcal N(0,I) \]
+\[ \mathcal L(\theta)=\mathbb E_{(A_t,o_t)\sim\mathcal D,\ \tau\sim p(\tau),\ \epsilon}\Big\lVert v_\theta\big(A_t^{\tau},\,o_t,\,\tau\big)-(A_t-\epsilon)\Big\rVert^2 \tag{9} \]
+<p>对照式 (6)，除了多了条件 \(o_t\)，别无二致。符号是这样一一对应的：</p>
+<div class="tblwrap">
+<table class="t" style="min-width:0">
+  <thead><tr><th>上一节（二维点）</th><th>VLA 中</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td>\(x_0\)</td><td>\(\epsilon\)</td><td>与动作块同形状的高斯噪声</td></tr>
+    <tr><td>\(x_1\)</td><td>\(A_t\)</td><td>数据集里真实的动作块</td></tr>
+    <tr><td>\(x_t\)</td><td>\(A_t^{\tau}\)</td><td>噪声与真实动作按比例混合的带噪动作块</td></tr>
+    <tr><td>\(t\)</td><td>\(\tau\)</td><td>流的时间（与机器人真实时间 \(t\) 区分）</td></tr>
+    <tr><td>\(v_\theta(x_t,t)\)</td><td>\(v_\theta(A_t^{\tau},o_t,\tau)\)</td><td>网络多看了一个条件：图像、语言、机器人状态</td></tr>
+    <tr><td>\(x_1-x_0\)</td><td>\(A_t-\epsilon\)</td><td>标准答案：从噪声指向真实动作的方向</td></tr>
+  </tbody>
+</table>
+</div>
+<p>一次训练迭代只需要：</p>
+<ol>
+  <li>从数据集取一条 \((o_t, A_t)\)；</li>
+  <li>采样噪声 \(\epsilon\) 和流时间 \(\tau\)；</li>
+  <li>构造带噪动作块 \(A_t^\tau\)；</li>
+  <li>网络前向得到 \(v_\theta\)；</li>
+  <li>对 \(A_t-\epsilon\) 做 MSE，反向传播。</li>
+</ol>
+
+<h3>推理：从噪声积分到动作</h3>
+<ol>
+  <li>采样 \(A_t^0\sim\mathcal N(0,I)\)；</li>
+  <li>对 \(k=0,\dots,K-1\)：\(A_t^{\tau+\delta}=A_t^{\tau}+\delta\,v_\theta(A_t^{\tau},o_t,\tau)\)，其中 \(\tau=k/K\)，\(\delta=1/K\)；</li>
+  <li>得到 \(A_t^1\)，反归一化后执行前若干步。</li>
+</ol>
+<p>π0 取 \(K=10\)，整个“从噪声到一秒钟动作”只要 10 次小网络前向。</p>
+
+<div class="note warn"><p><b class="t">读代码前先对齐“时间坐标”</b>
+π0 论文正文写的是 \(\tau=0\) 为噪声（本文沿用）。但官方开源实现 openpi 用的是反过来的坐标：<code>x_t = t·noise + (1−t)·actions</code>，目标是 <code>noise − actions</code>，积分从 <code>t=1</code> 走到 <code>t=0</code>，步长为负。两者只差一次换元 \(\tau'=1-\tau\)，数学上完全等价，但读代码、对公式、复用权重时很容易搞反，调试之前先确认这一点。</p></div>
+
+<h3>时间步怎么采样：偏向噪声端</h3>
+<p>式 (6) 里 \(t\) 是均匀采样的。π0 改成了偏向噪声端的 Beta 分布：</p>
+\[ p(\tau)=\mathrm{Beta}\!\Big(\frac{s-\tau}{s};\,1.5,\,1\Big),\qquad s=0.999 \tag{10} \]
+<figure>
+  <svg class="plot" viewBox="0 0 560 230" role="img" aria-label="流时间 τ 的采样密度：均匀分布为水平线，π0 的 Beta 分布在噪声端更高、在数据端趋近于零" style="width:100%;max-width:560px;height:auto;display:block">
+    <path id="beta-area" class="area" d=""/>
+    <path class="ax" d="M50 190H530M50 190V28"/>
+    <path id="beta-flat" class="flat" d=""/>
+    <path id="beta-curve" class="curve" d=""/>
+    <text x="50" y="212">τ = 0（纯噪声）</text>
+    <text x="530" y="212" text-anchor="end">τ = 1（真实动作）</text>
+    <text x="44" y="34" text-anchor="end">密度</text>
+    <text id="beta-l1" x="215" y="56" style="fill:var(--noise-ink)">π0 的 Beta 采样</text>
+    <text id="beta-l2" x="330" y="112">均匀采样</text>
+  </svg>
+  <figcaption>训练时把更多的样本分配给高噪声区域（\(\tau\) 小）。这个直觉与实验证据见下文。</figcaption>
+</figure>
+<p>为什么这样做？回忆式 (8)：\(\tau\) 越小，带噪动作里能“偷看”到的答案越少，网络越要靠图像、语言和状态去决定整块动作的形状，包括选哪一个模式。在机器人里，观测对动作的约束远强于“一句话生成一张图”的场景，真正难、也真正重要的是<strong>高噪声一端</strong>；低噪声一端只是在给已定的轨迹做细节修饰。2026 年 6 月的一项工作还发现：把训练时间分布进一步压向高噪声，甚至可以让 <strong>1 步</strong>解码追平 10 步（我们在后文再谈）。</p>
+
+<h3>网络长什么样</h3>
+<p>以 π0 为例，整体结构如下。它的精髓是<strong>“重的部分只算一次，轻的部分反复算”</strong>。</p>
+
+<figure class="wide">
+<svg class="arch" viewBox="0 0 880 430" role="img" aria-label="π0 风格 VLA 的推理结构：图像与语言进入 VLM 主干产生 KV 缓存，动作专家读取缓存，对带噪动作块反复去噪">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk2" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+
+  <rect class="pill" x="20" y="40" width="160" height="62" rx="10"/>
+  <text x="100" y="66" text-anchor="middle" class="b">相机图像</text>
+  <text x="100" y="88" text-anchor="middle" class="sub">多视角 + 腕部相机</text>
+  <rect class="pill" x="20" y="130" width="160" height="62" rx="10"/>
+  <text x="100" y="156" text-anchor="middle" class="b">语言指令 ℓ</text>
+  <text x="100" y="178" text-anchor="middle" class="sub">“把衣服叠好”</text>
+  <path class="edge" d="M180 71H236" marker-end="url(#ah)"/>
+  <path class="edge" d="M180 161H236" marker-end="url(#ah)"/>
+
+  <rect class="box-vlm" x="240" y="30" width="210" height="196" rx="12"/>
+  <text x="345" y="62" text-anchor="middle" class="b">VLM 主干</text>
+  <text x="345" y="84" text-anchor="middle" class="sub">视觉编码器 + 语言模型</text>
+  <text x="345" y="104" text-anchor="middle" class="sub">例：PaliGemma（约 3B）</text>
+  <text x="345" y="134" text-anchor="middle" class="sub">前缀 token：图像 + 文本</text>
+  <rect class="pill" x="262" y="168" width="166" height="38" rx="8"/>
+  <text x="345" y="192" text-anchor="middle">KV 缓存（只算一次）</text>
+  <text x="345" y="252" text-anchor="middle" class="sub">前缀只依赖观测，与 τ 无关</text>
+  <text x="345" y="272" text-anchor="middle" class="sub">整个去噪循环里不必重算</text>
+
+  <path class="edge" d="M450 187H496" marker-end="url(#ah)"/>
+  <text x="473" y="176" text-anchor="middle" class="sub">注意力</text>
+
+  <rect class="box-exp" x="500" y="100" width="280" height="190" rx="12"/>
+  <text x="640" y="134" text-anchor="middle" class="b">动作专家</text>
+  <text x="640" y="158" text-anchor="middle" class="sub">独立权重，约 300M</text>
+  <text x="640" y="180" text-anchor="middle" class="sub">动作 token 之间双向注意力</text>
+  <text x="640" y="202" text-anchor="middle" class="sub">同时读取 VLM 的 KV</text>
+  <text x="640" y="236" text-anchor="middle">输出每个动作 token 的速度</text>
+
+  <rect class="pill" x="592" y="30" width="136" height="44" rx="10"/>
+  <text x="660" y="57" text-anchor="middle" class="b">速度 v<tspan dy="4" font-size="11">θ</tspan></text>
+  <path class="edge" d="M660 100V78" marker-end="url(#ah)"/>
+
+  <rect class="pill" x="512" y="340" width="76" height="40" rx="8"/>
+  <text x="550" y="365" text-anchor="middle">状态 q</text>
+  <rect class="pill" x="602" y="340" width="120" height="40" rx="8"/>
+  <text x="662" y="365" text-anchor="middle">带噪动作 A<tspan dy="-5" font-size="11">τ</tspan></text>
+  <rect class="pill" x="736" y="340" width="56" height="40" rx="8"/>
+  <text x="764" y="365" text-anchor="middle">时间 τ</text>
+  <path class="edge" d="M550 340V294" marker-end="url(#ah)"/>
+  <path class="edge" d="M662 340V294" marker-end="url(#ah)"/>
+  <path class="edge" d="M764 340V294" marker-end="url(#ah)"/>
+  <text x="662" y="404" text-anchor="middle" class="sub">τ = 0 时是高斯噪声</text>
+
+  <path class="loop" d="M728 52H836V360H726" marker-end="url(#ah2)"/>
+  <text class="loop-label" transform="translate(858 206) rotate(90)" text-anchor="middle">A ← A + δ·v，重复 K 次（π0：K = 10）</text>
+</svg>
+<figcaption>π0 风格 VLA 的推理结构。π0 把序列分成三块：图像与语言、机器人状态、带噪动作，块与块之间因果可见，块内双向可见。因此前缀的 KV 可以缓存复用。（π0.5 等后续版本对状态的输入方式有所不同。）</figcaption>
+</figure>
+
+<p>有几个设计值得单独拿出来说：</p>
+<ul>
+  <li><strong>独立权重的动作专家。</strong>文本 token 与动作 token 的统计特性差别很大，用一套独立的、小得多的权重处理动作，既避免互相干扰，又让反复执行的部分很便宜。π0 总共约 3.3B 参数，其中动作专家约 300M；π0.6 换成 Gemma 3 4B 主干配约 860M 的动作专家；SmolVLA 的动作专家约 100M。</li>
+  <li><strong>时间 \(\tau\) 怎么喂进去。</strong>π0 把 \(\tau\) 做成多尺度正余弦编码，与每个动作 token 的嵌入拼接，再过一个两层 MLP。GR00T 的做法不同：用 DiT，通过自适应 LayerNorm（AdaLN）注入时间，用交叉注意力读取 VLM 特征。</li>
+  <li><strong>计算账。</strong>一次决策 = 一次大模型前向（几百上千个前缀 token）+ \(K\) 次小模型前向（约 50 个动作 token）。π0 论文报告在 RTX 4090 上约 73 ms 完成含 3 路图像的一次完整推理。</li>
+</ul>
+
+<h2 id="lab">动作块实验室</h2>
+
+<p>现在回到本文开头的那个问题：<strong>绕障碍物。</strong>下面的实验里，有 48 条“人类演示”，一半从上方绕过中间的圆形障碍，一半从下方。每条演示是一个动作块：14 个路点，共 28 维。我们让一个“理想的流匹配动作头”去生成新的动作块，并和 MSE 回归比较。</p>
+
+<figure class="lab wide" id="demo-chunk">
+  <p class="lab-title">实验二：生成动作块，对比流匹配与 MSE 回归</p>
+  <div class="lab-controls">
+    <div class="ctl" id="chunk-steps-ctl"><span class="lbl">Euler 步数 K</span>
+      <div class="seg" data-key="N" role="group" aria-label="Euler 步数">
+        <button data-v="1" aria-pressed="false">1</button>
+        <button data-v="2" aria-pressed="false">2</button>
+        <button data-v="4" aria-pressed="false">4</button>
+        <button data-v="10" aria-pressed="true">10</button>
+        <button data-v="30" aria-pressed="false">30</button>
+      </div></div>
+  </div>
+  <div class="cv-wrap"><canvas id="chunk-cv" role="img" aria-label="二维路径图：起点与终点之间有一个圆形障碍，若干条从噪声去噪得到的动作块路径绕过障碍，一条虚线表示 MSE 回归的结果"></canvas></div>
+  <div class="lab-bar">
+    <button class="btn" id="chunk-play">播放去噪</button>
+    <input type="range" id="chunk-t" min="0" max="1000" value="0" aria-label="去噪进度 τ">
+    <span class="tval" id="chunk-tval">τ = 0.00</span>
+  </div>
+  <div class="lab-extra">
+    <label class="chk"><input type="checkbox" id="chunk-mse" checked> 显示 MSE 回归的结果</label>
+    <button class="btn ghost" id="chunk-resample">重抽噪声</button>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--data);opacity:.5"></i>人类演示（上、下两簇）</span>
+    <span><i style="background:var(--noise)"></i>流匹配采样的动作块（颜色随 τ 变化）</span>
+    <span><i class="sq" style="background:var(--muted)"></i>MSE 回归 = 所有演示的均值</span>
+    <span><i style="background:var(--bad);opacity:.7"></i>障碍物</span>
+  </div>
+  <p class="lab-stat" id="chunk-stat" aria-live="polite"></p>
+  <p class="lab-cap" id="chunk-cap"></p>
+</figure>
+
+<p>把 \(\tau\) 从 0 拖到 1，可以看到六条初始杂乱无章的“折线”被一点点“理顺”，并各自选择上绕或下绕。试试这几件事：</p>
+<ul>
+  <li><strong>步数设为 1。</strong>六条线重合成一条，穿过障碍物。这和下方虚线的 MSE 回归是同一个东西。</li>
+  <li><strong>步数设为 2。</strong>第二次读取速度场发生在 \(\tau=0.5\)，模式已经开始分化，但常有样本还停在两个模式之间、仍然撞上障碍。步数到 4 时，基本都已经各选一边。“选模式”发生在去噪的前半段，这也是训练时要多采样高噪声区的原因。</li>
+  <li><strong>步数设为 10 或 30。</strong>每条路径都收敛成一条平滑的、与某条演示几乎一致的轨迹。</li>
+</ul>
+<div class="note"><p><b class="t">一个诚实的提醒</b>这里的“网络”仍然是实验一里的“完美答案”（理想速度场），所以少数几步就足够好，并且会复现训练演示。真实网络有拟合误差、会泛化，也需要更多步数来换精度。但<strong>“1 步 = 回归 = 取平均，多步才能分出模式”</strong>这个结构性结论是与网络无关的。</p></div>
+
+<h2 id="code">代码：从玩具到动作头</h2>
+
+<p>下面四段代码是同一条线上的四个层次，都用 PyTorch，可以直接运行或改造。</p>
+
+<h3>第一层：二维玩具，完整的训练与采样</h3>
+<p>这是流匹配最小的可运行实现。训练核心就是 <code>cfm_loss</code> 里的四行，对应式 (6)。</p>
+
+<div class="codeblock">
+  <div class="codehead"><span>toy_flow_matching.py</span><button type="button" class="copy">复制</button></div>
+<pre><code class="language-python">import math
+import torch
+import torch.nn as nn
+
+torch.manual_seed(0)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# ---------- 数据：双月分布（目标分布 q） ----------
+def sample_two_moons(n):
+    theta = math.pi * torch.rand(n)
+    upper = torch.rand(n).lt(0.5)
+    x = torch.where(upper, theta.cos(), 1 - theta.cos())
+    y = torch.where(upper, theta.sin(), 0.5 - theta.sin())
+    pts = torch.stack([x - 0.5, y - 0.25], dim=-1) * 1.5
+    return pts + 0.05 * torch.randn(n, 2)
+
+# ---------- 速度场网络 v_θ(x, t) ----------
+class VelocityNet(nn.Module):
+    def __init__(self, dim=2, hidden=256):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim + 1, hidden), nn.SiLU(),
+            nn.Linear(hidden, hidden), nn.SiLU(),
+            nn.Linear(hidden, hidden), nn.SiLU(),
+            nn.Linear(hidden, dim),
+        )
+
+    def forward(self, x, t):                       # x: (B, dim)   t: (B,)
+        return self.net(torch.cat([x, t[:, None]], dim=-1))
+
+# ---------- 条件流匹配损失，对应式 (6) ----------
+def cfm_loss(model, x1):
+    x0 = torch.randn_like(x1)                      # 噪声 x0 ~ N(0, I)
+    t = torch.rand(x1.size(0), device=x1.device)   # t ~ U(0, 1)
+    tt = t[:, None]
+    xt = (1 - tt) * x0 + tt * x1                   # 直线插值
+    target = x1 - x0                               # 条件速度（常数）
+    return ((model(xt, t) - target) ** 2).mean()
+
+# ---------- 训练 ----------
+model = VelocityNet().to(device)
+opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+for step in range(6000):
+    x1 = sample_two_moons(1024).to(device)
+    loss = cfm_loss(model, x1)
+    opt.zero_grad()
+    loss.backward()
+    opt.step()
+    if step % 1000 == 0:
+        print(step, loss.item())
+
+# ---------- 采样：Euler 积分 ODE，对应式 (2) ----------
+@torch.no_grad()
+def sample(model, n=2000, steps=10):
+    x = torch.randn(n, 2, device=device)
+    dt = 1.0 / steps
+    for k in range(steps):
+        t = torch.full((n,), k * dt, device=device)
+        x = x + dt * model(x, t)
+    return x
+
+samples = sample(model, steps=10).cpu()            # 画个散点图，应当是两个月牙</code></pre>
+</div>
+
+<div class="note"><p><b class="t">试一试</b>把 <code>steps</code> 改成 1，你会看到所有点都挤在数据均值附近，正是实验一里“1 步 = 回归”的现象。再试 2、4、10，对比分布的清晰度。</p></div>
+
+<h3>第二层：VLA 的动作专家（动作头）</h3>
+<p>把二维点换成动作块，再接上来自 VLM 的条件。下面是一个“能看懂、能改”的动作专家，保留了 π0 的几个关键细节：时间嵌入与动作嵌入拼接后过 MLP、动作 token 之间双向注意力、通过交叉注意力读取 VLM 的特征。</p>
+
+<div class="codeblock">
+  <div class="codehead"><span>action_head.py</span><button type="button" class="copy">复制</button></div>
+<pre><code class="language-python">import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+def time_embedding(tau, dim, min_period=4e-3, max_period=4.0):
+    """τ ∈ [0, 1] 的多尺度正余弦编码（与 openpi 的写法一致）。"""
+    half = dim // 2
+    frac = torch.linspace(0.0, 1.0, half, device=tau.device)
+    period = min_period * (max_period / min_period) ** frac       # (half,)
+    angle = 2 * math.pi * tau[:, None] / period[None, :]          # (B, half)
+    return torch.cat([angle.sin(), angle.cos()], dim=-1)          # (B, dim)
+
+
+class ActionFlowHead(nn.Module):
+    """动作专家：输入带噪动作块 + τ + VLM 上下文，输出速度场 v_θ。"""
+
+    def __init__(self, action_dim=7, horizon=50, d_model=512,
+                 n_layers=6, n_heads=8, ctx_dim=2048):
+        super().__init__()
+        self.action_dim, self.horizon, self.d = action_dim, horizon, d_model
+        self.action_in = nn.Linear(action_dim, d_model)
+        self.fuse = nn.Sequential(                    # [动作嵌入 ; 时间嵌入] → d_model
+            nn.Linear(2 * d_model, d_model), nn.SiLU(),
+            nn.Linear(d_model, d_model),
+        )
+        self.pos = nn.Parameter(torch.zeros(1, horizon, d_model))
+        self.ctx_proj = nn.Linear(ctx_dim, d_model)
+        layer = nn.TransformerDecoderLayer(
+            d_model, n_heads, dim_feedforward=4 * d_model,
+            activation="gelu", batch_first=True, norm_first=True)
+        self.decoder = nn.TransformerDecoder(layer, n_layers, norm=nn.LayerNorm(d_model))
+        self.action_out = nn.Linear(d_model, action_dim)
+
+    def forward(self, a_tau, tau, ctx):
+        # a_tau: (B, H, A)    tau: (B,)    ctx: (B, L, ctx_dim)  来自 VLM 的特征
+        x = self.action_in(a_tau)
+        t_emb = time_embedding(tau, self.d)[:, None, :].expand(-1, self.horizon, -1)
+        x = self.fuse(torch.cat([x, t_emb], dim=-1)) + self.pos
+        # 不传 tgt_mask：动作 token 之间是双向（非因果）注意力
+        h = self.decoder(tgt=x, memory=self.ctx_proj(ctx))
+        return self.action_out(h)                                  # (B, H, A)</code></pre>
+</div>
+
+<h3>第三层：训练损失与采样（π0 风格）</h3>
+<p>这里实现了式 (9) 与式 (10)：偏向噪声端的 Beta 时间采样，以及对填充维度的掩码（跨机器人训练时，动作常被补零到统一维度，这些维度不应该参与损失）。</p>
+
+<div class="codeblock">
+  <div class="codehead"><span>flow_loss_and_sampling.py</span><button type="button" class="copy">复制</button></div>
+<pre><code class="language-python">def sample_tau(batch, device, s=0.999):
+    """π0 的时间分布：偏向噪声端。p(τ) = Beta((s - τ) / s; 1.5, 1)，τ=0 为噪声。"""
+    b = torch.distributions.Beta(1.5, 1.0).sample((batch,)).to(device)
+    return s * (1.0 - b)
+
+
+def flow_matching_loss(head, ctx, actions, action_mask=None):
+    """actions: (B, H, A) 已归一化的真实动作块；ctx: VLM 特征。"""
+    B = actions.size(0)
+    eps = torch.randn_like(actions)                  # ε ~ N(0, I)
+    tau = sample_tau(B, actions.device)              # (B,)
+    t = tau[:, None, None]
+    a_tau = (1 - t) * eps + t * actions              # τ=0 噪声，τ=1 真实动作
+    target = actions - eps                           # u = A − ε
+    v = head(a_tau, tau, ctx)
+    loss = (v - target) ** 2
+    if action_mask is not None:                      # 忽略填充维度 / 无效时间步
+        loss = loss * action_mask
+        return loss.sum() / action_mask.sum().clamp(min=1)
+    return loss.mean()
+
+
+@torch.no_grad()
+def sample_actions(head, ctx, steps=10):
+    B = ctx.size(0)
+    a = torch.randn(B, head.horizon, head.action_dim, device=ctx.device)
+    dt = 1.0 / steps
+    for k in range(steps):
+        tau = torch.full((B,), k * dt, device=ctx.device)
+        a = a + dt * head(a, tau, ctx)               # Euler 更新
+    return a</code></pre>
+</div>
+
+<h3>第四层：接到 VLM 上，并闭环执行</h3>
+<p>最后把它拼成一个完整的策略。<code>vlm</code> 是示意接口，换成你用的 PaliGemma、Qwen-VL 或 SmolVLM 的特征提取即可。注意 <code>encode</code> 只依赖观测，<strong>去噪循环里不必重复调用</strong>，这就是前面结构图里 KV 缓存的含义。<code>insulate=True</code> 对应 Driess 等人提出、并用于 π0.6 的“知识隔离”：切断动作专家到主干的梯度，避免随机初始化的动作头把预训练好的 VLM 带偏。</p>
+
+<div class="codeblock">
+  <div class="codehead"><span>vla_policy.py</span><button type="button" class="copy">复制</button></div>
+<pre><code class="language-python">class VLAFlowPolicy(nn.Module):
+    def __init__(self, vlm, head, state_dim, ctx_dim, insulate=False):
+        super().__init__()
+        self.vlm, self.head, self.insulate = vlm, head, insulate
+        self.state_proj = nn.Linear(state_dim, ctx_dim)
+
+    def encode(self, images, input_ids, state):
+        """前缀（图像 + 语言 + 状态）：只依赖观测，与 τ 无关。"""
+        ctx = self.vlm(pixel_values=images, input_ids=input_ids).last_hidden_state
+        s = self.state_proj(state)[:, None, :]
+        ctx = torch.cat([ctx, s], dim=1)
+        return ctx.detach() if self.insulate else ctx       # 知识隔离：stop-gradient
+
+    def loss(self, batch):
+        ctx = self.encode(batch["images"], batch["input_ids"], batch["state"])
+        return flow_matching_loss(self.head, ctx, batch["actions"], batch.get("mask"))
+
+    @torch.no_grad()
+    def act(self, images, input_ids, state, steps=10):
+        ctx = self.encode(images, input_ids, state)         # 大模型只前向一次
+        return sample_actions(self.head, ctx, steps)        # 之后只跑小的动作专家
+
+
+# ---------- 闭环执行：开环跑 k 步，再重新规划 ----------
+execute_k = 25                                              # H = 50 里只执行前 25 步
+queue = []
+while not done:
+    if not queue:
+        chunk = policy.act(images, input_ids, state)[0]     # (H, A)，已归一化
+        queue = list(chunk[:execute_k])
+    action = queue.pop(0)
+    obs, done = env.step(denormalize(action))               # 反归一化后下发
+    images, state = obs["images"], obs["state"]</code></pre>
+</div>
+
+<h2 id="practice">工程细节与常见坑</h2>
+
+<p>理论上流匹配只有一行损失，但把它做到真机上还有不少讲究。下面是最容易决定成败的几件事。</p>
+
+<h3>去噪步数：质量与延迟的交换</h3>
+<div class="tblwrap">
+<table class="t" style="min-width:0">
+  <thead><tr><th>模型</th><th>去噪步数 K</th><th>动作块长度 H</th></tr></thead>
+  <tbody>
+    <tr><td>π0</td><td>10</td><td>50</td></tr>
+    <tr><td>SmolVLA（LeRobot 检查点）</td><td>10</td><td>50</td></tr>
+    <tr><td>GR00T N1.5 / N1.6</td><td>4</td><td>16（N1.7 为 40）</td></tr>
+  </tbody>
+</table>
+</div>
+<p>几乎所有实现都用最朴素的 Euler 法：步数本来就少，网络前向才是主要开销，高阶求解器收益有限。</p>
+<p>更激进的是<strong>一步生成</strong>。图像生成领域发展出了一整套蒸馏、一致性模型、MeanFlow 等“少步”技术，但 2026 年 6 月的一项工作 <em>Let It Be Simple</em> 指出，VLA 的条件远比图像生成丰富（观测几乎决定了动作），目标又只是个低维动作块，所以只要把训练时的时间分布进一步压向高噪声端，<strong>标准的流匹配训练就能产出很强的一步策略</strong>，在 LIBERO 系列基准上能追平甚至超过 10 步解码，并在 π0.5 的真机微调上得到一致的趋势。需要注意的是，这仍是少量基准与小样本真机上的结果：动作块越长越难一步到位，最优的时间偏移也没有通用的选法。</p>
+
+<h3>时间采样与归一化</h3>
+<ul>
+  <li><strong>时间分布。</strong>默认可以用 π0 的 Beta 分布。想往少步方向走，就再往高噪声端偏；但偏得过头会伤害多步解码的质量，需要在目标步数上验证。</li>
+  <li><strong>按维度归一化。</strong>关节角、末端位姿、夹爪量纲差很大。训练前用数据集统计量（均值方差或分位数）归一化，推理后反归一化。<strong>统计量算错或训练/部署不一致，是最常见的“模型明明收敛了，机器人却乱动”的原因。</strong></li>
+  <li><strong>动作表示。</strong>绝对位姿还是相对增量、关节空间还是末端空间，会显著影响学习难度与跨机器人迁移。跨本体训练时常把动作补零到统一维度（π0 系列使用 32 维接口），并像上面第三层代码那样对填充维度做损失掩码。</li>
+</ul>
+
+<h3>动作块的执行：衔接是个大问题</h3>
+<p>块越长越平滑，但越不灵敏；块越短越灵敏，却容易在相邻块之间<strong>跳模式</strong>：上一块选了“从左绕”，下一块忽然选了“从右绕”，机器人在块边界处会顿一下或猛抽一下。再加上大模型推理本身要几十毫秒，机器人不能傻等。</p>
+<p>Real-Time Chunking（RTC，Black 等人，NeurIPS 2025）把这件事当作<strong>图像修补（inpainting）问题</strong>：在执行当前块的同时生成下一块，把已确定会执行的那部分动作“冻结”，其余部分在去噪过程中通过引导补全。它是纯推理时算法，对任何扩散或流匹配 VLA 都可以直接使用而无需重训。后续工作又把“以已提交动作为条件”改到训练阶段，省掉推理时引导带来的额外延迟。</p>
+
+<h3>知识隔离：别让新来的动作头毁掉 VLM</h3>
+<p>动作专家刚初始化时，流匹配损失的梯度噪声很大，如果一路反传进 VLM，会损伤它从互联网数据里学到的语义能力。Driess 等人提出、并用于 π0.6 的 <strong>Knowledge Insulation（知识隔离）</strong>配方：主干同时在 FAST 离散动作 token 与视觉语言数据上训练，而动作专家读取主干特征时加一个 stop-gradient，让流匹配损失只更新动作专家。训练更快，泛化也更好。</p>
+
+<div class="note warn"><p><b class="t">调试清单</b></p>
+<ol style="margin:0;padding-left:1.3em">
+  <li>时间坐标是否写反（\(\tau=0\) 到底是噪声还是数据？）；</li>
+  <li>目标是 <code>A − ε</code> 还是 <code>ε − A</code>，要与时间坐标、积分方向一致；</li>
+  <li>训练与部署是否使用同一份归一化统计量；</li>
+  <li>是否对填充的动作维度做了掩码；</li>
+  <li>推理时 \(\tau\) 的取值与步长是否与训练时的约定一致（k/K，而不是 (k+1)/K）；</li>
+  <li>损失下降但动作抖动时，先检查块执行长度与重规划频率，再怀疑模型本身。</li>
+</ol></div>
+
+<h2 id="apps">应用与模型版图</h2>
+
+<p>流匹配在 VLA 里的落地已经相当广泛。下面这张表只收录本文核对过的公开信息。</p>
+
+<div class="tblwrap wide">
+<table class="t">
+  <thead><tr><th>模型</th><th>机构</th><th>主干（VLM）</th><th>动作头</th><th>要点</th></tr></thead>
+  <tbody>
+    <tr><td>π0（2024）</td><td>Physical Intelligence</td><td>PaliGemma（约 3B）</td><td>约 300M 动作专家，流匹配，K=10，H=50</td><td>第一个大规模流匹配 VLA；展示了叠衣服、收拾餐桌、组装纸盒等长时序灵巧任务</td></tr>
+    <tr><td>π0.5（2025）</td><td>Physical Intelligence</td><td>同系列</td><td>预训练阶段用 FAST 离散 token，后训练阶段加入流匹配动作专家</td><td>强调开放世界泛化；先预测高层子任务，再生成动作</td></tr>
+    <tr><td>π0.6 / π*0.6（2025）</td><td>Physical Intelligence</td><td>Gemma 3 4B</td><td>约 860M 动作专家，流匹配，50 Hz 动作块</td><td>知识隔离训练；π*0.6 用 RECAP 配方，以“优势”为条件，从示教、纠正与自主试错中学习</td></tr>
+    <tr><td>GR00T N1 / N1.5 / N1.6 / N1.7</td><td>NVIDIA</td><td>Eagle 系 VLM（N1.7 换为 Cosmos-Reason2-2B）</td><td>流匹配 DiT：AdaLN 注入时间，交叉注意力读 VLM 特征；默认 4 步，H=16（N1.7 为 40）</td><td>面向人形机器人的开放基础模型，每个本体有独立的状态/动作编解码器</td></tr>
+    <tr><td>SmolVLA（2025）</td><td>Hugging Face</td><td>SmolVLM2-500M（推理时只用前若干层）</td><td>约 100M 流匹配专家，K=10，H=50</td><td>总计约 450M 参数，能在消费级硬件运行；配套异步推理栈</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>这些模型有个共同的“骨架”：<strong>强大的预训练 VLM 提供语义，小而快的流匹配动作专家提供精细、连续的控制</strong>。落到具体应用，你会反复看到这几类场景：</p>
+<ul>
+  <li><strong>灵巧操作。</strong>叠衣服、整理桌面、装箱。这类任务轨迹复杂、多峰性强（衣服可以从不同角度折），而且需要 50 Hz 的高频连续控制，正是离散 token 与回归都吃力的地方。</li>
+  <li><strong>跨本体预训练。</strong>不同机器人的自由度不同，用补零到统一维度加掩码，或像 GR00T 那样为每个本体配编解码器，动作头可以在多种机器人数据上联合训练。</li>
+  <li><strong>端侧与低成本机器人。</strong>SmolVLA 这类小模型让流匹配动作头跑在笔记本、边缘设备甚至 CPU 上，机器人社区可以在几百美元的机械臂上做微调。</li>
+  <li><strong>从经验中持续改进。</strong>π*0.6 展示了在流匹配 VLA 之上叠加强化学习的一条路：不直接对流策略做策略梯度，而是训练一个价值函数，把“优势”作为条件输入给模型。</li>
+</ul>
+
+<h2 id="outlook">局限、前沿与延伸阅读</h2>
+
+<h3>仍然开放的问题</h3>
+<ul>
+  <li><strong>延迟与反应速度。</strong>动作块让机器人“想一次、做一会儿”，但在动态场景中，重规划不及时依然会出问题。RTC 及其训练时变体是目前最实用的缓解手段。</li>
+  <li><strong>少步生成的边界。</strong>一步解码在 LIBERO 一类基准上表现亮眼，是否能推广到更长的动作块、更复杂的真实任务，还有待验证。</li>
+  <li><strong>流策略的强化学习微调。</strong>ODE 采样的似然不好算，直接上策略梯度并不容易；常见思路包括 π*0.6 的优势条件化，或给流注入噪声使其成为可计算似然的随机过程（如 ReinFlow 等工作）。这是一个仍在快速变化的方向。</li>
+  <li><strong>评估。</strong>仿真基准容易饱和，真机评估又成本高、样本小。读论文时要留意结论建立在多少次试验之上。</li>
+</ul>
+
+<h3>一页纸回顾</h3>
+<ul>
+  <li>流匹配 = 学一个速度场，把噪声沿 ODE 搬运成数据；训练 = 对 \(x_1-x_0\) 做 MSE；推理 = Euler 积分。</li>
+  <li>网络学到的是条件期望 \(\mathbb E[x_1-x_0\mid x_t]\)。1 步积分等价于回归，多步积分才能从“平均”走向“分模式”。</li>
+  <li>在 VLA 里，观测作为条件，动作块作为生成对象；重的 VLM 前缀只算一次，轻的动作专家循环 K 次。</li>
+  <li>工程上最该盯的是：时间坐标、时间采样、归一化、块的衔接、知识隔离。</li>
+</ul>
+
+<h3>延伸阅读</h3>
+<ol class="refs">
+  <li>Y. Lipman et al. <em>Flow Matching for Generative Modeling.</em> ICLR 2023. <a href="https://arxiv.org/abs/2210.02747" target="_blank" rel="noopener noreferrer">arXiv:2210.02747</a></li>
+  <li>X. Liu, C. Gong, Q. Liu. <em>Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow.</em> ICLR 2023. <a href="https://arxiv.org/abs/2209.03003" target="_blank" rel="noopener noreferrer">arXiv:2209.03003</a></li>
+  <li>M. Albergo, N. Boffi, E. Vanden-Eijnden. <em>Stochastic Interpolants: A Unifying Framework for Flows and Diffusions.</em> JMLR 2025. <a href="https://jmlr.org/papers/v26/23-1605.html" target="_blank" rel="noopener noreferrer">JMLR 26(209)</a></li>
+  <li>C. Chi et al. <em>Diffusion Policy: Visuomotor Policy Learning via Action Diffusion.</em> IJRR 2025. <a href="https://arxiv.org/abs/2303.04137" target="_blank" rel="noopener noreferrer">arXiv:2303.04137</a></li>
+  <li>K. Black et al. <em>π0: A Vision-Language-Action Flow Model for General Robot Control.</em> RSS 2025. <a href="https://arxiv.org/abs/2410.24164" target="_blank" rel="noopener noreferrer">arXiv:2410.24164</a></li>
+  <li>Physical Intelligence. <em>π0.5: a Vision-Language-Action Model with Open-World Generalization.</em> CoRL 2025. <a href="https://arxiv.org/abs/2504.16054" target="_blank" rel="noopener noreferrer">arXiv:2504.16054</a></li>
+  <li>D. Driess et al. <em>Knowledge Insulating Vision-Language-Action Models: Train Fast, Run Fast, Generalize Better.</em> 2025. <a href="https://arxiv.org/abs/2505.23705" target="_blank" rel="noopener noreferrer">arXiv:2505.23705</a></li>
+  <li>Physical Intelligence. <em>π*0.6: a VLA That Learns From Experience.</em> 2025. <a href="https://arxiv.org/abs/2511.14759" target="_blank" rel="noopener noreferrer">arXiv:2511.14759</a></li>
+  <li>NVIDIA. <em>GR00T N1: An Open Foundation Model for Generalist Humanoid Robots.</em> 2025. <a href="https://arxiv.org/abs/2503.14734" target="_blank" rel="noopener noreferrer">arXiv:2503.14734</a></li>
+  <li>M. Shukor et al. <em>SmolVLA: A Vision-Language-Action Model for Affordable and Efficient Robotics.</em> 2025. <a href="https://arxiv.org/abs/2506.01844" target="_blank" rel="noopener noreferrer">arXiv:2506.01844</a></li>
+  <li>K. Black, M. Galliker, S. Levine. <em>Real-Time Execution of Action Chunking Flow Policies.</em> NeurIPS 2025. <a href="https://arxiv.org/abs/2506.07339" target="_blank" rel="noopener noreferrer">arXiv:2506.07339</a></li>
+  <li>K. Black, A. Ren, M. Equi, S. Levine. <em>Training-Time Action Conditioning for Efficient Real-Time Chunking.</em> 2025. <a href="https://arxiv.org/abs/2512.05964" target="_blank" rel="noopener noreferrer">arXiv:2512.05964</a></li>
+  <li>Y. Chen et al. <em>Let It Be Simple: One-Step Action Generation for Vision-Language-Action Models.</em> 2026. <a href="https://arxiv.org/abs/2606.05737" target="_blank" rel="noopener noreferrer">arXiv:2606.05737</a></li>
+  <li>开源实现：<a href="https://github.com/Physical-Intelligence/openpi" target="_blank" rel="noopener noreferrer">Physical-Intelligence/openpi</a>（π0 / π0.5）、<a href="https://huggingface.co/blog/smolvla" target="_blank" rel="noopener noreferrer">SmolVLA（LeRobot）</a>、<a href="https://github.com/NVIDIA/Isaac-GR00T" target="_blank" rel="noopener noreferrer">NVIDIA/Isaac-GR00T</a></li>
+</ol>
+
+<p class="foot">文中的两个实验使用的是“理想速度场”（经验分布下速度场的闭式解），而不是训练出来的神经网络，目的是让你看到流匹配最干净的几何结构。模型规格、步数等信息来自各项目的论文、官方仓库与文档，这些项目更新很快，实际使用请以最新版本为准。</p>
+
+</main>
+</div>
+<script>
+(function () {
+'use strict';
+
+/* ================= 通用工具 ================= */
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+var rootEl = document.documentElement;
+var reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+var redraws = [];
+function onRedraw(fn) { redraws.push(fn); }
+function redrawAll() { redraws.forEach(function (f) { try { f(); } catch (e) { console.error(e); } }); }
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gauss(rng) {
+  var u = 0, v = rng();
+  while (u === 0) u = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function hex2rgb(h) {
+  h = String(h).trim();
+  if (h.charAt(0) === '#') {
+    if (h.length === 4) h = '#' + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
+    var n = parseInt(h.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  var m = h.match(/\d+/g);
+  return m ? m.slice(0, 3).map(Number) : [128, 128, 128];
+}
+function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function rgba(c, a) { return 'rgba(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ',' + a + ')'; }
+function pal() {
+  var cs = getComputedStyle(rootEl);
+  var g = function (n) { return cs.getPropertyValue(n).trim() || '#888888'; };
+  return { noise: hex2rgb(g('--noise')), data: hex2rgb(g('--data')), ink: hex2rgb(g('--ink')),
+           muted: hex2rgb(g('--muted')), line: hex2rgb(g('--line')), surface: hex2rgb(g('--surface')),
+           bad: hex2rgb(g('--bad')), ok: hex2rgb(g('--ok')) };
+}
+function fitCanvas(cv, aspect) {
+  var w = Math.max(240, cv.parentElement.clientWidth);
+  var h = Math.round(w * aspect);
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.style.height = h + 'px';
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  var ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx: ctx, w: w, h: h };
+}
+function bindSeg(scope, key, cb) {
+  var g = $('.seg[data-key="' + key + '"]', scope);
+  if (!g) return;
+  g.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b || !g.contains(b)) return;
+    $$('button', g).forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+    cb(b.getAttribute('data-v'));
+  });
+}
+function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+/* ================= 流匹配核心：理想速度场（经验分布的闭式解，式 7） =================
+   data: Float64Array(M*D)，x: 长度 D 的数组，w: 长度 M 的临时数组，out: 长度 D */
+function flowVel(x, t, data, M, D, w, out) {
+  var s = 1 - t, inv = 1 / (2 * s * s), mx = -1e300, i, k, o, d2, dd, l;
+  for (i = 0; i < M; i++) {
+    d2 = 0; o = i * D;
+    for (k = 0; k < D; k++) { dd = x[k] - t * data[o + k]; d2 += dd * dd; }
+    l = -d2 * inv; w[i] = l; if (l > mx) mx = l;
+  }
+  var Z = 0;
+  for (i = 0; i < M; i++) { w[i] = Math.exp(w[i] - mx); Z += w[i]; }
+  for (k = 0; k < D; k++) out[k] = 0;
+  for (i = 0; i < M; i++) {
+    var wi = w[i] / Z; o = i * D;
+    for (k = 0; k < D; k++) out[k] += wi * data[o + k];
+  }
+  for (k = 0; k < D; k++) out[k] = (out[k] - x[k]) / s;
+}
+/* Euler 积分，返回 Float32Array(K*(N+1)*D) */
+function integrate(x0, K, N, data, M, D) {
+  var out = new Float32Array(K * (N + 1) * D);
+  var w = new Float64Array(M), x = new Float64Array(D), v = new Float64Array(D);
+  var dt = 1 / N, k, d, s, base;
+  for (k = 0; k < K; k++) {
+    base = k * (N + 1) * D;
+    for (d = 0; d < D; d++) { x[d] = x0[k * D + d]; out[base + d] = x[d]; }
+    for (s = 0; s < N; s++) {
+      flowVel(x, s * dt, data, M, D, w, v);
+      for (d = 0; d < D; d++) { x[d] += dt * v[d]; out[base + (s + 1) * D + d] = x[d]; }
+    }
+  }
+  return out;
+}
+/* 在积分得到的离散轨迹上做分段线性插值（正是 Euler 法实际走过的折线） */
+function posAt(traj, k, N, D, t, out) {
+  var tt = t * N, s = Math.min(Math.floor(tt), N - 1), f = tt - s, base = k * (N + 1) * D, d;
+  for (d = 0; d < D; d++) out[d] = traj[base + s * D + d] * (1 - f) + traj[base + (s + 1) * D + d] * f;
+}
+
+/* ---------- 二维数据集 ---------- */
+function makeData(kind, M, seed) {
+  var r = mulberry32(seed), A = new Float64Array(M * 2), i, x, y, th, u, side;
+  for (i = 0; i < M; i++) {
+    if (kind === 'blobs') {
+      side = (i % 2) ? 1 : -1; x = side * 1.7 + 0.3 * gauss(r); y = 0.3 * gauss(r);
+    } else if (kind === 'moons') {
+      th = Math.PI * r();
+      if (i % 2 === 0) { x = Math.cos(th); y = Math.sin(th); }
+      else { x = 1 - Math.cos(th); y = 0.5 - Math.sin(th); }
+      x = (x - 0.5) * 1.6 + 0.06 * gauss(r); y = (y - 0.25) * 1.6 + 0.06 * gauss(r);
+    } else if (kind === 'ring') {
+      th = 2 * Math.PI * r(); x = 1.8 * Math.cos(th) + 0.07 * gauss(r); y = 1.8 * Math.sin(th) + 0.07 * gauss(r);
+    } else { /* eye：两条绕开中间空洞的弧线 */
+      u = 2 * r() - 1; side = (i % 2) ? 1 : -1;
+      x = 2.4 * u + 0.04 * gauss(r); y = side * 1.05 * Math.cos(Math.PI * u / 2) + 0.05 * gauss(r);
+    }
+    A[2 * i] = x; A[2 * i + 1] = y;
+  }
+  return A;
+}
+function gaussArray(n, seed) {
+  var r = mulberry32(seed), a = new Float64Array(n);
+  for (var i = 0; i < n; i++) a[i] = gauss(r);
+  return a;
+}
+
+/* ================= 首屏动画 ================= */
+function initHero() {
+  var cv = $('#hero-cv'); if (!cv) return;
+  var M = 160, K = 520, S = 36, D = 2;
+  var data = makeData('eye', M, 7), traj = null, seed = 100, size = null;
+  var CYCLE = 8.4;
+  function build() { traj = integrate(gaussArray(K * D, seed++), K, S, data, M, D); }
+  function draw(time) {
+    if (!size) return;
+    var P = pal(), ctx = size.ctx, w = size.w, h = size.h;
+    var ph = time % CYCLE, t, alpha = 1;
+    if (reduceMotion) { t = 1; }
+    else if (ph < 0.5) t = 0;
+    else if (ph < 5.3) t = ease((ph - 0.5) / 4.8);
+    else if (ph < 7.6) t = 1;
+    else { t = 1; alpha = 1 - (ph - 7.6) / 0.8; }
+    ctx.clearRect(0, 0, w, h);
+    var sc = w / 6.8, cx = w / 2, cy = h / 2, p = new Float64Array(2), k;
+    var col = mix(P.noise, P.data, t);
+    ctx.fillStyle = rgba(col, 0.9 * alpha);
+    for (k = 0; k < K; k++) {
+      posAt(traj, k, S, D, t, p);
+      ctx.beginPath(); ctx.arc(cx + p[0] * sc, cy - p[1] * sc, 2.1, 0, 6.2832); ctx.fill();
+    }
+    ctx.fillStyle = rgba(P.muted, 0.9);
+    ctx.font = '12px ' + getComputedStyle(rootEl).getPropertyValue('--font-sans');
+    ctx.fillText('t = ' + t.toFixed(2), 14, h - 14);
+  }
+  function resize() { size = fitCanvas(cv, 0.8); }
+  var last = -1;
+  function frame(ms) {
+    var time = ms / 1000;
+    if (time - last > 0 && Math.floor(time / CYCLE) !== Math.floor(last / CYCLE) && last >= 0) build();
+    last = time;
+    draw(time);
+    if (!reduceMotion) requestAnimationFrame(frame);
+  }
+  build(); resize();
+  onRedraw(function () { resize(); draw(reduceMotion ? 0 : performance.now() / 1000); });
+  if (reduceMotion) draw(0); else requestAnimationFrame(frame);
+}
+
+/* ================= 实验一：二维速度场 ================= */
+function initFlowDemo() {
+  var root = $('#demo-flow'); if (!root) return;
+  var cv = $('#flow-cv'), tIn = $('#flow-t'), tVal = $('#flow-tval'), cap = $('#flow-cap'), playBtn = $('#flow-play');
+  var K = 340, M = 240, D = 2;
+  var S = { shape: 'moons', mode: 'infer', N: 10, t: 0, field: false, playing: false, seed: 11 };
+  var data, x0, pair, traj, size = null;
+
+  function rebuild() {
+    data = makeData(S.shape, M, 3);
+    x0 = gaussArray(K * D, S.seed);
+    var r = mulberry32(S.seed * 7 + 1); pair = new Int32Array(K);
+    for (var k = 0; k < K; k++) pair[k] = Math.floor(r() * M);
+    traj = integrate(x0, K, S.N, data, M, D);
+  }
+  function caption() {
+    if (S.mode === 'train') return '训练时，每个粒子对应一对 (x₀, x₁)：x₀ 是噪声，x₁ 是数据，目标速度 x₁ − x₀ 恒定。注意这些直线相互交叉：同一个位置对应着许多不同的目标速度，网络只能学到它们的平均，这个平均就是边缘速度场。';
+    switch (S.N) {
+      case 1: return '只走 1 步：t = 0 处的速度场处处指向数据均值，所有粒子被一步送到同一个点。这等价于“直接回归”，多峰分布被平均掉了。';
+      case 2: return '2 步：先朝均值走一半，再在 t = 0.5 重新读一次速度场。粒子已经被分向不同模式，但形状仍然很粗糙。';
+      case 4: return '4 步：形状基本成型，边缘还有些模糊。GR00T 默认就是 4 步去噪。';
+      case 10: return '10 步：π0 与 SmolVLA 的默认设置。分布的边缘已经相当清晰。';
+      default: return '50 步：接近 ODE 的精确解。注意这里用的是“理想速度场”，真实网络有拟合误差，步数再多也只能逼近网络本身的上限。';
+    }
+  }
+  function draw() {
+    if (!size) return;
+    var P = pal(), ctx = size.ctx, w = size.w, h = size.h, i, k;
+    var sc = w / 6.8, cx = w / 2, cy = h / 2;
+    var X = function (x) { return cx + x * sc; }, Y = function (y) { return cy - y * sc; };
+    ctx.clearRect(0, 0, w, h);
+    // 目标分布样本
+    ctx.fillStyle = rgba(P.data, 0.3);
+    for (i = 0; i < M; i++) { ctx.beginPath(); ctx.arc(X(data[2 * i]), Y(data[2 * i + 1]), 2.3, 0, 6.2832); ctx.fill(); }
+    // 速度场箭头
+    if (S.field) {
+      var tt = Math.min(S.t, 0.97), wv = new Float64Array(M), xv = new Float64Array(2), vv = new Float64Array(2);
+      ctx.strokeStyle = rgba(P.muted, 0.7); ctx.fillStyle = rgba(P.muted, 0.7); ctx.lineWidth = 1.2;
+      var step = 0.6, gx, gy;
+      for (gx = -3.0; gx <= 3.01; gx += step) for (gy = -2.1; gy <= 2.11; gy += step) {
+        if (Math.abs(gy) * sc > h / 2 - 4) continue;
+        xv[0] = gx; xv[1] = gy; flowVel(xv, tt, data, M, 2, wv, vv);
+        var mag = Math.hypot(vv[0], vv[1]); if (mag < 1e-6) continue;
+        var len = Math.min(0.12 * mag + 0.05, 0.5), ux = vv[0] / mag, uy = vv[1] / mag;
+        var ax = X(gx), ay = Y(gy), bx = X(gx + ux * len), by = Y(gy + uy * len);
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+        var hx = -ux, hy = uy, ang = Math.atan2(by - ay, bx - ax);
+        ctx.beginPath(); ctx.moveTo(bx, by);
+        ctx.lineTo(bx - 6 * Math.cos(ang - 0.45), by - 6 * Math.sin(ang - 0.45));
+        ctx.lineTo(bx - 6 * Math.cos(ang + 0.45), by - 6 * Math.sin(ang + 0.45));
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    var col = mix(P.noise, P.data, S.t), p = new Float64Array(2);
+    if (S.mode === 'train') {
+      ctx.lineWidth = 1; ctx.strokeStyle = rgba(P.noise, 0.16);
+      for (k = 0; k < 110; k++) {
+        var j = pair[k];
+        ctx.beginPath(); ctx.moveTo(X(x0[2 * k]), Y(x0[2 * k + 1])); ctx.lineTo(X(data[2 * j]), Y(data[2 * j + 1])); ctx.stroke();
+      }
+      ctx.fillStyle = rgba(col, 0.92);
+      for (k = 0; k < K; k++) {
+        var jj = pair[k], px = (1 - S.t) * x0[2 * k] + S.t * data[2 * jj], py = (1 - S.t) * x0[2 * k + 1] + S.t * data[2 * jj + 1];
+        ctx.beginPath(); ctx.arc(X(px), Y(py), 2.3, 0, 6.2832); ctx.fill();
+      }
+    } else {
+      // 轨迹（Euler 折线）
+      ctx.lineWidth = 1; ctx.strokeStyle = rgba(P.noise, 0.2);
+      var tt2 = S.t * S.N, last = Math.min(Math.floor(tt2), S.N - 1), s;
+      for (k = 0; k < 70; k++) {
+        ctx.beginPath();
+        for (s = 0; s <= last; s++) {
+          var b = k * (S.N + 1) * 2 + s * 2, qx = X(traj[b]), qy = Y(traj[b + 1]);
+          if (s === 0) ctx.moveTo(qx, qy); else ctx.lineTo(qx, qy);
+        }
+        posAt(traj, k, S.N, 2, S.t, p); ctx.lineTo(X(p[0]), Y(p[1])); ctx.stroke();
+      }
+      ctx.fillStyle = rgba(col, 0.92);
+      for (k = 0; k < K; k++) { posAt(traj, k, S.N, 2, S.t, p); ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 2.3, 0, 6.2832); ctx.fill(); }
+    }
+  }
+  function sync() {
+    tIn.value = Math.round(S.t * 1000);
+    var label = 't = ' + S.t.toFixed(2);
+    if (S.mode === 'infer') label += '  步 ' + Math.min(Math.floor(S.t * S.N + 1e-9), S.N) + '/' + S.N;
+    tVal.textContent = label;
+    draw();
+  }
+  function resize() { size = fitCanvas(cv, 0.6); draw(); }
+  var raf = 0, lastTs = 0;
+  function tick(ts) {
+    if (!S.playing) return;
+    var dt = lastTs ? (ts - lastTs) / 1000 : 0; lastTs = ts;
+    S.t = Math.min(1, S.t + dt / 3.6); sync();
+    if (S.t >= 1) { S.playing = false; playBtn.textContent = '重播'; return; }
+    raf = requestAnimationFrame(tick);
+  }
+  function play() {
+    if (S.playing) { S.playing = false; playBtn.textContent = '继续'; return; }
+    if (S.t >= 1) S.t = 0;
+    S.playing = true; lastTs = 0; playBtn.textContent = '暂停'; raf = requestAnimationFrame(tick);
+  }
+  function refresh() {
+    rebuild();
+    cap.textContent = caption();
+    $('#flow-steps-ctl').style.opacity = S.mode === 'infer' ? 1 : 0.4;
+    sync();
+  }
+  bindSeg(root, 'shape', function (v) { S.shape = v; refresh(); });
+  bindSeg(root, 'mode', function (v) { S.mode = v; refresh(); });
+  bindSeg(root, 'N', function (v) { S.N = +v; refresh(); });
+  tIn.addEventListener('input', function () { S.playing = false; playBtn.textContent = '播放'; S.t = tIn.value / 1000; sync(); });
+  playBtn.addEventListener('click', play);
+  $('#flow-field').addEventListener('change', function (e) { S.field = e.target.checked; draw(); });
+  $('#flow-resample').addEventListener('click', function () { S.seed += 1; refresh(); });
+  rebuild(); size = fitCanvas(cv, 0.6); cap.textContent = caption(); sync();
+  S.t = 0.0; onRedraw(resize);
+  root._state = S; // 便于测试
+}
+
+/* ================= 小实验：一维两模式（第五步） =================
+   x0 ~ N(0,1)，x1 = ±3 各一半，x_t = (1-t)x0 + t x1。
+   给定 x1=a：x_t ~ N(t·a, (1-t)^2)；p+ = sigmoid(6tx/(1-t)^2)；标准答案 (a-x)/(1-t) */
+function init1DMode() {
+  var root = $('#demo-1d'); if (!root) return;
+  var cv = $('#m1d-cv'), tIn = $('#m1d-t'), xIn = $('#m1d-x'), tVal = $('#m1d-tval'), xVal = $('#m1d-xval');
+  var barP = $('#m1d-bar-p'), barN = $('#m1d-bar-n'), stat = $('#m1d-stat'), cap = $('#m1d-cap');
+  var A = 3, XR = 5, YR = 12, S = { t: 0, x: 0.5 }, size = null;
+  var FONT = '12px "Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+
+  function post(x, t) {            // P(终点=+3 | x_t = x)
+    var s = 1 - t, z = 6 * t * x / (s * s);
+    return 1 / (1 + Math.exp(-z));
+  }
+  function vstar(x, t) { var p = post(x, t); return (A * (2 * p - 1) - x) / (1 - t); }
+  function npdf(x, m, sd) { var d = (x - m) / sd; return Math.exp(-0.5 * d * d) / (sd * 2.5066282746); }
+  function fmt(v, n) { var s = v.toFixed(n === undefined ? 2 : n); return s === '-0.00' ? '0.00' : s; }
+  function pct(p) {
+    var v = p * 100;
+    if (v > 99.95 && v < 100) return '99.95%+';
+    if (v < 0.05 && v > 0) return '0.05%−';
+    return v.toFixed(1) + '%';
+  }
+
+  function draw() {
+    if (!size) return;
+    var P = pal(), ctx = size.ctx, w = size.w, h = size.h;
+    var ml = 40, mr = 14, top1 = 22, bot1 = h * 0.40, top2 = h * 0.40 + 34, bot2 = h - 28;
+    var X = function (x) { return ml + (x + XR) / (2 * XR) * (w - ml - mr); };
+    var Yd, Yv = function (v) { return top2 + (YR - v) / (2 * YR) * (bot2 - top2); };
+    var t = S.t, x = S.x, s = 1 - t, i, xx;
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = FONT; ctx.textBaseline = 'alphabetic';
+
+    /* ---- 上：两堆路径的位置分布 ---- */
+      // 两堆重叠处可能略高于单堆峰值，取一个稳妥上界
+    var mx = 0; for (i = 0; i <= 200; i++) { xx = -XR + 2 * XR * i / 200; var tot = 0.5 * npdf(xx, 3 * t, s) + 0.5 * npdf(xx, -3 * t, s); if (tot > mx) mx = tot; }
+    Yd = function (d) { return bot1 - d / mx * (bot1 - top1 - 4); };
+    ctx.fillStyle = rgba(P.muted, 1); ctx.textAlign = 'left';
+    ctx.fillText('此刻各路径所在的位置（按终点分成两堆）', ml, 14);
+    function area(m, col) {
+      ctx.beginPath(); ctx.moveTo(X(-XR), Yd(0));
+      for (i = 0; i <= 200; i++) { xx = -XR + 2 * XR * i / 200; ctx.lineTo(X(xx), Yd(0.5 * npdf(xx, m, s))); }
+      ctx.lineTo(X(XR), Yd(0)); ctx.closePath();
+      ctx.fillStyle = rgba(col, 0.32); ctx.fill();
+      ctx.strokeStyle = rgba(col, 1); ctx.lineWidth = 1.8; ctx.beginPath();
+      for (i = 0; i <= 200; i++) { xx = -XR + 2 * XR * i / 200; var yy = Yd(0.5 * npdf(xx, m, s)); if (i === 0) ctx.moveTo(X(xx), yy); else ctx.lineTo(X(xx), yy); }
+      ctx.stroke();
+    }
+    area(-3 * t, P.noise); area(3 * t, P.data);
+    ctx.strokeStyle = rgba(P.line, 1); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X(-XR), Yd(0)); ctx.lineTo(X(XR), Yd(0)); ctx.stroke();
+    // 两堆中心标注
+    ctx.textAlign = 'center';
+    ctx.fillStyle = rgba(P.data, 1); ctx.fillText('终点 +3', X(Math.min(XR - 0.9, Math.max(-XR + 0.9, 3 * t))), bot1 + 14);
+    ctx.fillStyle = rgba(P.noise, 1); ctx.fillText('终点 −3', X(Math.min(XR - 0.9, Math.max(-XR + 0.9, -3 * t))), bot1 + 14);
+    if (t < 0.12) { ctx.fillStyle = rgba(P.muted, 1); }
+    // 选中位置处两堆的高度
+    var gp = 0.5 * npdf(x, 3 * t, s), gn = 0.5 * npdf(x, -3 * t, s);
+    ctx.strokeStyle = rgba(P.ink, 0.75); ctx.lineWidth = 1.3; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(X(x), top1 - 2); ctx.lineTo(X(x), bot2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = rgba(P.data, 1); ctx.beginPath(); ctx.arc(X(x), Yd(gp), 4, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = rgba(P.noise, 1); ctx.beginPath(); ctx.arc(X(x), Yd(gn), 4, 0, 6.2832); ctx.fill();
+
+    /* ---- 下：每个位置的标准答案与平均 ---- */
+    ctx.textAlign = 'left'; ctx.fillStyle = rgba(P.muted, 1);
+    ctx.fillText('每个位置上的速度：两个标准答案（虚线）与平均（实线）', ml, top2 - 12);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(ml, top2, w - ml - mr, bot2 - top2); ctx.clip();
+    ctx.strokeStyle = rgba(P.line, 1); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(ml, Yv(0)); ctx.lineTo(w - mr, Yv(0)); ctx.stroke();
+    function dashed(a, col) {
+      ctx.strokeStyle = rgba(col, 1); ctx.lineWidth = 1.6; ctx.setLineDash([6, 5]); ctx.beginPath();
+      ctx.moveTo(X(-XR), Yv((a + XR) / s)); ctx.lineTo(X(XR), Yv((a - XR) / s)); ctx.stroke(); ctx.setLineDash([]);
+    }
+    dashed(A, P.data); dashed(-A, P.noise);
+    ctx.strokeStyle = rgba(P.ink, 1); ctx.lineWidth = 2.6; ctx.beginPath();
+    for (i = 0; i <= 400; i++) { xx = -XR + 2 * XR * i / 400; var yy = Yv(vstar(xx, t)); if (i === 0) ctx.moveTo(X(xx), yy); else ctx.lineTo(X(xx), yy); }
+    ctx.stroke();
+    ctx.restore();
+    // 当前位置上的三个点
+    var lp = (A - x) / s, ln = (-A - x) / s, va = vstar(x, t);
+    function dot(v, col, r, ring) {
+      if (Math.abs(v) > YR) return;
+      ctx.fillStyle = rgba(col, 1); ctx.beginPath(); ctx.arc(X(x), Yv(v), r, 0, 6.2832); ctx.fill();
+      if (ring) { ctx.strokeStyle = rgba(P.surface, 1); ctx.lineWidth = 2; ctx.stroke(); }
+    }
+    dot(lp, P.data, 4); dot(ln, P.noise, 4); dot(va, P.ink, 5.5, true);
+    // 坐标刻度
+    ctx.fillStyle = rgba(P.muted, 1); ctx.textAlign = 'right';
+    [-10, 0, 10].forEach(function (v) { ctx.fillText(String(v), ml - 6, Yv(v) + 4); });
+    ctx.textAlign = 'center';
+    [-4, -2, 0, 2, 4].forEach(function (v) { ctx.fillText(String(v), X(v), bot2 + 15); });
+    ctx.fillText('位置 x', (ml + w - mr) / 2, h - 3);
+  }
+
+  function readout() {
+    var t = S.t, x = S.x, s = 1 - t, p = post(x, t);
+    var lp = (A - x) / s, ln = (-A - x) / s, va = p * lp + (1 - p) * ln;
+    tVal.textContent = 't = ' + fmt(t); xVal.textContent = 'x = ' + fmt(x);
+    barP.style.width = (p * 100) + '%'; barN.style.width = ((1 - p) * 100) + '%';
+    stat.innerHTML = '经过 (x, t) 的路径：终点 +3 占 ' + pct(p) + '，终点 −3 占 ' + pct(1 - p) + '<br>' +
+      '标准答案：+3 路径 → ' + fmt(lp) + '，−3 路径 → ' + fmt(ln) + '<br>' +
+      '平均：' + fmt(p, 3) + ' × ' + fmt(lp) + ' + ' + fmt(1 - p, 3) + ' × (' + fmt(ln) + ') = <b style="color:var(--ink)">' + fmt(va) + '</b>';
+    var msg;
+    if (t < 0.02) msg = 't = 0：位置就是噪声本身，对终点毫无暗示，两种终点各占一半，平均落在两个答案的正中间，箭头指向“数据的平均位置”。';
+    else if (p > 0.97) msg = '几乎所有经过这里的路径都奔向 +3，筛出来的答案几乎只剩 +3 路径的标准答案，平均基本等于它：箭头明确指向 +3。';
+    else if (p < 0.03) msg = '几乎所有经过这里的路径都奔向 −3，平均基本等于 −3 路径的标准答案：箭头明确指向 −3。';
+    else if (Math.abs(p - 0.5) < 0.1) msg = '两堆路径在这里几乎一样多，平均落在两个答案之间，仍然是含糊的。试着把 t 增大：这样的位置会越来越少。';
+    else msg = '两种终点都有，但一边更多，平均偏向占比大的那一边。';
+    cap.textContent = msg;
+  }
+  function sync() { readout(); draw(); }
+  function resize() { size = fitCanvas(cv, 0.8); draw(); }
+  tIn.addEventListener('input', function () { S.t = tIn.value / 1000; sync(); });
+  xIn.addEventListener('input', function () { S.x = xIn.value / 100; sync(); });
+  $$('button[data-t]', root).forEach(function (b) {
+    b.addEventListener('click', function () {
+      S.t = +b.getAttribute('data-t'); S.x = +b.getAttribute('data-x');
+      tIn.value = Math.round(S.t * 1000); xIn.value = Math.round(S.x * 100); sync();
+    });
+  });
+  size = fitCanvas(cv, 0.8); sync(); onRedraw(resize);
+  root._state = S;
+}
+
+/* ================= 实验二：动作块 ================= */
+function initChunkDemo() {
+  var root = $('#demo-chunk'); if (!root) return;
+  var cv = $('#chunk-cv'), tIn = $('#chunk-t'), tVal = $('#chunk-tval'), stat = $('#chunk-stat'), cap = $('#chunk-cap'), playBtn = $('#chunk-play');
+  var H = 14, D = 2 * H, M = 48, NS = 6;
+  var C = [5, 3], SCL = 1.6, R = 1.0, P0 = [0.8, 3], G0 = [9.2, 3];
+  var S = { N: 10, t: 0, mse: true, playing: false, seed: 6 };
+  var data = new Float64Array(M * D), meanPath = [], noise, traj, size = null;
+
+  (function makeDemos() {
+    var r = mulberry32(21), j, h, side, a, b, c, s, sx, x, y;
+    var mx = new Float64Array(H), my = new Float64Array(H);
+    for (j = 0; j < M; j++) {
+      side = (j % 2 === 0) ? 1 : -1; a = 1.9 + 0.3 * gauss(r); b = 0.16 * gauss(r); c = 0.35 * gauss(r);
+      for (h = 0; h < H; h++) {
+        s = h / (H - 1); sx = s + 0.04 * c * Math.sin(2 * Math.PI * s);
+        x = P0[0] + (G0[0] - P0[0]) * sx;
+        y = C[1] + side * a * Math.sin(Math.PI * s) + b * Math.sin(2 * Math.PI * s);
+        data[j * D + 2 * h] = (x - C[0]) / SCL; data[j * D + 2 * h + 1] = (y - C[1]) / SCL;
+        mx[h] += x / M; my[h] += y / M;
+      }
+    }
+    for (h = 0; h < H; h++) meanPath.push([mx[h], my[h]]);
+  })();
+
+  function distSeg(px, py, ax, ay, bx, by) {
+    var dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  }
+  function hits(pts) {
+    for (var i = 0; i < pts.length - 1; i++) if (distSeg(C[0], C[1], pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < R) return true;
+    return false;
+  }
+  function rebuild() {
+    noise = gaussArray(NS * D, S.seed * 13 + 5);
+    traj = integrate(noise, NS, S.N, data, M, D);
+  }
+  function samplePts(k, t) {
+    var p = new Float64Array(D), pts = [], h;
+    posAt(traj, k, S.N, D, t, p);
+    for (h = 0; h < H; h++) pts.push([C[0] + SCL * p[2 * h], C[1] + SCL * p[2 * h + 1]]);
+    return pts;
+  }
+  function geom() {
+    var w = size.w, h = size.h, sc = w / 11.6, cx = w / 2, cy = h / 2;
+    return { sc: sc, X: function (x) { return cx + (x - 5) * sc; }, Y: function (y) { return cy - (y - 3) * sc; } };
+  }
+  function line(ctx, g, pts) {
+    ctx.beginPath();
+    for (var i = 0; i < pts.length; i++) { var x = g.X(pts[i][0]), y = g.Y(pts[i][1]); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+    ctx.stroke();
+  }
+  function demoPts(j) { var pts = [], h; for (h = 0; h < H; h++) pts.push([C[0] + SCL * data[j * D + 2 * h], C[1] + SCL * data[j * D + 2 * h + 1]]); return pts; }
+
+  function draw() {
+    if (!size) return;
+    var P = pal(), ctx = size.ctx, w = size.w, h = size.h, g = geom(), j, k, i;
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = '12px ' + getComputedStyle(rootEl).getPropertyValue('--font-sans');
+    // 障碍物
+    ctx.beginPath(); ctx.arc(g.X(C[0]), g.Y(C[1]), R * g.sc, 0, 6.2832);
+    ctx.fillStyle = rgba(P.bad, 0.14); ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = rgba(P.bad, 0.75); ctx.stroke();
+    ctx.fillStyle = rgba(P.bad, 0.95); ctx.textAlign = 'center'; ctx.fillText('障碍物', g.X(C[0]), g.Y(C[1]) + 4);
+    // 起点终点
+    [[P0, '起点'], [G0, '目标']].forEach(function (e) {
+      ctx.beginPath(); ctx.arc(g.X(e[0][0]), g.Y(e[0][1]), 6, 0, 6.2832); ctx.lineWidth = 2; ctx.strokeStyle = rgba(P.ink, 0.8); ctx.stroke();
+      ctx.fillStyle = rgba(P.muted, 1); ctx.fillText(e[1], g.X(e[0][0]), g.Y(e[0][1]) + 22);
+    });
+    ctx.textAlign = 'start';
+    // 演示
+    ctx.lineWidth = 1.2; ctx.strokeStyle = rgba(P.data, 0.22);
+    for (j = 0; j < M; j++) line(ctx, g, demoPts(j));
+    // MSE 回归（均值）
+    if (S.mse) {
+      ctx.setLineDash([7, 6]); ctx.lineWidth = 2.4; ctx.strokeStyle = rgba(P.muted, 0.95); line(ctx, g, meanPath); ctx.setLineDash([]);
+      ctx.fillStyle = rgba(P.muted, 1); ctx.fillText('MSE 回归', g.X(C[0]) + R * g.sc * 0.2 + 6, g.Y(C[1]) - 8 - R * g.sc * 0.0);
+    }
+    // 流匹配样本
+    var col = mix(P.noise, P.data, S.t);
+    for (k = 0; k < NS; k++) {
+      var pts = samplePts(k, S.t);
+      ctx.lineWidth = 2.4; ctx.strokeStyle = rgba(col, 0.92); line(ctx, g, pts);
+      ctx.fillStyle = rgba(col, 0.95);
+      for (i = 0; i < pts.length; i++) { ctx.beginPath(); ctx.arc(g.X(pts[i][0]), g.Y(pts[i][1]), 2.6, 0, 6.2832); ctx.fill(); }
+    }
+  }
+  function stats() {
+    var up = 0, down = 0, und = 0, crash = 0, k, m = Math.floor(H / 2);
+    for (k = 0; k < NS; k++) {
+      var pts = samplePts(k, S.t), dy = pts[m][1] - C[1];
+      if (hits(pts)) crash++;
+      if (dy > 0.5) up++; else if (dy < -0.5) down++; else und++;
+    }
+    var mseTxt = 'MSE 回归（均值）：' + (hits(meanPath) ? '穿过障碍。' : '未穿过障碍。');
+    if (S.t >= 0.999) {
+      stat.textContent = 'τ = 1.00：' + NS + ' 条样本中，向上绕 ' + up + ' 条，向下绕 ' + down + ' 条，未分出模式 ' + und + ' 条，穿过障碍 ' + crash + ' 条。' + mseTxt;
+    } else {
+      stat.textContent = 'τ = ' + S.t.toFixed(2) + '：去噪进行中，拖到 1.00 查看最终统计。' + mseTxt;
+    }
+    if (S.t >= 0.999) {
+      cap.textContent = S.N === 1
+        ? '只走 1 步：六条样本完全重合，并且与虚线的 MSE 回归是同一条线，直接撞上障碍。'
+        : (crash === 0 ? '每条样本都选定了一个模式并绕开了障碍；它们与 MSE 回归的那条“取平均”的直线截然不同。' : '仍有样本穿过障碍：步数偏少时，部分样本会停在两个模式之间。');
+    } else {
+      cap.textContent = '拖动 τ，或点击“播放去噪”，观察噪声折线如何被逐步理顺。';
+    }
+  }
+  function sync() {
+    tIn.value = Math.round(S.t * 1000); tVal.textContent = 'τ = ' + S.t.toFixed(2);
+    draw(); stats();
+  }
+  function resize() { size = fitCanvas(cv, 0.54); draw(); }
+  var raf = 0, lastTs = 0;
+  function tick(ts) {
+    if (!S.playing) return;
+    var dt = lastTs ? (ts - lastTs) / 1000 : 0; lastTs = ts;
+    S.t = Math.min(1, S.t + dt / 3.8); sync();
+    if (S.t >= 1) { S.playing = false; playBtn.textContent = '重播'; return; }
+    raf = requestAnimationFrame(tick);
+  }
+  playBtn.addEventListener('click', function () {
+    if (S.playing) { S.playing = false; playBtn.textContent = '继续'; return; }
+    if (S.t >= 1) S.t = 0;
+    S.playing = true; lastTs = 0; playBtn.textContent = '暂停'; raf = requestAnimationFrame(tick);
+  });
+  tIn.addEventListener('input', function () { S.playing = false; playBtn.textContent = '播放去噪'; S.t = tIn.value / 1000; sync(); });
+  bindSeg(root, 'N', function (v) { S.N = +v; rebuild(); sync(); });
+  $('#chunk-mse').addEventListener('change', function (e) { S.mse = e.target.checked; draw(); });
+  $('#chunk-resample').addEventListener('click', function () { S.seed += 1; rebuild(); sync(); });
+  rebuild(); size = fitCanvas(cv, 0.54); sync(); onRedraw(resize);
+  root._state = S;
+}
+
+/* ================= Beta 时间分布图 ================= */
+function initBetaPlot() {
+  var curve = $('#beta-curve'); if (!curve) return;
+  var s = 0.999, x0 = 50, x1 = 530, yb = 190, ys = 93.75, d = '', i, t, f, area = '';
+  for (i = 0; i <= 120; i++) {
+    t = (i / 120) * s; f = 1.5 * Math.sqrt((s - t) / s) / s;
+    var X = x0 + (x1 - x0) * t, Y = yb - ys * f;
+    d += (i === 0 ? 'M' : 'L') + X.toFixed(1) + ' ' + Y.toFixed(1);
+  }
+  curve.setAttribute('d', d);
+  $('#beta-area').setAttribute('d', d + 'L' + (x0 + (x1 - x0) * s).toFixed(1) + ' ' + yb + 'L' + x0 + ' ' + yb + 'Z');
+  $('#beta-flat').setAttribute('d', 'M' + x0 + ' ' + (yb - ys) + 'H' + x1);
+}
+
+/* ================= 页面功能：目录、进度、复制、主题 ================= */
+function initPage() {
+  // 目录：宽屏常开
+  var toc = $('#toc'), mq = matchMedia('(min-width: 1101px)');
+  function tocState() { if (mq.matches) toc.open = true; }
+  tocState(); mq.addEventListener ? mq.addEventListener('change', tocState) : mq.addListener(tocState);
+  var links = $$('#toc a'), heads = links.map(function (a) { return $(a.getAttribute('href')); });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (e.isIntersecting) { var id = '#' + e.target.id; links.forEach(function (a) { a.classList.toggle('on', a.getAttribute('href') === id); }); }
+      });
+    }, { rootMargin: '-15% 0px -75% 0px' });
+    heads.forEach(function (h) { if (h) io.observe(h); });
+  }
+  // 进度条
+  var bar = $('#progress'), ticking = false;
+  function prog() {
+    var h = rootEl.scrollHeight - innerHeight, p = h > 0 ? Math.min(1, Math.max(0, scrollY / h)) : 0;
+    bar.style.width = (p * 100) + '%'; ticking = false;
+  }
+  addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(prog); } }, { passive: true });
+  prog();
+  // 代码高亮与复制
+  if (window.hljs) { $$('pre code').forEach(function (el) { try { hljs.highlightElement(el); } catch (e) {} }); }
+  $$('.codeblock').forEach(function (b) {
+    var btn = $('.copy', b), code = $('code', b);
+    btn.addEventListener('click', function () {
+      var text = code.textContent;
+      function done() { btn.textContent = '已复制'; setTimeout(function () { btn.textContent = '复制'; }, 1600); }
+      function fallback() {
+        var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = '请手动复制'; }
+        document.body.removeChild(ta);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+    });
+  });
+  // 主题
+  function effDark() { var a = rootEl.getAttribute('data-theme'); return a ? a === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+  $('#theme').addEventListener('click', function () { rootEl.setAttribute('data-theme', effDark() ? 'light' : 'dark'); redrawAll(); });
+  var dm = matchMedia('(prefers-color-scheme: dark)');
+  dm.addEventListener ? dm.addEventListener('change', redrawAll) : dm.addListener(redrawAll);
+  var rt; addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(redrawAll, 120); });
+}
+
+function boot() {
+  initPage(); initBetaPlot(); initHero(); initFlowDemo(); init1DMode(); initChunkDemo();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(redrawAll);
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+<button type="button" class="notebook-menu" id="notebook-menu" aria-expanded="false" data-imported-chrome>目录</button><script src="../imported-navigation.js?v=20261020" defer></script></body>
+</html>

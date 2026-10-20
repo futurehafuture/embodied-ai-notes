@@ -1,0 +1,32 @@
+{
+  "imported": "2026-10-20",
+  "notes": [
+    {
+      "file": "flow-matching-vla (2).html",
+      "page": "flow-matching/",
+      "source_sha256": "3d4ecef905c39f39eada081bac2d59bd0b312714ec02a116dbcace12c66abb83",
+      "original_text_preserved": true,
+      "original_scripts_preserved": true,
+      "h2_count": 10,
+      "h3_count": 27
+    },
+    {
+      "file": "ppo_tutorial.html",
+      "page": "ppo/",
+      "source_sha256": "01dbd8465708511ebafee022d47eb9952f53026869250efd394939aed9c67377",
+      "original_text_preserved": true,
+      "original_scripts_preserved": true,
+      "h2_count": 13,
+      "h3_count": 63
+    },
+    {
+      "file": "pi0_pi05_textbook.html",
+      "page": "pi0-pi05/",
+      "source_sha256": "e5a3f546b23e8c1604d61200ec9e549e0afdab9013301d8145e14bcb3dae5697",
+      "original_text_preserved": true,
+      "original_scripts_preserved": true,
+      "h2_count": 11,
+      "h3_count": 47
+    }
+  ]
+}
