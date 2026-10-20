@@ -23,3 +23,9 @@ Paper: Haoyang Li et al., *Training Vision-Language-Action Models with Dense Emb
 - SHA-256: `43d496a920d4b5bb774c6c9f6ac4a8a69aafbff650281854895f27649e8cb77e`
 
 The Chinese SVG data-flow illustration in ../index.html is an original explanatory schematic, clearly separated from the original figures. Numerical tables are transcribed with original table numbers and source links; no model evaluation was rerun.
+
+## Code excerpts added 2026-10-20
+
+17 source excerpts are displayed beside the corresponding explanations. All excerpts are pinned to RUCKBReasoning/ZR-0 commit b1440d4cf27624da2b1aa31268637cf46601c15d. `code-snippets.json` records files, exact line ranges and source SHA-256 digests. Original line numbers are shown; only common leading indentation is removed. Omissions between non-contiguous ranges are labeled. Chinese explanations are separate from the original code.
+
+The repository LICENSE is included as `ZR0-APACHE-2.0.txt`. `model/flow_matching_action_head.py` and `model/cross_attention_dit.py` retain: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0. The original license header is reproduced in the page's code-license section. Other excerpts retain attribution to their exact upstream file and repository license.

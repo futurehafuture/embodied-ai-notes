@@ -1,0 +1,218 @@
+{
+  "commit": "b1440d4cf27624da2b1aa31268637cf46601c15d",
+  "updated": "2026-10-20",
+  "snippets": [
+    {
+      "section": "s3-1",
+      "id": "code-preprocessing",
+      "file": "utils/load_training_dataset.py",
+      "ranges": [
+        [
+          53,
+          66
+        ]
+      ],
+      "source_sha256": "ded4e829764546d974213c0149b23396f5be4a0569e3868deb1d34cb71e29497"
+    },
+    {
+      "section": "s3-2",
+      "id": "code-vlm-features",
+      "file": "model/qwen_vl_backbone.py",
+      "ranges": [
+        [
+          159,
+          166
+        ]
+      ],
+      "source_sha256": "03fa5834d9b7a2c2ce77d5c152f88d3e4300e8509d0c52b25692fdd6ddf71830"
+    },
+    {
+      "section": "s3-3",
+      "id": "code-state-token",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          414,
+          420
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s3-4",
+      "id": "code-action-token",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          203,
+          214
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s3-5",
+      "id": "code-dit-conditioning",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          448,
+          458
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s3-6",
+      "id": "code-velocity-decoder",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          461,
+          462
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s4-1",
+      "id": "code-prompt-mask",
+      "file": "model/qwen_vl_backbone.py",
+      "ranges": [
+        [
+          102,
+          123
+        ]
+      ],
+      "source_sha256": "03fa5834d9b7a2c2ce77d5c152f88d3e4300e8509d0c52b25692fdd6ddf71830"
+    },
+    {
+      "section": "s4-2",
+      "id": "code-mask-selection",
+      "file": "model/qwen_vl_backbone.py",
+      "ranges": [
+        [
+          173,
+          184
+        ]
+      ],
+      "source_sha256": "03fa5834d9b7a2c2ce77d5c152f88d3e4300e8509d0c52b25692fdd6ddf71830"
+    },
+    {
+      "section": "s6-2",
+      "id": "code-state-normalization",
+      "file": "utils/normalization.py",
+      "ranges": [
+        [
+          67,
+          78
+        ]
+      ],
+      "source_sha256": "b33dcb858c15e425bf71d0e3fd40824daae315c968adfa2b647cdf83eaf5eaee"
+    },
+    {
+      "section": "s6-3",
+      "id": "code-masked-loss",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          477,
+          479
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s6-5",
+      "id": "code-one-mlp-slot",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          325,
+          341
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s7-2",
+      "id": "code-noisy-training",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          423,
+          435
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s7-3",
+      "id": "code-gradient-and-loss",
+      "file": "model/reasoning_vla_model.py",
+      "ranges": [
+        [
+          125,
+          137
+        ]
+      ],
+      "source_sha256": "b9ac6ef04b0c6209aba11dc3901bdc02c3b91bb395557c22232edc1d65a26c4b"
+    },
+    {
+      "section": "s7-5",
+      "id": "code-beta-time",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          385,
+          387
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s8-1",
+      "id": "code-direct-inference",
+      "file": "model/reasoning_vla_model.py",
+      "ranges": [
+        [
+          46,
+          57
+        ]
+      ],
+      "source_sha256": "b9ac6ef04b0c6209aba11dc3901bdc02c3b91bb395557c22232edc1d65a26c4b"
+    },
+    {
+      "section": "s8-3",
+      "id": "code-euler-inference",
+      "file": "model/flow_matching_action_head.py",
+      "ranges": [
+        [
+          512,
+          519
+        ],
+        [
+          536,
+          548
+        ]
+      ],
+      "source_sha256": "82e73fae407e410ddfad8f5bb2de092f87bd75e8d0f24ce0d3f69b5f9242c301"
+    },
+    {
+      "section": "s12-4",
+      "id": "code-attention-layers",
+      "file": "model/cross_attention_dit.py",
+      "ranges": [
+        [
+          296,
+          308
+        ],
+        [
+          312,
+          327
+        ]
+      ],
+      "source_sha256": "e2e2c8e93cb9fb617a41bc19206dc886158c763b42817eae29b80717356c6466"
+    }
+  ]
+}

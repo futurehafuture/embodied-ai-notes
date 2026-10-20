@@ -84,3 +84,21 @@ footer{max-width:1100px}
 @media print{.toc,.toc-btn,.progress,.calculator,.back-top,.figure-meta button{display:none}main,footer{margin:0;padding:20px;max-width:none}main::before{display:none}body{background:white;color:black}.figure img,.figure svg{min-width:0}.figure .scroll,.tw{overflow:visible}section{break-before:auto}.module,.formula,.figure{break-inside:avoid}details:not([open])>*:not(summary){display:block}}
 .paper-table tbody th{font:inherit;background:transparent;border-bottom:1.4px dashed var(--grid-strong)}
 .paper-table tbody tr:has(th:first-child:last-of-type) th{white-space:normal}
+
+/* Code belongs beside its explanation; original source stays separate from notes. */
+.source-code{margin:28px 0 34px;padding:18px 20px;border:1.5px solid var(--grid-strong);border-left:3px solid var(--blue);background:var(--card);scroll-margin-top:28px;min-width:0;max-width:100%}
+.source-code header{margin-bottom:10px}
+.source-code-kicker{font:400 19px/1.4 var(--f-note);color:var(--red)}
+.source-code h4{margin:6px 0;font-size:24px;line-height:1.4;color:var(--blue)}
+.code-location{font:400 13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.code-context,.code-attribution{font-size:13px;color:var(--ink-soft);line-height:1.7;margin:8px 0}
+.source-code pre{padding:12px 0;margin:12px 0 16px;border:1px dashed var(--grid-strong);font-size:13px;line-height:1.85;max-height:540px;overflow:auto;tab-size:4}
+.source-code pre>code{display:block;min-width:max-content}
+.code-line{display:block;padding:0 16px 0 0}
+.code-line::before{content:attr(data-line);display:inline-block;vertical-align:top;width:4.8em;margin-right:14px;padding-right:12px;text-align:right;color:var(--ink-soft);border-right:1px solid var(--grid-strong);user-select:none}
+.code-omission{display:block;color:var(--red);font-family:var(--f-body);padding:7px 18px;border-top:1px dashed var(--grid-strong);border-bottom:1px dashed var(--grid-strong);margin:6px 0}
+.code-notes{font-size:16px;line-height:1.9;margin:0;padding-left:1.5em}
+.code-notes li{margin:8px 0}
+.code-license-details summary{cursor:pointer;color:var(--blue)}
+@media(max-width:520px){.source-code{padding:14px 12px}.source-code h4{font-size:22px}.source-code pre{font-size:12px}.code-line::before{width:3.8em;margin-right:10px}.code-notes{font-size:16px}}
+@media print{.source-code{break-inside:auto}.source-code pre{max-height:none;white-space:pre-wrap}.source-code pre>code{min-width:0}.code-line{white-space:pre-wrap;overflow-wrap:anywhere}}
