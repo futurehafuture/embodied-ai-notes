@@ -5,7 +5,7 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
 <title>AI · 研究笔记</title>
-<meta content="AI 研究笔记总目录：Agent、具身智能与大模型。包含上下文压缩、PPO、GR00T、ZR-0、Flow Matching 与 π0/π0.5。" name="description"/>
+<meta content="AI 研究笔记总目录：Agent、具身智能与大模型。包含 DeepGEMM、上下文压缩、PPO、GR00T、ZR-0、Flow Matching 与 π0/π0.5。" name="description"/>
 <script>
     // Keep previously shared Astra section URLs working after introducing the index.
     function redirectLegacySection() {
@@ -30,8 +30,8 @@
 <section aria-labelledby="index-title" class="index-intro">
 <p class="eyebrow">读论文，拆模型，也把实践记下来。</p>
 <h1 id="index-title">AI 研究笔记<span>按主题，慢慢读懂</span></h1>
-<p class="intro-copy">按 Agent、具身智能与大模型整理学习记录。<br/>目前收录 8 篇笔记，选择一个主题开始阅读。</p>
-<nav aria-label="按主题跳转" class="topic-nav"><a href="#agent">Agent <span>2 篇</span></a><a href="#embodied">具身智能 <span>6 篇</span></a><a href="#llm">大模型 <span>0 篇</span></a></nav></section>
+<p class="intro-copy">按 Agent、具身智能与大模型整理学习记录。<br/>目前收录 9 篇笔记，选择一个主题开始阅读。</p>
+<nav aria-label="按主题跳转" class="topic-nav"><a href="#agent">Agent <span>2 篇</span></a><a href="#embodied">具身智能 <span>6 篇</span></a><a href="#llm">大模型 <span>1 篇</span></a></nav></section>
 <div class="collections"><section aria-labelledby="agent-heading" class="collection" id="agent"><div class="collection-heading"><div><p class="collection-kicker">01 / AGENTS</p><h2 id="agent-heading">Agent 类</h2><p class="collection-description">上下文工程与强化学习基础。</p></div><span>2 篇笔记</span></div><div class="notebook-list"><a aria-labelledby="context-title" class="notebook notebook-context" href="context-compression/">
 <div class="notebook-top"><span class="notebook-number">01</span><span class="notebook-type">实战研究</span></div>
 <h3 id="context-title">上下文压缩<span class="edition">实战研究笔记</span></h3>
@@ -62,7 +62,13 @@
 <p class="notebook-description">左侧保留论文结构，右侧逐段中文翻译。包含摘要、正文、图注、实验表格与附录，支持图表放大和原版 PDF 查看。</p>
 <div class="topic-line"><span>双栏阅读</span><span>公式与图表</span><span>全文翻译</span></div>
 <div class="notebook-bottom"><span>完整对照 · 可离线阅读</span><span class="read-link">翻开阅读 ↗</span></div>
-</a></div></section><section aria-labelledby="llm-heading" class="collection" id="llm"><div class="collection-heading"><div><p class="collection-kicker">03 / LANGUAGE MODELS</p><h2 id="llm-heading">大模型类</h2><p class="collection-description">为基础模型、训练与推理笔记预留。</p></div><span>0 篇笔记</span></div><div class="empty-category"><span aria-hidden="true" class="empty-mark">∅</span><div><h3>这里还没有笔记</h3><p>暂时留空，之后再收录。</p></div></div></section></div>
+</a></div></section><section aria-labelledby="llm-heading" class="collection" id="llm"><div class="collection-heading"><div><p class="collection-kicker">03 / LANGUAGE MODELS</p><h2 id="llm-heading">大模型类</h2><p class="collection-description">底层算子、GPU 执行与推理系统。</p></div><span>1 篇笔记</span></div><div class="notebook-list"><a aria-labelledby="deepgemm-title" class="notebook notebook-deepgemm" href="deepgemm/">
+<div class="notebook-top"><span class="notebook-number">01</span><span class="notebook-type">源码学习</span></div>
+<h3 id="deepgemm-title">DeepGEMM<span class="edition">从大模型走到 GPU</span></h3>
+<p class="notebook-description">先手算矩阵乘法，再用 NVIDIA 官方图与手绘理解 GPU，沿 Python、JIT 和 kernel 主循环深入阅读源码。</p>
+<div class="topic-line"><span>算子与推理</span><span>FP8 / MoE</span><span>源码图解</span></div>
+<div class="notebook-bottom"><span>17 章 · 5 个交互实验 · 自检题</span><span class="read-link">翻开阅读 ↗</span></div>
+</a></div></section></div>
 <footer class="index-footer">
 <span>读论文，做批注，把问题记下来。</span>
 <a href="https://github.com/futurehafuture/embodied-ai-notes">GitHub ↗</a>
