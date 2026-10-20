@@ -13,7 +13,7 @@
 <main id="top"><header class="cover"><a class="back-index" href="../">← 返回研究笔记总目录</a><span class="kicker">第四本 · 论文精读 / VLA</span><h1>ZR-0<span class="subtitle">密集具身思维链<br>如何训练一个直接行动的模型</span></h1><p class="meta">中国人民大学 × 智谱相关团队 · 2026<br>Training Vision-Language-Action Models with Dense Embodied Chain-of-Thought Supervision</p>
 <div class="meta-grid"><div><b>模型</b>2.6B · Qwen3-VL + DiT</div><div><b>主线</b>ECoT 监督与跨本体表征</div><div><b>原始资料</b>论文 v2 + 固定提交源码</div><div><b>阅读方式</b>原图、图解、公式与证据对照</div></div>
 <p class="tldr">训练时要求模型说清“看到了什么、做到哪里、接着干什么”；推理时不必把这些话生成出来，动作专家直接读取输入表征。<span class="hl">关键不是思维链写得多长，而是它如何改变训练出来的表示。</span></p>
-<div class="read-route"><b>按问题读：</b><br><a href="#ch2">先看架构与原图</a><a href="#ch4">为什么能跳过 ECoT</a><a href="#ch7">公式与梯度</a><a href="#ch9">实验结果</a><a href="#ch10">证据边界</a><a href="#ch12">论文与代码差异</a></div>
+<div class="read-route"><b>按问题读：</b><br><a href="bilingual/">原论文中英对照 ↗</a><a href="#ch2">先看架构与原图</a><a href="#ch4">为什么能跳过 ECoT</a><a href="#ch7">公式与梯度</a><a href="#ch9">实验结果</a><a href="#ch10">证据边界</a><a href="#ch12">论文与代码差异</a></div>
 <p class="small">约 60–90 分钟精读。新增 17 处带行号的官方源码与逐段解读。正文区分论文报告、源码行为与教学推导；可用左侧目录或手机底部目录跳转。</p></header>
 <section id="ch1"><h2><span class="num" aria-hidden="true"></span>先知道它在解决什么</h2>
 <h3 id="s1-1">1.1 一句话：把推理写进训练信号，把动作留给连续控制</h3>
