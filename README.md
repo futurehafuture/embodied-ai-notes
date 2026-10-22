@@ -3,6 +3,7 @@
 统一的方格纸手写风笔记首页与内容页，使用 GitHub Pages 从 `main` 分支根目录发布。
 
 - **DeepGEMM 源码学习笔记**：https://futurehafuture.github.io/embodied-ai-notes/deepgemm/
+- **大模型面试八股**：https://futurehafuture.github.io/embodied-ai-notes/llm-interview/
 - **总览首页**：https://futurehafuture.github.io/embodied-ai-notes/
 - **Astra × 具身智能**：https://futurehafuture.github.io/embodied-ai-notes/astra/
 - **GR00T 学习笔记**：https://futurehafuture.github.io/embodied-ai-notes/gr00t/
@@ -27,3 +28,5 @@
 `zr0/bilingual/index.html` 为 ZR-0 论文完整中英对照阅读页；正文、译文、图片、公式与原 PDF 均内嵌，可独立离线打开。现有 `zr0/` 精读笔记保持独立，两个入口均可从首页访问。
 
 `deepgemm/index.html` 为单文件源码学习教程：17 章、3 个附录、5 个交互实验、NVIDIA 官方图与手绘；固定 DeepGEMM commit `5081f8513af57e61696de4f4f04b0e707ffb503e`。正文、字体、图片与脚本内嵌，来源和许可随附。
+
+`llm-interview/index.html` 为大模型面试复习页，覆盖 Tokenizer、Transformer、训练与对齐、推理优化、RAG 和评测；`style.css` 沿用本站方格纸手写风格，`app.js` 提供目录、阅读进度和主题切换。

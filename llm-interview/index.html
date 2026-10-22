@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="大模型面试八股系统讲解：Tokenizer、Transformer、预训练、微调对齐、推理优化、RAG、评测与高频追问。">
+  <title>大模型面试八股｜从原理到工程</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&amp;family=Long+Cang&amp;family=Caveat:wght@500;700&amp;family=Kalam:wght@400;700&amp;display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" rel="stylesheet">
+  <link rel="stylesheet" href="../notebook-theme.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body class="interview-note">
+  <div class="progress" aria-hidden="true"><span id="reading-progress"></span></div>
+  <button class="toc-btn" id="toc-toggle" type="button" aria-controls="toc" aria-expanded="false">☰ 目录</button>
+  <nav class="toc" id="toc" aria-label="章节目录">
+    <a class="toc-home" href="../">← 研究笔记总目录</a>
+    <h2>大模型面试八股</h2><p class="sub">先理解，再表达</p>
+    <ol>
+      <li><a href="#guide">导读与答题框架</a></li>
+      <li><a href="#tokens">Tokenizer 与词表</a></li>
+      <li><a href="#transformer">Transformer 主干</a></li>
+      <li><a href="#architecture">位置、归一化与架构</a></li>
+      <li><a href="#pretrain">预训练与 Scaling</a></li>
+      <li><a href="#finetune">SFT、LoRA 与 QLoRA</a></li>
+      <li><a href="#alignment">RLHF、DPO 与对齐</a></li>
+      <li><a href="#inference">解码与推理优化</a></li>
+      <li><a href="#rag">RAG、Embedding 与幻觉</a></li>
+      <li><a href="#evaluation">评测与工程排障</a></li>
+      <li><a href="#rapid">高频追问速查</a></li>
+      <li><a href="#sources">资料来源地图</a></li>
+    </ol>
+    <div class="toc-tools"><button type="button" id="theme-toggle">切换深色</button><a href="#rapid">考前速查 ↗</a></div>
+    <p class="ver">2026-10-22 · 基础知识以原论文为准；具体模型实现以其技术报告和代码为准。</p>
+  </nav>
+  <main>
+    <header class="cover">
+      <a class="back-index" href="../">← 返回 AI 研究笔记总目录</a>
+      <span class="kicker">INTERVIEW FIELD NOTES / 01</span>
+      <h1>大模型<span class="title-mark">面试八股</span></h1>
+      <p class="cover-subtitle">从 Token 到 Transformer，从训练到上线：能讲原理，也能回答追问。</p>
+      <p class="meta">系统讲解 · 11 个主题 · 40+ 高频问题 · 公式、手算、工程取舍</p>
+      <div class="stamp">面试复习版</div>
+    </header>
+
+    <section id="guide">
+      <h2><span class="num"></span>导读：怎么用这份笔记</h2>
+      <p>大模型面试通常沿着一条链追问：<span class="hl">文本如何变成 token → token 如何互相看见 → 模型如何学会预测 → 如何听懂指令 → 如何高效生成 → 如何接入知识并验证效果</span>。只背术语容易卡在“为什么”和“代价是什么”，所以每章都按<strong>直觉、机制、面试回答、易错点</strong>来讲。</p>
+      <div class="source-map"><b>资料来源地图（先看出处）</b><p>架构与训练以 <a href="https://arxiv.org/abs/1706.03762">Transformer</a>、<a href="https://arxiv.org/abs/2203.15556">Chinchilla</a> 等原论文为主；微调对齐以 <a href="https://arxiv.org/abs/2106.09685">LoRA</a>、<a href="https://arxiv.org/abs/2203.02155">InstructGPT</a>、<a href="https://arxiv.org/abs/2305.18290">DPO</a> 为主；服务与检索以 <a href="https://arxiv.org/abs/2309.06180">vLLM</a>、<a href="https://arxiv.org/abs/2005.11401">RAG</a> 为主。每章末尾列出对应论文，<a href="#sources">文末有完整清单</a>。</p></div>
+      <div class="route" aria-label="学习路线"><div><b>01</b><span>输入</span><small>Tokenizer</small></div><i>→</i><div><b>02</b><span>建模</span><small>Attention / FFN</small></div><i>→</i><div><b>03</b><span>学习</span><small>预训练 / 对齐</small></div><i>→</i><div><b>04</b><span>服务</span><small>解码 / RAG / 评测</small></div></div>
+      <div class="sticky"><h4>面试的四句式</h4><p><strong>定义</strong>：它解决什么问题。<strong>机制</strong>：数据如何流过它，关键公式是什么。<strong>权衡</strong>：它改善了什么，付出什么成本。<strong>边界</strong>：什么时候不适用或容易说错。每个问题先用 30 秒讲主线，再按追问深入。</p></div>
+      <h3>三个必须先分清的词</h3>
+      <div class="tbl-wrap"><table><thead><tr><th>词</th><th>准确含义</th><th>面试常见误区</th></tr></thead><tbody><tr><td>参数</td><td>训练更新的权重；推理时通常固定。</td><td>参数量大不等于知识一定新或推理一定强。</td></tr><tr><td>上下文窗口</td><td>一次请求可处理的 token 范围，含输入及输出预算，具体计费和限制看实现。</td><td>窗口长不等于中间的信息都能可靠使用。</td></tr><tr><td>token</td><td>分词器输出的离散 ID，可能是字、词片段或符号。</td><td>不等于“一个汉字”或“一个单词”。</td></tr></tbody></table></div>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/1808.06226">SentencePiece</a>、<a href="https://arxiv.org/abs/2307.03172">Lost in the Middle</a>。</p>
+    </section>
+
+    <section id="tokens">
+      <h2><span class="num"></span>Tokenizer：模型读的不是字</h2>
+      <h3>Q1. 为什么需要分词？BPE 在做什么？</h3>
+      <p>神经网络接收数字而非字符串。Tokenizer 把文本映射为 ID；Embedding 表再把 ID 映射为向量。若整词入表，生僻词和词形变化会让词表膨胀；若只用字符，序列可能过长。<strong>子词</strong>在二者之间折中。</p>
+      <div class="formula"><span class="tag">BPE 的最小例子</span><p>语料里频繁出现 <code>l o w</code>、<code>l o w e r</code>。从基础符号开始统计相邻对，反复合并高频对，如 <code>l+o → lo</code>、<code>lo+w → low</code>。最终编码时按学到的合并规则切分；不同训练语料与实现会产生不同切法。</p><p class="why">面试重点：BPE 是学习词表/切分规则的过程，不是模型推理时临时“理解词义”。</p></div>
+      <p>WordPiece、BPE、Unigram 都属于子词方法，但训练目标和编码算法不同。SentencePiece 是一个可直接从原始文本训练子词模型的工具框架，<strong>不要把 SentencePiece 与某一种切词算法画等号</strong>。不同分词器处理空格、Unicode、特殊 token 的方式也不同。</p>
+      <div class="answer"><b>30 秒回答</b>“模型先用 tokenizer 把文本转成离散 token ID，再查 embedding 表变成向量。子词分词平衡词表规模与序列长度。BPE 从基础符号开始迭代合并高频相邻对，因此常见片段可用较少 token 表示，稀有词也能拆开处理。”</div>
+      <details class="qa"><summary>追问：为什么中文、代码、数字的 token 成本不同？</summary><div>因为切分取决于词表与训练语料。某类字符串若常见，可能有较长的合并片段；若少见，就拆成更多 token。必须用<strong>目标模型对应的 tokenizer 实测</strong>，不能按字数估算。</div></details>
+      <details class="qa"><summary>追问：特殊 token 有什么用？</summary><div>BOS/EOS、消息角色边界、工具调用边界等可标记结构。它们在不同模型中的具体 ID 和模板不同。把对话模板拼错会让模型误解角色或终止位置。</div></details>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/1808.06226">SentencePiece 原论文</a>。</p>
+    </section>
+
+    <section id="transformer">
+      <h2><span class="num"></span>Transformer：一次看全局，逐步生成</h2>
+      <h3>Q2. Self-Attention 到底怎么算？</h3>
+      <p>给定输入矩阵 <code>X ∈ R[n,d]</code>，分别线性投影得到 <code>Q=XWQ</code>、<code>K=XWK</code>、<code>V=XWV</code>。每个位置用自己的 Query 与其他位置的 Key 做相似度，softmax 后用权重汇总 Value。</p>
+      <div class="formula"><span class="tag">核心公式</span><div class="eq">Attention(Q,K,V) = softmax(QKᵀ / √dₖ + M) V</div><p class="why"><code>M</code> 是可选 mask；因果注意力把未来位置设为负无穷，softmax 后其权重为 0。除以 <code>√dₖ</code> 是为了让点积尺度随维度增加时不过大，避免 softmax 过度饱和。</p></div>
+      <p>手算：一个 Query 对三个 Key 的缩放后分数为 <code>[2, 1, -∞]</code>，softmax 约为 <code>[0.731, 0.269, 0]</code>。输出就是 <code>0.731·V₁ + 0.269·V₂</code>；第三个位置被 mask，不参与汇总。<strong>Q/K 决定看谁，V 决定取什么内容</strong>，这是面试最实用的记忆法。</p>
+      <h3>Q3. 多头注意力为什么有效？</h3>
+      <p>多个 head 使用不同的投影矩阵，在不同表示子空间建立依赖，最后拼接并再次投影。它增加表达灵活性，但不能保证每个 head 自然对应一个人类能命名的“语法功能”。标准多头注意力中若总隐藏维度固定，增加头数会缩小每头维度，计算量不会按头数简单线性翻倍。</p>
+      <h3>Q4. FFN、残差和归一化各干什么？</h3>
+      <p>Attention 负责<strong>跨 token 汇集信息</strong>；位置前馈网络（FFN/MLP）对每个位置分别做非线性变换。残差路径让输入可绕过子层，帮助深层网络传递信息与梯度；归一化控制激活尺度，改善训练稳定性。每层都包含这几种作用，只有 Attention 不足以构成常见 Transformer 块。</p>
+      <h3>Q5. Encoder、Decoder、Encoder–Decoder 的区别？</h3>
+      <div class="tbl-wrap"><table><thead><tr><th>结构</th><th>典型训练/可见性</th><th>适合的任务</th></tr></thead><tbody><tr><td>Encoder only（如 BERT）</td><td>双向编码；经典 BERT 用遮盖语言建模。</td><td>分类、检索表示等理解任务。</td></tr><tr><td>Decoder only（GPT 类）</td><td>因果 mask，按顺序预测下一个 token。</td><td>开放式自回归生成。</td></tr><tr><td>Encoder–Decoder（原始 Transformer、T5 类）</td><td>编码输入，解码器交叉注意力读取编码结果并生成。</td><td>翻译、摘要等输入到输出的映射。</td></tr></tbody></table></div>
+      <div class="answer"><b>30 秒回答</b>“注意力先把输入投影为 Q、K、V，以 QKᵀ/√dₖ 得到相关性，mask 限制可见范围，softmax 后加权求和 V。多头并行学习不同投影；FFN 对每个位置做非线性变换；残差和归一化保证深层训练更稳定。GPT 类 decoder 用因果 mask，因此能自回归生成。”</div>
+      <div class="pitfall"><b>易错点</b>训练时可把整段目标序列并行送入网络，但因果 mask 不允许位置看未来；推理时仍要按输出 token 串行递推。标准全注意力的注意力矩阵随序列长度 <code>n</code> 呈 <code>O(n²)</code>，不代表整模型每一项计算都是二次。</div>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need</a>、<a href="https://arxiv.org/abs/2005.14165">GPT-3</a>。</p>
+    </section>
+
+    <section id="architecture">
+      <h2><span class="num"></span>现代架构里的高频名词</h2>
+      <h3>Q6. 没有位置编码会怎样？RoPE 为什么流行？</h3>
+      <p>单纯的 Self-Attention 对输入排列具有置换等变性，不能凭内容分清“甲在乙前面”还是“乙在甲前面”。位置方案让顺序进入计算。绝对位置向量可与输入相加；<strong>RoPE</strong> 则按位置旋转 Q/K 的二维分量，使二者点积包含相对位置信息。RoPE 不等于无限长外推保证：超出训练长度后的效果还依赖训练、频率缩放和评测。</p>
+      <h3>Q7. LayerNorm 和 RMSNorm 差在哪？Pre-Norm 是什么？</h3>
+      <p>LayerNorm 对特征先减均值再除标准差；RMSNorm 不减均值，按均方根缩放，计算更简洁。Pre-Norm 是<strong>把归一化放在子层之前</strong>的残差块布局，例如 <code>x + Attention(Norm(x))</code>；Post-Norm 则是 <code>Norm(x + Attention(x))</code>。归一化算法与摆放位置是两个独立维度，不要混为一谈。</p>
+      <h3>Q8. SwiGLU 和普通 FFN 有什么区别？</h3>
+      <p>普通 FFN 常写作 <code>W₂ σ(W₁x)</code>；SwiGLU 有两条输入投影支路，其中一条经过 Swish/SiLU 后与另一条逐元素相乘，再做输出投影，即 <code>Wₒ(SiLU(Wₐx) ⊙ Wᵦx)</code>。门控让模型有更灵活的非线性交互；模型通常会调整中间层宽度，使参数预算可比。</p>
+      <h3>Q9. MHA、MQA、GQA 为什么与 KV Cache 有关？</h3>
+      <p>自回归解码时要保存历史 token 每层的 K/V。标准 MHA 每个 Query head 有对应的 KV head；MQA 让多个 Query head 共用一组 KV head；GQA 则分组共享，介于两者之间。共享 K/V 可以减少 cache 容量和解码时读取的数据量，通常有质量与吞吐之间的取舍。<strong>具体效果依模型、硬件和 batch 而定</strong>。</p>
+      <h3>进阶追问：MoE 为什么“参数多，单 token 计算未必同样多”？</h3>
+      <p>稀疏混合专家（MoE）通常把一部分 FFN 换成多个专家网络，由路由器为每个 token 选择少数专家。总参数包含所有专家，但一次 token 前向只激活被选中的专家。例如 Mixtral 8×7B 的原论文描述每层有 8 个 FFN 专家、每个 token 选 2 个。<strong>总参数、激活参数与实际吞吐是三个不同指标</strong>：专家权重仍需存储和加载，跨设备路由带来通信，负载不均可能让部分专家拥堵；训练常加入负载均衡机制。MoE 不是“免费增加容量”。</p>
+      <div class="formula"><span class="tag">KV Cache 粗算</span><div class="eq">bytes ≈ 2 × 层数 × KV头数 × 每头维度 × 历史token数 × batch × 每元素字节数</div><p class="why">“2”对应 K 与 V。示例：32 层、8 个 KV head、head_dim=128、4096 token、batch=1、FP16（2 字节）≈ 0.5 GiB。实际服务还会有块管理、对齐等额外开销。</p></div>
+      <details class="qa"><summary>追问：FlashAttention 与 GQA 是同一层优化吗？</summary><div>不是。GQA 改变模型中 Q head 与 KV head 的共享结构；FlashAttention 用分块与片上存储减少注意力计算的数据搬运，原始算法仍计算精确注意力（数值舍入差异除外）。它们可同时使用。</div></details>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/2104.09864">RoFormer</a>、<a href="https://arxiv.org/abs/1910.07467">RMSNorm</a>、<a href="https://arxiv.org/abs/2002.05202">GLU Variants</a>、<a href="https://arxiv.org/abs/2305.13245">GQA</a>、<a href="https://arxiv.org/abs/2205.14135">FlashAttention</a>、<a href="https://arxiv.org/abs/2101.03961">Switch Transformer</a>、<a href="https://arxiv.org/abs/2401.04088">Mixtral</a>。</p>
+    </section>
+
+    <section id="pretrain">
+      <h2><span class="num"></span>预训练：为什么“预测下一个”能学到能力</h2>
+      <h3>Q10. 自回归预训练目标是什么？Teacher Forcing 是什么？</h3>
+      <p>对序列 <code>x₁…xₜ</code>，最大化每一步真实下一个 token 的条件概率。等价地，最小化负对数似然（交叉熵）：</p>
+      <div class="formula"><span class="tag">语言建模损失</span><div class="eq">L = − Σₜ log pθ(xₜ | x₍&lt;ₜ₎)</div><p class="why">训练时把真实历史 token 提供给每个位置，这叫 Teacher Forcing；因果 mask 仍阻止看到答案右侧。推理时历史包含模型自己生成的 token，因此训练和推理的输入分布可能不同。</p></div>
+      <p>这个目标迫使模型压缩文本中的语法、事实和模式，才能更好预测后续。但<strong>预测目标与“事实永远正确”“按人类意图回答”不是一回事</strong>，后训练和外部工具由此有用。</p>
+      <h3>Q11. BERT 的 MLM 与 GPT 的 CLM 怎么比？</h3>
+      <p>MLM（Masked Language Modeling）遮盖部分输入并预测被遮盖内容，可用双向上下文；CLM（Causal Language Modeling）只看左侧预测后续 token，天然适合自回归生成。不能把 BERT 说成“完全不能生成任何文本”，准确说法是它的经典预训练结构与目标并非开放式自回归生成的直接形态。</p>
+      <h3>Q12. Scaling Law / Chinchilla 的结论是什么？</h3>
+      <p>固定训练算力时，模型参数量 <code>N</code> 与训练 token 数 <code>D</code> 要一起权衡。Chinchilla 工作在其研究设定下发现，<strong>计算最优</strong>配置应同时增加模型规模和数据量，过去许多大模型相对训练不足。面试中常见“20 token/参数”是该研究拟合与预算下的经验数量级，不是所有模型、训练配方与部署场景的永恒定律。若推理请求很多，训练更久而选较小模型也可能降低全生命周期成本。</p>
+      <h3>Q13. 数据质量与数据泄漏怎么讲？</h3>
+      <p>高质量数据要关注去重、语言/领域覆盖、污染与版权许可、低质内容过滤，以及评测集是否混入训练数据。重复数据会改变有效样本分布；污染会让离线分数高估泛化能力。工程上保存数据版本、来源与清洗规则，并用时间或实体隔离构造独立测试集。</p>
+      <h3>进阶追问：数据并行、张量并行、流水线并行、ZeRO 怎么分？</h3>
+      <p><strong>数据并行</strong>在各设备放模型副本，处理不同 batch 分片并同步梯度；<strong>张量并行</strong>把单层矩阵计算分到多设备，适合单层太大；<strong>流水线并行</strong>把不同层放在不同设备，用微批次填充流水线，但可能有气泡。<strong>ZeRO</strong> 在数据并行组内分片优化器状态、梯度和参数，以减少冗余显存。几种方式可组合，代价分别是梯度通信、层内通信、流水线调度与分片通信；不要只说“多卡平均分配模型”。</p>
+      <div class="answer"><b>30 秒回答</b>“预训练通过因果语言建模最小化下一个 token 的交叉熵；训练时用真实历史并行计算损失，生成时逐 token 解码。性能不只由参数量决定，还受训练 token、算力和数据质量影响。Chinchilla 说明固定训练预算下参数和数据要共同扩展，但具体比例不能脱离设定照搬。”</div>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/2005.14165">GPT-3</a>、<a href="https://arxiv.org/abs/2203.15556">Chinchilla</a>、<a href="https://arxiv.org/abs/1907.11692">RoBERTa 复现实验</a>、<a href="https://arxiv.org/abs/1909.08053">Megatron-LM</a>、<a href="https://arxiv.org/abs/1910.02054">ZeRO</a>。</p>
+    </section>
+
+    <section id="finetune">
+      <h2><span class="num"></span>SFT、LoRA、QLoRA：如何改模型</h2>
+      <h3>Q14. 预训练、继续预训练、SFT 分别做什么？</h3>
+      <p><strong>预训练</strong>在大规模通用语料上学通用表示与生成模式；<strong>继续预训练</strong>用特定领域原始数据延续语言建模，适合补领域分布；<strong>SFT</strong> 用“指令/对话 → 理想回答”的样本做监督微调，改变按指令回答的行为。SFT 的损失通常只作用于目标回答 token；具体是否训练 system/user token 取决于数据拼接和 loss mask 实现。</p>
+      <h3>Q15. 全参微调和 LoRA 如何取舍？</h3>
+      <p>全参微调更新全部目标权重，表达自由度高，但优化器状态、梯度和检查点成本大。LoRA 冻结原矩阵 <code>W₀</code>，仅训练低秩增量 <code>ΔW = (α/r)BA</code>，其中 <code>A ∈ R[r,dᵢₙ]</code>、<code>B ∈ R[dₒᵤₜ,r]</code>；训练参数约为 <code>r(dᵢₙ+dₒᵤₜ)</code>，通常远少于 <code>dₒᵤₜdᵢₙ</code>。可按任务保存小 adapter，也可在合适的权重格式下合并用于推理。</p>
+      <div class="formula"><span class="tag">手算参数量</span><p>若一个 <code>4096×4096</code> 矩阵用 rank 16 的 LoRA：原矩阵约 1678 万参数；A+B 为 <code>16×4096 + 4096×16 = 131072</code> 参数，约为该矩阵的 <strong>0.78%</strong>。这只算一个矩阵，不等于整模型微调比例。</p><p class="why">LoRA 的“低秩”是对任务更新量作结构约束，不是说原模型权重本身低秩。</p></div>
+      <h3>Q16. QLoRA 比 LoRA 多了什么？</h3>
+      <p>QLoRA 将<strong>冻结的基础权重</strong>量化到 4 bit，梯度穿过量化权重的反量化计算路径，更新仍发生在 LoRA adapter 上。原论文提出 NF4、双重量化和分页优化器以省内存。它不是“把所有参数都用 4 bit 训练”；激活、梯度、adapter、优化器状态和计算精度仍需分别说明。量化省显存，但速度与质量变化取决于内核和任务。</p>
+      <h3>Q17. 什么时候选 RAG，什么时候微调？</h3>
+      <p>知识频繁变化、需要引用来源、要求权限控制：先考虑 RAG；需要稳定的回答格式、领域术语和行为风格：可考虑 SFT/LoRA。两者可结合。微调并非可靠地把海量实时事实写进参数；RAG 也无法自动修复模型不会执行某种任务的能力缺口。先用验证集定位失败类型，再决定投入。</p>
+      <div class="answer"><b>30 秒回答</b>“SFT 用示范答案训练模型遵循任务。LoRA 冻结基础权重，只学习低秩增量 BA，显著减少可训练参数；QLoRA 再把冻结基座量化以节省显存，但适配器仍按较高精度训练。若问题是知识更新或来源可追溯，我优先设计 RAG；若是行为与格式不稳定，再考虑微调。”</div>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/2109.01652">FLAN 指令微调</a>、<a href="https://arxiv.org/abs/2106.09685">LoRA</a>、<a href="https://arxiv.org/abs/2305.14314">QLoRA</a>、<a href="https://arxiv.org/abs/2005.11401">RAG</a>。</p>
+    </section>
+
+    <section id="alignment">
+      <h2><span class="num"></span>对齐：会续写，不等于会帮助用户</h2>
+      <h3>Q18. RLHF 的典型流程是什么？</h3>
+      <p>经典 InstructGPT 路线：<strong>① SFT</strong> 用人工示范学习有用回答；<strong>② 偏好数据</strong> 对同一提示的多个候选排序；<strong>③ 奖励模型</strong> 学习偏好分数；<strong>④ 强化学习</strong> 如 PPO 优化策略，同时使用参考模型约束偏移。奖励模型是偏好的近似，优化它可能出现 reward hacking，因此需要独立的人类和任务评估。</p>
+      <h3>Q19. DPO 和 PPO-RLHF 的关键区别？</h3>
+      <p>DPO 利用带 KL 约束的偏好优化目标，把奖励和最优策略之间的关系重参数化，直接用<strong>胜出/落选回答对</strong>训练策略。常见流程不需要单独训练显式奖励模型，也不需要在训练循环中用当前策略在线采样并运行 PPO。它仍需要高质量偏好数据、参考策略与超参数；不能说“完全没有奖励思想”或“一定比所有 RLHF 更好”。</p>
+      <div class="tbl-wrap"><table><thead><tr><th>方法</th><th>主要监督</th><th>训练特点</th><th>主要风险</th></tr></thead><tbody><tr><td>SFT</td><td>理想答案</td><td>简单、稳定</td><td>只模仿示范，难表达两个答案间的偏好。</td></tr><tr><td>PPO-RLHF</td><td>偏好拟合奖励 + 在线生成</td><td>可直接优化奖励</td><td>系统与训练复杂，需防奖励投机。</td></tr><tr><td>DPO</td><td>胜/负答案对</td><td>离线分类式目标</td><td>依赖偏好数据覆盖，易受标签噪声影响。</td></tr></tbody></table></div>
+      <h3>Q20. “对齐”与“安全”能画等号吗？</h3>
+      <p>不能。对齐泛指让模型行为更接近某组人类目标或偏好；安全还需要考虑滥用、偏差、隐私、提示注入、工具权限等系统级风险。一个在偏好测试中更受欢迎的回答也可能不准确。面试时应把<strong>有用性、事实性、合规性、鲁棒性</strong>拆成不同指标。</p>
+      <div class="pitfall"><b>易错点</b>“RLHF = PPO”说窄了：RLHF 是用人类反馈训练的一类流程，PPO 只是其中一种策略优化算法。DPO 是偏好优化方法，与经典 PPO-RLHF 目标有理论联系，但训练步骤不同。</div>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/2203.02155">InstructGPT</a>、<a href="https://arxiv.org/abs/2305.18290">DPO</a>。</p>
+    </section>
+
+    <section id="inference">
+      <h2><span class="num"></span>推理：从一个 token 到线上服务</h2>
+      <h3>Q21. Prefill 和 Decode 分别做什么？</h3>
+      <p>Prefill 并行处理已有提示词，建立各层历史 K/V，通常计算密集；Decode 每步追加一个 token，复用历史 KV Cache，很多服务场景受内存带宽、KV 读取和小批量计算影响。<strong>TTFT</strong>（首 token 延迟）主要看排队、prefill 和首次解码；<strong>TPOT</strong>（后续每 token 时间）看持续解码。长提示、并发量、硬件和调度会改变具体瓶颈。</p>
+      <h3>Q22. KV Cache 省了什么，又付出什么？</h3>
+      <p>不缓存时，每生成一个 token 都要重算历史 token 的 K/V；缓存后直接复用它们，只计算新 token 的 K/V 与当前 Query。代价是显存随层数、KV heads、序列长和并发增长。GQA/MQA 减少 KV heads；量化可降低每元素字节数；分页管理可减少内存碎片与重复拷贝。<strong>KV Cache 不会消除当前 Query 与全部历史 Key 交互的成本</strong>。</p>
+      <h3>Q23. PagedAttention 和 FlashAttention 有何不同？</h3>
+      <p>FlashAttention 通过分块在线 softmax，减少注意力计算时 HBM 与片上存储间的数据搬运，不必把完整 <code>n×n</code> 注意力矩阵写回显存；PagedAttention 借鉴虚拟内存，将服务中的 KV Cache 切为块并映射管理，提升并发场景的显存利用率。一个侧重<strong>算子 IO</strong>，一个侧重<strong>服务时 KV 内存分配</strong>。</p>
+      <h3>Q24. temperature、top-k、top-p 改了什么？</h3>
+      <p>模型先给出每个候选 token 的 logits。temperature 用 <code>logits / T</code> 调整分布尖锐度；<code>T&lt;1</code> 通常更集中。top-k 仅保留概率最高的 k 个候选；top-p 保留累计概率达到阈值 p 的最小候选集合，再归一化采样。它们控制<strong>采样分布</strong>，不改变模型权重。贪心选最大概率 token 也不保证整句全局最优。</p>
+      <h3>Q25. 量化、投机解码分别解决什么？</h3>
+      <p>量化以更少 bit 表示权重和/或激活、KV，降低存储和数据搬运，可能引入误差，并且只有匹配的硬件内核才一定转化为速度收益。投机解码用小 draft 模型先提出若干 token，大模型并行验证；原始精确算法通过接受/拒绝校正保持目标分布，收益取决于 draft 命中率和验证成本。不要把所有“投机式”实现都说成严格无损。</p>
+      <div class="answer"><b>30 秒回答</b>“线上生成分 prefill 和逐 token decode。KV Cache 免去反复计算旧 K/V，但显存随历史长度和并发增长。FlashAttention 优化注意力算子的 IO，PagedAttention 优化 KV Cache 的分页管理；GQA 减少 KV heads。看性能时我会分开测 TTFT、TPOT、吞吐和显存，避免只报一个 tokens/s。”</div>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/2205.14135">FlashAttention</a>、<a href="https://arxiv.org/abs/2309.06180">PagedAttention / vLLM</a>、<a href="https://arxiv.org/abs/2305.13245">GQA</a>、<a href="https://arxiv.org/abs/2211.17192">Speculative Decoding</a>、<a href="https://arxiv.org/abs/2306.00978">AWQ</a>。</p>
+    </section>
+
+    <section id="rag">
+      <h2><span class="num"></span>RAG：外部知识如何进入回答</h2>
+      <h3>Q26. 一个可解释的 RAG 流程是什么？</h3>
+      <div class="route route-rag"><div><b>①</b><span>切分与清洗</span><small>保留来源和权限</small></div><i>→</i><div><b>②</b><span>建索引</span><small>BM25 / 向量</small></div><i>→</i><div><b>③</b><span>召回与重排</span><small>候选 → 证据</small></div><i>→</i><div><b>④</b><span>生成与引用</span><small>有据可查</small></div></div>
+      <p>查询进来后，先检索与问题相关的片段，再把片段与问题交给生成模型。原始 RAG 论文强调参数知识与外部非参数记忆结合；工程系统还要补文档解析、权限过滤、版本管理、引用定位和拒答策略。<strong>检索到“相关”片段不等于它支持答案</strong>。</p>
+      <h3>Q27. Embedding、向量检索、重排有什么区别？</h3>
+      <p>Embedding 模型把文本映射到向量空间，利用余弦相似度或内积找到语义相近的候选。BM25 用词项匹配，对精确名称和罕见关键词常有优势；混合检索结合二者。Cross-encoder 重排器把“问题 + 候选文档”一起编码打分，通常更精细，但每个候选都需计算，因此一般只用于小候选集。<strong>向量相近不是逻辑蕴含</strong>。</p>
+      <h3>Q28. Chunk 多大合适？Overlap 要不要加？</h3>
+      <p>太短会丢定义、表头和上下文；太长会降低检索精度并占用提示词预算。按标题/段落/表格做结构化切分，再在本领域问答集上测召回率与答案质量。Overlap 可减少跨边界信息断裂，但会增加索引体积、重复召回与上下文浪费。不存在脱离文档类型与模型窗口的统一最佳 token 数。</p>
+      <h3>Q29. RAG 为什么仍会幻觉？怎么定位？</h3>
+      <p>失败可能发生在<strong>解析</strong>（表格断裂）、<strong>检索</strong>（正确文档没召回）、<strong>重排</strong>（证据被排低）、<strong>上下文构造</strong>（截断或位置不佳）、<strong>生成</strong>（模型忽略证据或过度补全）。先用标注了证据位置的问题测 Recall@k / MRR，再在人评或严格规则下测回答的事实支持率与引用准确率。若证据缺失，应允许“资料不足”而不是强答。</p>
+      <div class="pitfall"><b>易错点</b>“有 RAG 就没有幻觉”是错误的。长上下文同样可能漏掉中间证据；检索片段还可能夹带恶意指令。把文档当作数据而非高优先级命令，并在工具调用前做权限检查。</div>
+      <div class="answer"><b>30 秒回答</b>“RAG 把外部资料检索后放进上下文，适合知识更新和来源引用。实际链路是解析切分、建索引、召回、重排、生成和引用校验。我会把‘是否找到了正确证据’与‘给定证据后答得是否正确’分开评估，优先定位失败环节。”</div>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/2005.11401">RAG 原论文</a>、<a href="https://arxiv.org/abs/2310.11511">Self-RAG</a>、<a href="https://arxiv.org/abs/2307.03172">Lost in the Middle</a>。</p>
+    </section>
+
+    <section id="evaluation">
+      <h2><span class="num"></span>评测：没有指标就没有工程结论</h2>
+      <h3>Q30. Perplexity、准确率、人评各测什么？</h3>
+      <p>Perplexity 是按 token 平均负对数似然的指数，反映模型给<strong>同一测试集</strong>中真实序列的概率；tokenizer 或数据不同通常不能直接横向比较。选择题准确率衡量特定题集；生成任务需要任务完成度、事实支持、格式符合度、引用质量或人类偏好。单一公开 benchmark 可能有污染、提示敏感性和覆盖不足。</p>
+      <h3>Q31. LLM-as-a-Judge 可直接替代人评吗？</h3>
+      <p>它能扩大评测规模，但有位置偏置、长度偏置、同源模型偏好和难以核验事实的风险。更稳妥的流程是：先定义评分 rubric 与失败分类，抽样人评校准，交换候选顺序，报告一致性，对关键事实做外部核查。对上线决策，保留高风险样本的人审。</p>
+      <h3>Q32. 上线后怎么查“变慢/变差”？</h3>
+      <div class="tbl-wrap"><table><thead><tr><th>症状</th><th>先看什么</th><th>常见原因</th></tr></thead><tbody><tr><td>首字慢</td><td>排队时间、prompt tokens、prefill、缓存命中</td><td>长上下文、并发拥塞、批处理策略。</td></tr><tr><td>后续输出慢</td><td>TPOT、KV 显存、decode batch</td><td>内存带宽或 KV 压力、低效算子。</td></tr><tr><td>答非所问</td><td>模板、检索证据、截断、采样参数</td><td>角色边界错、证据没进上下文。</td></tr><tr><td>引用错误</td><td>召回与 citation span 校验</td><td>段落编号错、答案超出证据。</td></tr></tbody></table></div>
+      <p>离线评测要固定模型版本、数据切分、模板、解码参数和工具版本；线上 A/B 还要控制请求构成。只有这样，性能或质量变化才有可归因性。</p>
+      <p class="source-line">依据：<a href="https://arxiv.org/abs/2305.14314">QLoRA 论文中的基准可靠性讨论</a>、<a href="https://arxiv.org/abs/2307.03172">Lost in the Middle</a>、<a href="https://arxiv.org/abs/2309.06180">vLLM 服务论文</a>。</p>
+    </section>
+
+    <section id="rapid">
+      <h2><span class="num"></span>高频追问速查与自测</h2>
+      <p>先用自己的话回答，再展开看参考答案。面试回答时，讲出一个<strong>机制</strong>和一个<strong>边界</strong>，比连续报术语更有用。</p>
+      <div class="quick-grid">
+        <details class="qa"><summary>1. Attention 为什么除以 √dₖ？</summary><div>维度增大时，独立分量的点积方差趋于随 dₖ 增长。缩放让 logits 不容易过大，softmax 梯度更稳定。这个解释是常用直觉，具体分布受数据与参数影响。</div></details>
+        <details class="qa"><summary>2. 为什么必须有 causal mask？</summary><div>训练下一个 token 预测时，若能看到右侧真实 token，就泄漏目标。因果 mask 让位置 t 只依赖 ≤t 的上下文。</div></details>
+        <details class="qa"><summary>3. 为什么训练可并行而生成是串行的？</summary><div>训练的整条真实序列已知，各位置可同时计算并用 mask 限制可见性；生成时下一 token 未知，必须先得到前一个输出。</div></details>
+        <details class="qa"><summary>4. RoPE 是绝对还是相对位置？</summary><div>按每个 token 的绝对位置旋转 Q/K，但旋转后的 Q/K 点积表现为相对位置差相关。不能只回答其中一个词。</div></details>
+        <details class="qa"><summary>5. GQA 为什么改善解码？</summary><div>多个 Query head 共享较少 KV head，降低 KV Cache 容量和带宽压力；质量与速度取舍需实测。</div></details>
+        <details class="qa"><summary>6. LoRA 的 A、B 都怎么初始化？</summary><div>常见做法是一支随机初始化、另一支置零，使初始增量 ΔW=0；具体库可有变体。关键是训练开始不突然改变原模型函数。</div></details>
+        <details class="qa"><summary>7. QLoRA 是否量化 adapter 梯度？</summary><div>原论文的 4-bit 主要用于冻结基座权重；梯度传到可训练 LoRA 参数，计算中会反量化，不等于所有张量都按 4-bit 反传。</div></details>
+        <details class="qa"><summary>8. DPO 为什么还需要参考模型？</summary><div>目标比较新策略与参考策略对胜/负答案的相对偏好，用参考分布约束偏移；常见实现需其 log-prob，也可预计算。</div></details>
+        <details class="qa"><summary>9. KV Cache 让复杂度变成 O(1) 吗？</summary><div>没有。它避免重算旧 token 的 K/V，但新 Query 仍要读取并与可见历史 Key 交互；cache 容量随历史长度增长。</div></details>
+        <details class="qa"><summary>10. FlashAttention 是近似 Attention 吗？</summary><div>原始 FlashAttention 是 IO 感知的精确注意力算法（浮点舍入可能不同）；不要和它论文中另外讨论的 block-sparse 近似扩展混为一谈。</div></details>
+        <details class="qa"><summary>11. top-p=0.9 就保留 90% 的 token 吗？</summary><div>不是。它保留累计概率达到至少 0.9 的最小高概率候选集合，候选数量随分布变化。</div></details>
+        <details class="qa"><summary>12. RAG、长上下文、微调怎么选？</summary><div>先看知识更新、来源、行为、成本和评测。RAG适合外部证据；长上下文可减少切分但有成本与位置效应；微调适合稳定行为/格式。它们可组合。</div></details>
+        <details class="qa"><summary>13. 为什么不能只看一个公开榜单？</summary><div>任务分布、数据污染、提示模板、采样设定与评分器都会影响结果；应建设本业务的封闭测试集和线上指标。</div></details>
+        <details class="qa"><summary>14. 如何回答“模型为什么会幻觉”？</summary><div>训练目标优化似然，不直接保证事实核验；知识可能缺失或过期，提示与检索证据可能不足，解码仍需输出。应区分检索失败与给定证据后的生成失败。</div></details>
+        <details class="qa"><summary>15. MoE 的“激活参数”就是显存占用吗？</summary><div>不是。激活参数描述单 token 前向参与计算的权重规模；服务仍要管理全部专家权重、路由、KV Cache 和激活，显存及通信取决于放置策略。</div></details>
+        <details class="qa"><summary>16. ZeRO 等于张量并行吗？</summary><div>不是。ZeRO 主要消除数据并行组内的训练状态冗余；张量并行切分层内算子计算。二者可组合。</div></details>
+      </div>
+      <div class="sticky tilt-r"><h4>考前 2 分钟总述</h4><p>“文本先经 tokenizer 变成 ID 和向量。Decoder Transformer 用因果自注意力聚合历史信息，FFN 做逐位置变换，残差、归一化和位置编码支撑深层训练。预训练学下一个 token 分布，SFT 与偏好优化让它更会遵循指令。推理分 prefill 和 decode，KV Cache、GQA、FlashAttention、PagedAttention 分别缓解不同瓶颈。需要外部事实时用 RAG 提供证据，并分别评估检索、生成质量和服务延迟。”</p></div>
+      <p class="closing">记住一条主线：<strong>输入表示 → 依赖建模 → 训练目标 → 人类偏好 → 线上成本 → 证据与评测</strong>。遇到新名词，就问它改善了链条中的哪一环。</p>
+    </section>
+
+    <section id="sources">
+      <h2><span class="num"></span>资料来源地图</h2>
+      <p>本篇优先依据<strong>原论文</strong>与<strong>系统论文</strong>。它们说明方法的提出背景、算法与实验范围；工程章节的结论明确保留模型、内核和硬件差异。以下链接可直接回溯每个核心主题。</p>
+      <div class="source-group"><h3>基础架构与训练 · 原论文</h3><ol class="src-list"><li><a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need</a> — Transformer、缩放点积注意力、多头结构与 mask。</li><li><a href="https://arxiv.org/abs/1808.06226">SentencePiece</a> — 原始文本子词分词框架。</li><li><a href="https://arxiv.org/abs/2005.14165">Language Models are Few-Shot Learners</a> — 自回归语言模型与上下文示例。</li><li><a href="https://arxiv.org/abs/2203.15556">Training Compute-Optimal Large Language Models</a> — 固定训练算力下参数与 token 配比。</li><li><a href="https://arxiv.org/abs/2104.09864">RoFormer</a>、<a href="https://arxiv.org/abs/1910.07467">RMSNorm</a>、<a href="https://arxiv.org/abs/2002.05202">GLU Variants</a> — 位置、归一化与门控网络。</li></ol></div>
+      <div class="source-group"><h3>稀疏架构与分布式训练 · 原论文</h3><ol class="src-list"><li><a href="https://arxiv.org/abs/2101.03961">Switch Transformer</a>、<a href="https://arxiv.org/abs/2401.04088">Mixtral of Experts</a> — 专家路由、激活参数与通信权衡。</li><li><a href="https://arxiv.org/abs/1909.08053">Megatron-LM</a> — 层内模型并行。</li><li><a href="https://arxiv.org/abs/1910.02054">ZeRO</a> — 训练状态分片与显存冗余。</li></ol></div>
+      <div class="source-group"><h3>微调与对齐 · 原论文</h3><ol class="src-list"><li><a href="https://arxiv.org/abs/2109.01652">Finetuned Language Models Are Zero-Shot Learners</a> — 指令微调。</li><li><a href="https://arxiv.org/abs/2106.09685">LoRA</a> — 低秩参数高效微调。</li><li><a href="https://arxiv.org/abs/2305.14314">QLoRA</a> — 4-bit 冻结基座与 adapter 训练。</li><li><a href="https://arxiv.org/abs/2203.02155">InstructGPT</a> — SFT、奖励模型、PPO 式 RLHF。</li><li><a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization</a> — 直接偏好优化目标。</li></ol></div>
+      <div class="source-group"><h3>推理、检索与评测 · 系统/方法论文</h3><ol class="src-list"><li><a href="https://arxiv.org/abs/2305.13245">GQA</a> — Query/KV head 分组共享。</li><li><a href="https://arxiv.org/abs/2205.14135">FlashAttention</a>、<a href="https://arxiv.org/abs/2307.08691">FlashAttention-2</a> — IO 感知注意力。</li><li><a href="https://arxiv.org/abs/2309.06180">PagedAttention / vLLM</a> — KV Cache 分页服务。</li><li><a href="https://arxiv.org/abs/2211.17192">Speculative Decoding</a>、<a href="https://arxiv.org/abs/2306.00978">AWQ</a> — 加速与量化。</li><li><a href="https://arxiv.org/abs/2005.11401">Retrieval-Augmented Generation</a>、<a href="https://arxiv.org/abs/2310.11511">Self-RAG</a> — 外部记忆与检索控制。</li><li><a href="https://arxiv.org/abs/2307.03172">Lost in the Middle</a> — 长上下文位置效应。</li></ol></div>
+      <p class="source-caveat">阅读提示：论文中的相对提升、硬件速度、最佳超参数都有实验边界；面试时先讲机制，涉及数字时说清数据、模型与环境。</p>
+    </section>
+  </main>
+  <footer><a href="../">← 返回研究笔记首页</a><span>整理于 2026-10-22 · 大模型面试基础与工程</span></footer>
+</body>
+</html>
