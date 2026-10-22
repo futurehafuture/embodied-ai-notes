@@ -31,4 +31,4 @@
 
 `deepgemm/index.html` 为单文件源码学习教程：17 章、3 个附录、5 个交互实验、NVIDIA 官方图与手绘；固定 DeepGEMM commit `5081f8513af57e61696de4f4f04b0e707ffb503e`。正文、字体、图片与脚本内嵌，来源和许可随附。
 
-`llm-interview/index.html` 为大模型面试复习页，覆盖 Tokenizer、Transformer、训练与对齐、推理优化、RAG 和评测；`style.css` 沿用本站方格纸手写风格，`app.js` 提供目录、阅读进度和主题切换。
+`llm-interview/index.html` 为从零开始的大模型面试教材，覆盖数学前置、Tokenizer、Transformer、训练与对齐、推理优化、RAG、工具 Agent 和评测；`style.css` 沿用本站方格纸手写风格，`app.js` 提供目录、阅读进度和主题切换。教材长文的源稿在 `llm-interview/textbook.md`，修改后在仓库根目录运行 `python3 llm-interview/build.py`（需要 Pandoc）即可重新嵌入 HTML；各章后面保留简短面试速答供复习。
