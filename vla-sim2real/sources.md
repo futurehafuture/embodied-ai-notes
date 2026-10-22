@@ -36,3 +36,16 @@
 | 30 | https://huggingface.co/docs/lerobot/main/en/bring_your_own_policies | 真实成功率及复现报告要求 |
 
 来源覆盖：系统硬件与安全（19–25）、数据与模型（1–14, 26–29）、sim2real（15–18）、评估与复现（7, 14, 30）。
+
+## 真机修订新增主证据（2026-10-22）
+
+| 31–32 | https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/index.html ; https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop | 官方端到端 VLA 仿真→真机课程与代码 |
+| 33 | https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/datasets-and-models.html | 75 条仿真数据及官方 checkpoint；混合数据数目描述不一致需核对 |
+| 34–35 | https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/05-building-workspace.html ; https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/07-calibrating-so101.html | 台面、相机、5V/12V 电源、标定与端口 |
+| 36 | https://github.com/NVIDIA/Isaac-GR00T/blob/main/examples/SO100/README.md | 独立的 N1.7 SO101 微调/运行配方 |
+| 37–38 | https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/09-strategy1-dr-teleop.html ; https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/10-groot.html | 仿真示教、数据转换、N1.6 训练 |
+| 39 | https://github.com/nairb36/so101-sim2real/blob/main/experiments/baseline.md | 20 sim + 20 real 独立真机记录与相机修复 |
+| 40–41 | https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/troubleshooting.html ; https://github.com/huggingface/lerobot/blob/main/docs/source/so101.mdx | 电机、相机、校准具体故障及配置 |
+| 42–43 | https://github.com/isaac-sim/IsaacLabTutorial/blob/main/docs/SIM2REAL.md ; https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/data_config.md | 非 VLA 控制迁移实操案例及 GR00T modality 契约 |
+| 44–47 | https://github.com/huggingface/lerobot/blob/main/docs/source/il_robots.mdx ; https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop/blob/main/docker/real/scripts/so101_eval.py ; https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop/blob/main/docker/real/scripts/so101_control.py ; https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/real_world_deployment.md | 真实录制节拍、真机客户端源码审计、闭环工程指南 |
+| 48–50 | https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/11-sim-evaluation.html ; https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/12-real-evaluation.html ; https://huggingface.co/datasets/sreetz-nv/so101_teleop_vials_rack_left/resolve/main/meta/info.json | 仿真/真机命令与原始相机键核对 |

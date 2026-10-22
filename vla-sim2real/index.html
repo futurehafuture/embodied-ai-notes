@@ -86,7 +86,7 @@
   <aside class="side" aria-label="章节目录">
     <a class="brand" href="../">具身研究笔记<small>FIELD NOTES / VLA DEPLOYMENT</small></a>
     <div class="side-rule"></div>
-    <p>沿着一条真实控制链，从桌面机械臂入门，走到能够复盘的真机实验。</p>
+    <p>先读 A1–A9 的可执行路线，再查后文原理与排障。</p>
     <nav id="toc"></nav>
     <div class="meta">更新：2026-10-22<br>范围：桌面机械臂操作 · 中文长文</div>
   </aside>
@@ -97,8 +97,8 @@
       <p class="eyebrow">FIELD GUIDE 01 · SIMULATION → PHYSICAL ROBOT</p>
       <h1>VLA 如何真正 <em>Sim2Real</em></h1>
       <p class="subtitle">从模型输出，到机器人安全地动起来</p>
-      <p class="lead">这是一份按实际执行顺序写的真机部署手册。它回答的不是“仿真里成功了没有”，而是拿到机械臂、相机、示教设备和一台 GPU 之后，怎样让视觉–语言–动作模型在物理世界里可控、可测、可排障地完成任务。</p>
-      <div class="facts"><div><strong>适用对象</strong>从未做过真机的 VLA / 机器人学习研究者</div><div><strong>主要例子</strong>桌面机械臂的积木抓取与放置</div><div><strong>证据边界</strong>公开论文、官方文档与原始代码；不冒称亲历实验</div></div>
+      <p class="lead">这次从一个公开的 SO‑101＋Isaac Lab＋GR00T 真机项目入手：按装台、接线、标定、仿真示教、数据映射、训练、两端评测、故障复盘的顺序写。每一步给命令、期望证据和不能继续的条件；后半部再解释背后的控制与 Sim2Real 原理。</p>
+      <div class="facts"><div><strong>适用对象</strong>从未做过真机的 VLA / 机器人学习研究者</div><div><strong>主要例子</strong>SO‑101 抓试管放入黄色架子</div><div><strong>证据边界</strong>公开论文、官方文档与原始代码；不冒称亲历实验</div></div>
     </header>
 
     <section id="start" data-title="先看全流程">
@@ -107,6 +107,260 @@
       <div class="flow" aria-label="部署流程"><span>任务与安全边界</span><i>→</i><span>硬件/时间/坐标标定</span><i>→</i><span>仿真与接口对齐</span><i>→</i><span>真机示教</span><i>→</i><span>训练与离线验证</span><i>→</i><span>限幅部署</span><i>→</i><span>真实评测与回采</span></div>
       <p>一个重要的概念澄清：VLA 的 sim2real 有三种常见路线。<strong>纯仿真训练后迁移</strong>要求动力学、视觉和动作接口足够一致；<strong>仿真预训练 + 少量真机示教微调</strong>最适合研究型操作任务；<strong>直接用大规模真机数据预训练 + 目标平台微调</strong>严格说不是“从零仿真迁移”，但真机落地同样要处理观测/动作分布差。DROID 展示了跨场景真机数据的价值，Isaac Lab 则展示了训练、导出、部署的仿真迁移路径。<a class="cite" href="#ref-15">[15]</a><a class="cite" href="#ref-26">[26]</a><a class="cite" href="#ref-27">[27]</a></p>
       <div class="box warning"><b>先说清“实操经验”的来源</b><p>下文是依据公开真机教程、原始代码和论文整理的工程操作笔记，并非作者亲自操作某台物理机器人后的实验日志。具体按钮、默认参数、控制接口会随硬件与软件版本变化；上机以厂商手册、现场风险评估和当时安装版本为准。</p></div>
+    </section>
+
+    <section id="lab-map" data-title="实操路线与版本隔离">
+      <h2><span class="chapter-no">A1</span>先选一条能复现的真机路线</h2>
+      <p>下面贯穿一个<strong>真实存在、同时包含仿真与真机的 VLA 案例</strong>：NVIDIA 的 SO‑101 工作坊，用 Isaac Lab 采集“试管放入黄色架子”的仿真示教，用 GR00T N1.6 训练，再让同一策略服务分别连接仿真客户端和真实 SO‑101。工作坊公开了实验台、数据集、checkpoint、Docker 和真机客户端。<a class="cite" href="#ref-31">[31]</a><a class="cite" href="#ref-32">[32]</a></p>
+      <p>复现环境以工作坊仓库和它的两套容器为准：官方测试平台是 Ubuntu 22.04 以上、Docker/CUDA/NVIDIA Container Toolkit，列出的 GPU 包括 RTX 5090、RTX 6000 Pro 与 RTX 6000 Ada；别假设 Mac 上能直接运行 Isaac Sim。安装前先看仓库 README 的容器挂载清单，尤其是 <code>/dev</code>、标定目录、<code>datasets</code>、<code>models</code> 和 <code>docker/real/scripts</code>，否则容器里找不到真机或 checkpoint。<a class="cite" href="#ref-32">[32]</a></p>
+      <pre><code class="language-bash">mkdir -p ~/sim2real/models
+cd ~/sim2real
+git clone https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop.git
+cd Sim-to-Real-SO-101-Workshop
+git rev-parse HEAD | tee ~/sim2real/workshop_commit.txt
+docker build -t teleop-docker -f docker/sim/Dockerfile .
+./docker/real/build.sh blackwell  # RTX 5090 / RTX 6000 Pro；Ada GPU 改为 ada
+# 完整 docker run 挂载命令按仓库 README 执行；模型下载到 ~/sim2real/models</code></pre>
+      <details class="box practical"><summary><strong>展开：课程两套 Docker 容器的原始启动命令</strong></summary>
+      <p>在仓库根目录执行。第一套用于 Isaac Lab 仿真/示教；第二套用于 GR00T 服务与真实机器人客户端。课程在 Linux X11 环境使用 <code>xhost +</code>，显示服务权限应按实验室配置收紧。</p>
+      <pre><code class="language-bash"># 终端 A：仿真/示教。先按课程配置 X11 显示权限
+cd ~/sim2real/Sim-to-Real-SO-101-Workshop
+xhost +
+docker run --name teleop -it --privileged --gpus all --rm --network=host \
+  -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e DISPLAY \
+  -v /dev:/dev -v /run/udev:/run/udev:ro \
+  -v "$HOME/.Xauthority:/root/.Xauthority" \
+  -v "$HOME/docker/isaac-sim/cache/kit:/isaac-sim/kit/cache:rw" \
+  -v "$HOME/docker/isaac-sim/cache/ov:/root/.cache/ov:rw" \
+  -v "$HOME/docker/isaac-sim/cache/pip:/root/.cache/pip:rw" \
+  -v "$HOME/docker/isaac-sim/cache/glcache:/root/.cache/nvidia/GLCache:rw" \
+  -v "$HOME/docker/isaac-sim/cache/computecache:/root/.nv/ComputeCache:rw" \
+  -v "$HOME/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw" \
+  -v "$HOME/docker/isaac-sim/data:/root/.local/share/ov/data:rw" \
+  -v "$HOME/docker/isaac-sim/documents:/root/Documents:rw" \
+  -v "$HOME/.cache/huggingface/lerobot/calibration:/root/.cache/huggingface/lerobot/calibration" \
+  -v "$(pwd)/docker/env:/root/env" -v "$(pwd)/source:/workspace/Sim-to-Real-SO-101-Workshop/source" \
+  -v "$(pwd)/outputs:/workspace/Sim-to-Real-SO-101-Workshop/outputs" \
+  -v "$(pwd)/datasets:/workspace/Sim-to-Real-SO-101-Workshop/datasets" \
+  -v "$(pwd)/docker/real/scripts:/workspace/Sim-to-Real-SO-101-Workshop/docker/real/scripts" \
+  teleop-docker:latest</code></pre>
+      <pre><code class="language-bash"># 终端 B：GR00T 服务与真机客户端
+cd ~/sim2real/Sim-to-Real-SO-101-Workshop
+docker run -it --rm --name real-robot --network host --privileged --gpus all \
+  -e DISPLAY -v /dev:/dev -v /run/udev:/run/udev:ro \
+  -v "$HOME/.Xauthority:/root/.Xauthority" -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v "$HOME/.cache/huggingface/lerobot/calibration:/root/.cache/huggingface/lerobot/calibration" \
+  -v "$(pwd)/docker/env:/root/env" -v "$HOME/sim2real/models:/workspace/models" \
+  -v "$(pwd)/docker/real/scripts:/Isaac-GR00T/gr00t/eval/real_robot/SO100" \
+  real-robot /bin/bash</code></pre>
+      <p>服务运行后，另开终端用 <code>docker exec -it real-robot /bin/bash</code> 进入同一个容器执行真机客户端。首次启动前，在宿主机 <code>docker ps</code>、容器内 <code>ls /workspace/models</code> 和 <code>ls /dev/serial/by-id</code> 检查挂载。</p></details>
+      <p>官方模型下载命令示例：<code>hf download aravindhs-NV/grootn16-finetune_sreetz-so101_teleop_vials_rack_left --local-dir ~/sim2real/models/aravindhs-NV/grootn16-finetune_sreetz-so101_teleop_vials_rack_left</code>。下载完成后先检查 <code>checkpoint-10000</code> 是否存在，再启动服务。若你的 GPU 架构与官方镜像不同，先按仓库说明处理镜像依赖，不要在已标定的真机前现场猜一个 CUDA 环境。<a class="cite" href="#ref-33">[33]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>路线</th><th>数据与模型</th><th>本文怎么用</th></tr></thead><tbody>
+        <tr><td>先复现真实案例</td><td>工作坊的 75 条仿真示教 + GR00T N1.6 checkpoint</td><td>A2–A7；有同款真机可执行，有别的机械臂只学检查顺序</td></tr>
+        <tr><td>自己采数据并训练</td><td>LeRobot v3 数据 → GR00T N1.7 的 SO100/SO101 示例</td><td>A8；作为独立版本路线，不把 N1.7 命令拼进 N1.6 容器</td></tr>
+        <tr><td>研究非 VLA 控制迁移</td><td>IsaacLabTutorial 的相机 RL 策略与 SO‑101</td><td>A9 的执行器/关节映射案例；它不是 VLA 实验</td></tr>
+      </tbody></table></div>
+      <p>工作坊资料存在一处值得主动核对的版本差异：数据页写“75 条 sim + 5 条 real”，同页对混合训练模型又写“75 + 50”。不要用页面描述猜 checkpoint 的训练集；下载模型后保存 model card、训练配置和数据 manifest，再决定比较组。当前 N1.6 工作坊与 N1.7 官方 SO101 微调示例是不同配方。<a class="cite" href="#ref-33">[33]</a><a class="cite" href="#ref-36">[36]</a></p>
+      <div class="box practical"><b>第一天应留下的文件</b><p><code>bench_photo.jpg</code>（俯视+侧视）、<code>camera_front.png</code>、<code>camera_wrist.png</code>、<code>ports.txt</code>、<code>calibration/</code>、<code>software.txt</code>（仓库 commit、镜像 tag、模型 revision）、<code>trial_0001.json</code>。如果没有这些，后续“换模型后变差”很难定位。</p></div>
+    </section>
+
+    <section id="lab-bench" data-title="实验台、接线与设备枚举">
+      <h2><span class="chapter-no">A2</span>把仿真的桌子复制到真机</h2>
+      <p>工作坊的实体实验台是白色遮光箱、固定外部相机、腕部相机、漫射灯、灰/黑色防滑垫、带蓝盖试管和黄色四孔架；SO‑101 基座必须夹牢。官方给出外部相机约 45° 俯角，位置约离机器人后方 27 cm，并要求根据示例图像校正视角。模型的架子偏左、试管偏右；换成任意桌面摆法会改变任务分布。实际安装以两张相机截图与仿真同姿态截图的对照为最终依据。<a class="cite" href="#ref-34">[34]</a></p>
+      <ol><li><strong>断电检查：</strong>确认基座夹具、线缆活动余量、夹爪全程无剐蹭、桌上没有会被扫落的东西。试管和架子先移出运动路径。</li><li><strong>核对电源铭牌：</strong>工作坊指定的 leader 是 5 V、follower 是 12 V，并提醒不能互换；其它套件按实物铭牌，不按文章猜电压。分别贴标签后再接电。<a class="cite" href="#ref-35">[35]</a></li><li><strong>逐个识别串口：</strong>两台机械臂都插着时运行 <code>lerobot-find-port</code>，按提示只拔一条 USB，记录它属于 leader 还是 follower。Linux 优先记 <code>/dev/serial/by-id/...</code>，因为 <code>/dev/ttyACM0</code> 可能重排。</li><li><strong>逐个识别相机：</strong>运行 <code>lerobot-find-cameras opencv</code>，打开自动保存的预览图，拿手遮住其中一个镜头确认 <code>front</code>/<code>wrist</code> 名字没反。USB 重插后重复此检查。镜头对焦在抓取距离，曝光固定或至少记录设置。</li></ol>
+      <pre><code class="language-bash"># Linux 工作站；在工作坊的 teleop 容器内也可执行
+lerobot-find-port
+ls -l /dev/serial/by-id/
+lerobot-find-cameras opencv
+ls -l /dev/v4l/by-id/
+# 用你现场确认过的路径赋值；不要复制别人的 ttyACM 数字
+export ROBOT_PORT=/dev/serial/by-id/你的-follower-设备
+export TELEOP_PORT=/dev/serial/by-id/你的-leader-设备
+export ROBOT_ID=orange_robot
+export TELEOP_ID=orange_teleop
+# 相机可以使用已验证的索引；重插后重新确认
+export CAMERA_GRIPPER=2
+export CAMERA_EXTERNAL=6</code></pre>
+      <div class="box warning"><b>此关的停止条件</b><p>电源规格不明、相机身份分不清、预览帧模糊/全黑、夹具松动、线缆在全行程会卡住、串口读取偶发丢电机：均不要开始采数据或自主运动。NVIDIA 排障页给出“缺少电机 ID”“Torque_Enable 无响应”“相机索引变化”的具体报错与检查顺序。<a class="cite" href="#ref-40">[40]</a></p></div>
+    </section>
+
+    <section id="lab-calibrate" data-title="电机、标定与示教验收">
+      <h2><span class="chapter-no">A3</span>让机械臂先被人稳定操控</h2>
+      <p>若是散件首次装配，<code>lerobot-setup-motors</code> 要<strong>一次只接一个未配置电机</strong>，按提示给每个关节写 ID/波特率；全部设置后才菊花链接线。它写入电机 EEPROM，不能在所有出厂同为 ID 1 的电机串在一起时直接执行。买来的预装套件先查供应商是否已完成这一步。<a class="cite" href="#ref-41">[41]</a></p>
+      <pre><code class="language-bash"># 首次散件装配才做；每次按屏幕提示只连接那个电机
+lerobot-setup-motors --robot.type=so101_follower --robot.port="$ROBOT_PORT"
+lerobot-setup-motors --teleop.type=so101_leader --teleop.port="$TELEOP_PORT"
+# 先扶住机械臂，让各关节到机械行程中位；按提示扫到真实端点
+lerobot-calibrate --teleop.type=so101_leader --teleop.port="$TELEOP_PORT" --teleop.id="$TELEOP_ID"
+lerobot-calibrate --robot.type=so101_follower --robot.port="$ROBOT_PORT" --robot.id="$ROBOT_ID"</code></pre>
+      <p>标定时程序会允许手动转动关节：先摆中位，回车后逐轴缓慢扫全行程，夹爪也开合到端点；<strong>线缆/桌面碰到的位置不是真正机械端点</strong>。特别检查腕转轴的中位。标定文件按机器人 <code>id</code> 读取，之后示教、录制、运行必须用同一个 ID。重新标定后，旧的关节零位映射和回放可比性都需要复核。<a class="cite" href="#ref-35">[35]</a><a class="cite" href="#ref-40">[40]</a></p>
+      <pre><code class="language-bash">lerobot-teleoperate \
+  --robot.type=so101_follower --robot.port="$ROBOT_PORT" --robot.id="$ROBOT_ID" \
+  --teleop.type=so101_leader --teleop.port="$TELEOP_PORT" --teleop.id="$TELEOP_ID"</code></pre>
+      <p><strong>只做三种慢速验收动作：</strong>一轴轻微正向、同轴回零、夹爪开/合。观察 follower 是否跟手、方向是否一致、编码器是否连续；再做完整的空场取放轨迹。leader 初始姿态与 follower 差太大时先退出并人工重摆，避免连接后突然追位。按现场安全流程验证实体停机和断连行为。</p>
+      <div class="box practical"><b>记录一个数值例子</b><p>同一个关节，写下 leader/follower 的中位读数、向正方向移动时各自读数变化、回到中位的偏差；再拍两台机械臂相同姿态。任何一个关节反向、夹爪开合符号相反、从中位回来偏差很大，就先查标定、装配和电机 ID。</p></div>
+    </section>
+
+    <section id="lab-sim" data-title="仿真采集与真实对齐">
+      <h2><span class="chapter-no">A4</span>仿真里怎样采到真机有用的数据</h2>
+      <p>工作坊不是随便随机贴图：先在 Isaac Lab 中建同一白色工作台、试管、架子、相机；DR 任务在重置时改变灯光/外观和物体初态。示教员只看模型将看到的两路相机画面，不能借上帝视角“偷偷”看清物体，否则示教条件比模型部署条件更强。<a class="cite" href="#ref-37">[37]</a></p>
+      <pre><code class="language-bash"># 在 Sim-to-Real-SO-101-Workshop 的 teleop-docker 环境中
+lerobot_agent --task Lerobot-So101-Teleop-Vials-To-Rack-DR
+# 熟悉示教后，收集自己的一组仿真轨迹
+export HF_USER=你的命名空间
+lerobot_agent --task Lerobot-So101-Teleop-Vials-To-Rack-DR \
+  --repo_id "${HF_USER}/so101_teleop_vials" \
+  --repo_root "$(pwd)/datasets/so101_teleop_vials" \
+  --task_name "Pick up the vial and place it in the rack"
+lerobot-dataset-viz --repo-id "${HF_USER}/so101_teleop_vials" \
+  --root "$(pwd)/datasets/so101_teleop_vials" --episode-index 0</code></pre>
+      <p>在 Isaac Sim 视口中把两路相机都设 4:3；<kbd>R</kbd> 重置并随机化，<kbd>S</kbd> 开始/结束一条演示，<kbd>C</kbd> 撤销这条。每条只做一次完整取放；失败、掉落、手忙脚乱的路径撤销重录。官方建议自己训练时先采约 70 条；停机前等终端出现 <code>No More episodes in queue</code>，因为编码/保存是异步的。<a class="cite" href="#ref-37">[37]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>仿真随机化</th><th>为什么要量化范围</th><th>真机核对方法</th></tr></thead><tbody>
+        <tr><td>相机外参、焦距与裁切</td><td>5° 视角差可使目标落到不同像素区域</td><td>固定关节姿态，叠加仿真/真机图像，标出夹爪、试管、架子中心</td></tr>
+        <tr><td>灯光、白平衡、反光</td><td>透明试管、黄架的边缘易受曝光影响</td><td>拍不同亮度的两路图，确认目标仍可见</td></tr>
+        <tr><td>摩擦、质量、关节响应</td><td>虚拟夹爪能提起的物体真机可能滑落</td><td>慢速实测空载/带物跟踪误差和握持是否滑移</td></tr>
+        <tr><td>初态分布</td><td>离训练太远会把“泛化失败”误当控制问题</td><td>把桌面划 3×3 格，记录每格训练/测试样本数量</td></tr>
+      </tbody></table></div>
+      <p>IsaacLabTutorial 的另一份完整真机工程文档给出测量驱动响应后设置关节增益、摩擦、编码器偏置 ±0.01 rad、腕相机位置 ±3 mm/±3° 的做法。<strong>这些数值属于那台设备和那项任务</strong>，不要原样填进 GR00T 工作坊；可借鉴的是“先测名义值，再围绕测量误差随机化”。<a class="cite" href="#ref-42">[42]</a></p>
+    </section>
+
+    <section id="lab-data" data-title="数据验收与动作契约">
+      <h2><span class="chapter-no">A5</span>训练前，逐字段审查数据</h2>
+      <p>一条可训练记录至少要能说明：<code>front</code>、<code>wrist</code> 图像是哪一时刻拍的；那一刻 5 个臂关节与夹爪位置是什么；下一步动作是绝对目标还是相对增量；语言指令和物体初态是什么。GR00T 的 SO100 配置把 <code>video=[front,wrist]</code>、<code>state=[single_arm(5),gripper(1)]</code>、<code>action</code> 的 16 步预测写死在 modality 配置里；腕相机和外相机名字错了，程序依然可能跑通却学错。<a class="cite" href="#ref-36">[36]</a><a class="cite" href="#ref-43">[43]</a></p>
+      <p>工作坊的仿真数据原相机键是 <code>ego</code>（腕视角）与 <code>external_D455</code>（外视角），而 GR00T 适配器读取 <code>wrist</code> 与 <code>front</code>。转换 v3→v2 后需修改 <code>meta/modality.json</code> 里的 <code>original_key</code>。我核对了数据集原始 <code>meta/info.json</code>、模型侧命名和仿真评测的 <code>rename_map</code>：映射应为 <code>front ← external_D455</code>、<code>wrist ← ego</code>。NVIDIA 课程训练页给出的两条 <code>sed</code> 命令恰好反过来；下面按实际相机语义修正，并要求看图复核。<a class="cite" href="#ref-38">[38]</a><a class="cite" href="#ref-48">[48]</a><a class="cite" href="#ref-50">[50]</a></p>
+      <pre><code class="language-bash">cd ~/Isaac-GR00T
+export HF_DATASET_REPO_ID=sreetz-nv/so101_teleop_vials_rack_left
+export CONVERSION_ROOT=sreetz-nv_so101_teleop_vials_rack_left_conv
+export DATASET_DIR="${CONVERSION_ROOT}/${HF_DATASET_REPO_ID}"
+uv run --project scripts/lerobot_conversion \
+  python scripts/lerobot_conversion/convert_v3_to_v2.py \
+  --repo-id "$HF_DATASET_REPO_ID" --root "$CONVERSION_ROOT"
+cp examples/SO100/modality.json "$DATASET_DIR/meta/"
+sed -i \
+  -e 's|"original_key": "observation.images.front"|"original_key": "observation.images.external_D455"|g' \
+  -e 's|"original_key": "observation.images.wrist"|"original_key": "observation.images.ego"|g' \
+  "$DATASET_DIR/meta/modality.json"
+python3 -m json.tool "$DATASET_DIR/meta/modality.json" >/dev/null
+rg 'observation.images' "$DATASET_DIR/meta/modality.json"</code></pre>
+      <p>把下面这段<strong>只读检查</strong>作为每次转换后的门槛；它检查目录是否存在、相机映射所指的原始 feature 是否真的在数据里、状态与动作是否 6 维、帧率是否与方案一致。它不会打开串口。打印成功后，仍必须人工看首中末三段视频，确认两路相机语义。</p>
+      <pre><code class="language-bash">python3 - "$DATASET_DIR" &lt;&lt;'PY'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+info = json.loads((root / "meta/info.json").read_text())
+mod = json.loads((root / "meta/modality.json").read_text())
+features = info["features"]
+assert info["total_episodes"] &gt; 0
+assert info["fps"] == 30, f"unexpected fps: {info['fps']}"
+assert features["observation.state"]["shape"] == [6]
+assert features["action"]["shape"] == [6]
+for camera in ("front", "wrist"):
+    source = mod["video"][camera]["original_key"]
+    assert source in features, f"missing {camera}: {source}"
+    print(camera, "&lt;-", source, features[source]["shape"])
+print("episodes:", info["total_episodes"], "frames:", info["total_frames"])
+PY</code></pre>
+      <p><strong>注意：</strong>上述两行替换仅适用于那个仿真数据集，而且是对官方课程命令的语义修正；采自己的真实 LeRobot 数据时，多半已叫 <code>front/wrist</code>，直接复制替换会错。先读 <code>meta/info.json</code> 的 features 和 <code>meta/modality.json</code>，再用数据集可视化器抽看首、中、末 3 条轨迹：相机是不是镜像、有没有长黑帧、夹爪关闭是否恰在接触时、放置后是否真的松开。</p>
+      <div class="box practical"><b>只读验收，一条也不写电机</b><p>在数据目录运行 <code>find "$DATASET_DIR" -maxdepth 3 -type f | head</code>、<code>python3 -m json.tool "$DATASET_DIR/meta/info.json" | head -80</code>。再画 6 维状态/动作曲线，找 NaN、单帧跳变、长时间不动；统计各相机每集帧数及帧间隔。LeRobot 官方提醒：记录循环若目标 30 Hz、实际只有 25 Hz，数据时间轴仍可能按 30 FPS 生成，动作会被“压快”；务必读每集 cadence 报告与超预算次数。<a class="cite" href="#ref-44">[44]</a></p></div>
+    </section>
+
+    <section id="lab-train" data-title="N1.6 训练与仿真回放">
+      <h2><span class="chapter-no">A6</span>把仿真数据训练成 VLA，并先在仿真测</h2>
+      <p>先复现公开的 N1.6 checkpoint，可跳过耗时训练直接做“仿真 client ↔ 同一 server ↔ 真机 client”的对照。若自己训，NVIDIA 工作坊给出的参数包括 <code>NEW_EMBODIMENT</code>、<code>global_batch_size=64</code>、<code>max_steps=20000</code>、<code>learning_rate=1e-4</code>、每 5000 步保存；这些是该示例的起点，不是普适最优值。其文档还要求专门的 NVIDIA GPU 环境。<a class="cite" href="#ref-38">[38]</a></p>
+      <pre><code class="language-bash"># N1.6 工作坊训练环境，已经完成上一节 v3→v2 转换
+cd ~/Isaac-GR00T
+export NUM_GPUS=1 CUDA_VISIBLE_DEVICES=0
+export EMBODIMENT_TAG=NEW_EMBODIMENT
+export OUTPUT_DIR=/ephemeral/so101_vials_run01
+python gr00t/experiment/launch_finetune.py \
+  --base_model_path nvidia/GR00T-N1.6-3B \
+  --dataset_path "$DATASET_DIR" \
+  --modality_config_path examples/SO100/so100_config.py \
+  --embodiment_tag "$EMBODIMENT_TAG" --num_gpus "$NUM_GPUS" \
+  --output_dir "$OUTPUT_DIR" --save_steps 5000 --max_steps 20000 \
+  --learning_rate 1e-4 --global_batch_size 64 --dataloader_num_workers 4</code></pre>
+      <p>保存训练配置、数据集 revision、<code>meta/relative_stats.json</code>、checkpoint，并先用<strong>未参与训练的轨迹</strong>做 open-loop 误差曲线。这个检查能发现格式和动作尺度错误，却不能证明闭环成功；真正仿真闭环要由同一个 GR00T 服务端驱动 Isaac Lab 客户端。</p>
+      <pre><code class="language-bash"># 终端 1：工作坊 real-robot 容器，先下载官方模型到挂载的 /workspace/models
+export MODEL=aravindhs-NV/grootn16-finetune_sreetz-so101_teleop_vials_rack_left/checkpoint-10000
+python Isaac-GR00T/gr00t/eval/run_gr00t_server.py --model-path "/workspace/models/$MODEL"
+# 等待：Server is ready and listening on tcp://0.0.0.0:5555
+
+# 终端 2：teleop-docker 容器，连接同一服务端，在仿真里执行
+lerobot_eval --task Lerobot-So101-Teleop-Vials-To-Rack-Eval \
+  --rename_map '{"external_D455": "front", "ego": "wrist"}' \
+  --action_horizon 16 \
+  --lang_instruction "Pick up the vial and place it in the yellow rack" --rerun
+# 再换 -DR-Eval，只改场景随机化，记录成功率和失败阶段</code></pre>
+      <p>仿真报告至少分为“靠近/抓住/搬运/放入/松爪”五段；不要只看终端的 <code>[RACK]</code> 事件。一份独立 SO‑101 实验记录指出该事件有时会在试管未进入架孔时触发，因此作者用录像人工复核结果。<a class="cite" href="#ref-39">[39]</a></p>
+    </section>
+
+    <section id="lab-real" data-title="真机部署的逐级放行">
+      <h2><span class="chapter-no">A7</span>模型第一次上机：四道放行门</h2>
+      <p><strong>门 0：硬件独立安全。</strong>按本机说明验证实体断电/停机、follower 按要求回到初始位、清掉运动路径里的试管/架子。SO‑101 是研究桌面机械臂，不能把终端 Ctrl‑C 当成独立硬件急停。确认夹爪抓空时不会撞桌或摄像头。</p>
+      <p><strong>门 1：传感器与模型只读。</strong>读取一帧 <code>front</code> 和 <code>wrist</code>，与仿真同姿态截图并排比。保存原图和画面时间戳。对同一帧做一次模型查询，只打印动作块，不调用 <code>robot.send_action</code>；逐维检查 5 关节+夹爪的顺序、单位、是否有限值、第一步与当前实测的距离。<strong>官方示例的 <code>--passive_mode</code> 不等于这个只读步骤</strong>：工作坊代码在 passive 模式关力矩，但评测循环仍调用 <code>send_action</code>。<a class="cite" href="#ref-45">[45]</a><a class="cite" href="#ref-46">[46]</a></p>
+      <p><strong>门 2：人工监督的短时间闭环。</strong>确认低速限制、软件关节/工作区边界、过期图像拒绝、服务端超时行为均在现场实现并测过；再放一个不会损坏的软目标物，运行短片段、随时实体停机。示例的 <code>timeout</code> 配置字段没有用在主循环退出条件里，且客户端同步等待服务端；直接照搬它不会自动按时停止。以下命令展示官方接线方式，<strong>只有上述门槛都过了才可执行</strong>。<a class="cite" href="#ref-45">[45]</a></p>
+      <pre><code class="language-bash"># 终端 1：real-robot 容器中的 GR00T N1.6 策略服务
+export MODEL=aravindhs-NV/grootn16-finetune_sreetz-so101_teleop_vials_rack_left/checkpoint-10000
+python Isaac-GR00T/gr00t/eval/run_gr00t_server.py --model-path "/workspace/models/$MODEL"
+# 终端 2：同一容器 docker exec -it real-robot /bin/bash
+python Isaac-GR00T/gr00t/eval/real_robot/SO100/so101_eval.py \
+  --robot.type=so101_follower --robot.port="$ROBOT_PORT" --robot.id="$ROBOT_ID" \
+  --robot.cameras="{wrist: {type: opencv, index_or_path: $CAMERA_GRIPPER, width: 640, height: 480, fps: 30}, front: {type: opencv, index_or_path: $CAMERA_EXTERNAL, width: 640, height: 480, fps: 30}}" \
+  --policy_host=localhost --policy_port=5555 \
+  --lang_instruction="Pick up the vial and place it in the yellow rack" --rerun True</code></pre>
+      <p><strong>门 3：受控正式评测。</strong>每次都从同一校验过的初始姿态开始；随机但记录试管位置，运行成功/失败/人工接管都计入分母。官方工作坊脚本会在连接后自动插值到内部初始位，退出时又插值到 home，<strong>路径没有自动避障证明</strong>；中途断电或 Ctrl‑C 时先看机械臂姿态和周边障碍物，不要盲目重启命令。GR00T 官方实机部署指南建议把关节软限、末端工作区和动作平滑写进机器人侧控制链。<a class="cite" href="#ref-46">[46]</a><a class="cite" href="#ref-47">[47]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>应该日志化的字段</th><th>检查它能定位什么</th></tr></thead><tbody>
+        <tr><td><code>t_capture_front / t_capture_wrist / t_state</code></td><td>图像是否旧帧、两相机是否错时</td></tr><tr><td><code>t_request / t_reply / t_send</code></td><td>服务排队、网络、推理和发送延迟</td></tr><tr><td><code>q_measured / q_commanded / gripper</code></td><td>模型动作与电机跟踪误差</td></tr><tr><td><code>chunk_id / step_idx / horizon</code></td><td>是否重复执行旧动作块或块边界跳变</td></tr><tr><td><code>stop_reason / intervention / video_path</code></td><td>故障复盘，不把急停试次从分母里删掉</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="lab-own-data" data-title="真机示教与 N1.7 自训">
+      <h2><span class="chapter-no">A8</span>没有同款 checkpoint，自己从真机数据起步</h2>
+      <p>如果工作台、相机、物件不可能与工作坊对齐，先采自己的数据。LeRobot 官方建议对固定取放任务至少约 50 条、每个位置约 10 条，NVIDIA GR00T 的较一般化部署指南建议单任务约 100 条有效示教起步、200+ 更稳；这些是不同经验口径，不是最低成功率保证。先做 5 条试采，回看无误再正式采集。<a class="cite" href="#ref-44">[44]</a><a class="cite" href="#ref-47">[47]</a></p>
+      <pre><code class="language-bash"># LeRobot 当前教程风格；仓库版本请与本机 --help 核对
+export HF_USER=你的命名空间
+lerobot-record \
+  --robot.type=so101_follower --robot.port="$ROBOT_PORT" --robot.id="$ROBOT_ID" \
+  --robot.cameras="{front: {type: opencv, index_or_path: $CAMERA_EXTERNAL, width: 640, height: 480, fps: 30}, wrist: {type: opencv, index_or_path: $CAMERA_GRIPPER, width: 640, height: 480, fps: 30}}" \
+  --teleop.type=so101_leader --teleop.port="$TELEOP_PORT" --teleop.id="$TELEOP_ID" \
+  --dataset.repo_id="${HF_USER}/vials_pilot_01" --dataset.num_episodes=5 \
+  --dataset.single_task="Pick up the vial and place it in the rack" \
+  --dataset.push_to_hub=False</code></pre>
+      <p>录制时 <kbd>→</kbd>/<kbd>n</kbd> 提前结束并进入下一条，<kbd>←</kbd>/<kbd>r</kbd> 废弃并重录，<kbd>Esc</kbd>/<kbd>q</kbd> 结束并编码。正式集用新 repo ID，避免把试采的坏样本混进去；如需续录，LeRobot 文档要求 <code>--resume=true</code> 与相同的本地 root，并且 <code>num_episodes</code> 是“新增条数”。正式训练可把前段成功演示、接触边界、不同初态均匀覆盖；不要把评测失败试次悄悄改名放入训练集。<a class="cite" href="#ref-44">[44]</a></p>
+      <p>若选择<strong>另一条独立的 N1.7 路线</strong>，按 NVIDIA 的 SO100/SO101 README 将 LeRobot v3 转为 v2，复制 <code>examples/SO100/modality.json</code>，确认相机键名，再运行如下命令。N1.7 官方示例使用“finish sandwich”数据，这里只展示命令结构；模型、任务文字和目录必须改为你的数据。<a class="cite" href="#ref-36">[36]</a></p>
+      <pre><code class="language-bash">cd "$GR00T_REPO"
+uv run --project scripts/lerobot_conversion \
+  python scripts/lerobot_conversion/convert_v3_to_v2.py \
+  --repo-id 你的用户名/你的正式数据集 --root ./converted_so101
+# 检查 ./converted_so101/你的用户名/你的正式数据集/meta/info.json 后：
+cp examples/SO100/modality.json ./converted_so101/你的用户名/你的正式数据集/meta/modality.json
+CUDA_VISIBLE_DEVICES=0 NUM_GPUS=1 uv run bash examples/finetune.sh \
+  --base-model-path nvidia/GR00T-N1.7-3B \
+  --dataset-path ./converted_so101/你的用户名/你的正式数据集 \
+  --modality-config-path examples/SO100/so100_config.py \
+  --embodiment-tag NEW_EMBODIMENT --output-dir ./runs/so101_run01
+uv run python gr00t/eval/open_loop_eval.py \
+  --dataset-path ./converted_so101/你的用户名/你的正式数据集 \
+  --embodiment-tag NEW_EMBODIMENT --model-path ./runs/so101_run01/checkpoint-10000 \
+  --traj-ids 0 --execution-horizon 16 --steps 400</code></pre>
+      <p>GR00T 的 <code>so100_config.py</code> 对 5 个臂轴使用相对动作、夹爪使用绝对动作；若改了 <code>delta_indices</code> 或动作 horizon，官方要求重新生成 <code>meta/relative_stats.json</code>，不能沿用旧统计。正式上机的 N1.7 服务命令与客户端命令见其 <a href="https://github.com/NVIDIA/Isaac-GR00T/blob/main/examples/SO100/README.md">SO101 官方 README</a>；执行前照 A7 重新做四道放行门。<a class="cite" href="#ref-43">[43]</a></p>
+    </section>
+
+    <section id="lab-debug" data-title="失败定位、评测表与案例">
+      <h2><span class="chapter-no">A9</span>一次失败之后，先改哪一个环节</h2>
+      <p>独立实验记录 <a href="https://github.com/nairb36/so101-sim2real">nairb36/so101-sim2real</a> 使用 SO‑101 + GR00T N1.6：早期真机表现受相机朝向不匹配明显影响；修正视角后，同一 checkpoint 的 20 次仿真/20 次真机逐阶段统计为<strong>抓起 19/20 vs 15/20，端到端 10/20 vs 8/20</strong>。这些只是该团队的小样本测量，不能当一般性能承诺。它说明：如果抓取阶段掉得最多，先查相机、初态、夹爪接触；若抓起后运输相似，而放置阶段两边都差，就别把后者全归咎于 sim2real。<a class="cite" href="#ref-39">[39]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>眼前现象</th><th>优先检查的证据</th><th>下一项单变量实验</th></tr></thead><tbody>
+        <tr><td>画面正确，手总抓偏同一方向</td><td>两相机对应、外参/裁切、真实手爪在图中位置</td><td>固定物体和姿态，只调整相机对齐</td></tr>
+        <tr><td>只有真机抬不起来</td><td>夹爪反馈、关节目标/实测、滑移录像</td><td>保持视觉不变，只测握持力与摩擦模型</td></tr>
+        <tr><td>到架子前停顿、忽快忽慢</td><td>每次 request→reply、动作块边界与 30 Hz 节拍</td><td>只改动作块执行长度或异步推理策略</td></tr>
+        <tr><td>每次结果大起大落</td><td>初态网格、灯光、USB 索引、相机是否移位</td><td>固定初态做重复性测试，再逐项放开</td></tr>
+        <tr><td>仿真成功提示但视频显示没放入</td><td>物体最终物理位置、夹爪是否松开</td><td>改成功判定，不先改模型</td></tr>
+      </tbody></table></div>
+      <pre><code class="language-text">trial_id,policy,sim_or_real,start_cell,pick,transport,place,end_to_end,intervention,stop_reason,video
+001,ckpt10000,real,B2,1,1,0,0,0,normal,trial001.mp4
+002,ckpt10000,real,C1,0,0,0,0,1,operator_stop,trial002.mp4
+# 分母 = 全部启动的试次；人工接管与急停另列，不从分母删除。</code></pre>
+      <p>测延迟要拆开：<code>capture → preprocess → network send → server queue → inference → reply → execute</code>，记录均值、P95、P99 与最差值。上述独立案例的 100 次网络往返均值约 39.7 ms，曾有约 159 ms 尖峰；作者明确说这<strong>尚未证明</strong>是抓取失败的根因。GR00T 官方区分 30 FPS 相机/动作发送与较低的模型推理频率；动作块和异步请求是桥梁，但旧帧、过期回复仍需客户端明确拒绝。<a class="cite" href="#ref-39">[39]</a><a class="cite" href="#ref-47">[47]</a></p>
+      <div class="box warning"><b>别把“别人机器上的阈值”拿来当你的安全阈值</b><p>IsaacLabTutorial 那套非 VLA 系统有校准哈希、关节映射验证、无电机写入的 dry run、5 秒再 30 秒逐级运行、图像/反馈过期即退出和 trace 文件；这些机制比照抄其 ±3 mm、100 ms、关节角数值更值得学。每台实机仍需按设备铭牌、驱动说明和现场风险评估设边界。<a class="cite" href="#ref-42">[42]</a></p></div>
     </section>
 
     <section id="contract" data-title="模型与控制链">
@@ -357,7 +611,7 @@ lerobot-rollout \
 
     <section id="references" data-title="原始资料与进一步阅读">
       <h2><span class="chapter-no">↗</span>原始资料与进一步阅读</h2>
-      <p>以下均为本篇写作时检索并读取的官方文档、原始代码或原论文。文档随版本更新，命令以你实际安装的版本为准。访问日期：2026-10-22。</p>
+      <p>以下为写作时检索的官方教程、原始代码、原论文与一份公开个人真机实验记录。命令属于对应版本的示例，执行前核对安装版本和硬件。访问日期：2026-10-22。</p>
       <ol class="refs">
         <li id="ref-1"><a href="https://huggingface.co/docs/lerobot/il_robots">LeRobot · Imitation Learning on Real-World Robots</a></li>
         <li id="ref-2"><a href="https://huggingface.co/docs/lerobot/main/cheat-sheet">LeRobot · Cheat sheet</a></li>
@@ -389,6 +643,26 @@ lerobot-rollout \
         <li id="ref-28"><a href="https://arxiv.org/abs/2303.04137">Diffusion Policy paper</a></li>
         <li id="ref-29"><a href="https://github.com/tonyzhaozh/act/blob/main/imitate_episodes.py">ACT · real robot rollout implementation</a></li>
         <li id="ref-30"><a href="https://huggingface.co/docs/lerobot/main/en/bring_your_own_policies">LeRobot · Adding a policy / reporting results</a></li>
+        <li id="ref-31"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/index.html">NVIDIA · Train an SO-101 Robot From Sim-to-Real With NVIDIA Isaac</a></li>
+        <li id="ref-32"><a href="https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop">NVIDIA · SO‑101 Workshop 原始仓库</a></li>
+        <li id="ref-33"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/datasets-and-models.html">NVIDIA · 工作坊数据与模型清单</a></li>
+        <li id="ref-34"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/05-building-workspace.html">NVIDIA · 实验台尺寸与相机摆放</a></li>
+        <li id="ref-35"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/07-calibrating-so101.html">NVIDIA · SO‑101 电源与标定</a></li>
+        <li id="ref-36"><a href="https://github.com/NVIDIA/Isaac-GR00T/blob/main/examples/SO100/README.md">NVIDIA Isaac-GR00T · SO100/SO101 N1.7 微调与运行</a></li>
+        <li id="ref-37"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/09-strategy1-dr-teleop.html">NVIDIA · Isaac Lab 域随机化与仿真示教</a></li>
+        <li id="ref-38"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/10-groot.html">NVIDIA · GR00T N1.6 数据转换与训练命令</a></li>
+        <li id="ref-39"><a href="https://github.com/nairb36/so101-sim2real/blob/main/experiments/baseline.md">SO‑101 独立实验 · 20 次仿真/20 次真机逐次日志</a></li>
+        <li id="ref-40"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/troubleshooting.html">NVIDIA · 真机排障手册</a></li>
+        <li id="ref-41"><a href="https://github.com/huggingface/lerobot/blob/main/docs/source/so101.mdx">LeRobot · SO‑101 装配、电机配置、标定原文</a></li>
+        <li id="ref-42"><a href="https://github.com/isaac-sim/IsaacLabTutorial/blob/main/docs/SIM2REAL.md">IsaacLabTutorial · 非 VLA 相机策略真机工程实例</a></li>
+        <li id="ref-43"><a href="https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/data_config.md">Isaac-GR00T · modality 与相对动作统计</a></li>
+        <li id="ref-44"><a href="https://github.com/huggingface/lerobot/blob/main/docs/source/il_robots.mdx">LeRobot · 示教录制、节拍报告与回放</a></li>
+        <li id="ref-45"><a href="https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop/blob/main/docker/real/scripts/so101_eval.py">SO‑101 工作坊 · 真机客户端原始代码</a></li>
+        <li id="ref-46"><a href="https://github.com/isaac-sim/Sim-to-Real-SO-101-Workshop/blob/main/docker/real/scripts/so101_control.py">SO‑101 工作坊 · 初始位、home 与 passive_mode 实现</a></li>
+        <li id="ref-47"><a href="https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/real_world_deployment.md">Isaac-GR00T · 实机部署工程指南</a></li>
+        <li id="ref-48"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/11-sim-evaluation.html">NVIDIA · 工作坊仿真评测</a></li>
+        <li id="ref-49"><a href="https://docs.nvidia.com/learning/physical-ai/sim-to-real-so-101/latest/12-real-evaluation.html">NVIDIA · 工作坊真机评测</a></li>
+        <li id="ref-50"><a href="https://huggingface.co/datasets/sreetz-nv/so101_teleop_vials_rack_left/resolve/main/meta/info.json">工作坊仿真数据 · 原始 meta/info.json</a></li>
       </ol>
       <p class="endnote">本篇由 AI 根据公开资料检索整理，关键事实附有原始链接。它反映检索时点的公开信息，可能存在版本差异或遗漏；文中的现场操作建议须结合具体设备、厂商手册和实验室安全流程验证。</p>
     </section>
