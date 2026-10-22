@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="具身 VLA 岗位基础知识与面试路线：机器人学、视觉、模仿学习、强化学习、VLA 架构、数据、评测、仿真、真机部署和作品集。">
-<title>应聘具身 VLA：基础知识、项目与面试路线 · 研究笔记</title>
+<meta name="description" content="具身 VLA 岗位缺失基础知识详解：坐标变换与雅可比、相机几何、行为克隆、ACT、扩散与流匹配、机器人数据、闭环评测和部署，配公式、算例与代码。">
+<title>应聘具身 VLA：从基础推导到闭环实验 · 研究笔记</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&amp;family=Long+Cang&amp;family=Kalam:wght@400;700&amp;display=swap" rel="stylesheet">
@@ -49,6 +49,13 @@
   .article a{overflow-wrap:anywhere}
   .article code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(47,93,158,.09);padding:2px 5px;border-radius:3px}
   .formula{font:16px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;background:var(--card);border:1px dashed var(--grid-strong);padding:14px 16px;margin:15px 0 21px;overflow:auto}
+  .article pre{font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;overflow:auto;background:rgba(36,50,74,.07);border:1px dashed var(--grid-strong);padding:15px 17px;margin:16px 0 23px}
+  .article pre code{background:none;padding:0}
+  .worked{max-width:850px;margin:22px 0;padding:18px 20px 8px;border:1.5px solid var(--grid-strong);background:var(--card);box-shadow:3px 4px 0 var(--grid)}
+  .worked h4{font:23px/1.4 var(--f-head);margin:0 0 9px;color:var(--red)}
+  .worked p:last-child,.worked ul:last-child{margin-bottom:8px}
+  .coverage{max-width:900px;margin:26px 0;border:1px dashed var(--grid-strong);background:var(--card);padding:10px 16px}
+  .coverage summary{cursor:pointer;color:var(--blue);font-weight:700}
   .note{border-left:4px solid var(--blue);background:var(--card);padding:15px 19px 3px;margin:21px 0;max-width:850px}
   .note.important{border-color:var(--red);background:var(--red-soft)}
   .note b:first-child{display:block;margin-bottom:5px}
@@ -74,8 +81,8 @@
 <div class="reading-progress" aria-hidden="true"><span id="progress"></span></div>
 <div class="layout">
   <aside class="sidebar" aria-label="章节目录">
-    <a class="brand" href="../">研究笔记<small>VLA INTERVIEW MAP</small></a>
-    <p>先把闭环讲清，再读模型；每个知识点都要能落到一次实验。</p>
+    <a class="brand" href="../">研究笔记<small>VLA FOUNDATIONS</small></a>
+    <p>带着例题和实验读基础，再把模型接到机器人闭环。</p>
     <nav id="toc" aria-label="目录"></nav>
   </aside>
   <main class="article">
@@ -83,16 +90,22 @@
     <header class="cover">
       <a class="back" href="../">← 返回总目录</a>
       <p class="eyebrow">EMBODIED AI / CAREER FIELD NOTES</p>
-      <h1>应聘具身 <em>VLA</em> 岗位<br>先补哪些基础？</h1>
-      <p class="subtitle">从数学与机器人学，到模型、数据、实验和真机</p>
-      <p class="lead">把 VLA 当作一个受物理约束的闭环系统来学：视觉和语言给出条件，策略生成动作，控制器执行，机器人在新的观测下继续修正。面试中既要解释模型，也要说清数据如何采、动作如何落地、失败如何定位。</p>
+      <h1>应聘具身 <em>VLA</em> 岗位<br>把缺的基础学懂</h1>
+      <p class="subtitle">推导、算例、代码与闭环实验</p>
+      <p class="lead">这篇从一个机械臂抓取任务出发，逐步解释坐标系、相机、控制、模仿学习、动作生成、机器人数据与评测。每一章都回答三个问题：它是什么、为什么会影响 VLA、怎样用计算或实验验证。已有的 π0、GR00T 和 Flow Matching 精读可在理解这些基础后继续阅读。</p>
       <div class="facts"><div><strong>适用方向</strong>机器人学习 / VLA 算法与工程岗位</div><div><strong>优先级</strong>P0 必会 · P1 深挖 · P2 按岗位选择</div><div><strong>资料日期</strong>2026-10-22 · 以原始论文和官方文档为主</div></div>
     </header>
 
-    <section id="position" data-title="岗位要求与现有笔记">
-      <h2><span class="chapter-no">00</span>先看岗位到底要什么</h2>
+    <section id="position" data-title="从一次抓取看完整闭环">
+      <h2><span class="chapter-no">00</span>从一次抓取看完整 VLA 闭环</h2>
+      <p>先设定具体任务：桌面上有红色积木，机器人要把它放进左边盒子。相机看到的是像素，关节编码器读到的是当前位置，指令给出“红色”和“左边”的语义。策略必须把三者结合，输出未来一小段动作；控制器再把动作变为受限、可执行的运动。机器人每走几步就重新观察，发现积木滑动或被碰歪时要修正。这条链就是本文后面所有基础知识的共同背景。</p>
+      <div class="worked"><h4>完整的一次决策</h4>
+        <p><strong>观测：</strong>桌面相机 1 张、腕部相机 1 张，当前关节/夹爪状态与时间戳。<strong>理解：</strong>视觉编码器提取物体与盒子的图像特征，语言 token 指定要操作哪一个物体和目标。<strong>预测：</strong>策略生成未来 16 步的动作块。<strong>执行：</strong>假设控制频率 20 Hz，只执行前 4 步，约 0.2 秒后重新拍照和预测。<strong>反馈：</strong>若积木没被夹住或被推偏，新的观测应改变下一段动作。这里的“16 步、4 步、20 Hz”是教学算例，不是设备通用参数。</p>
+        <p>任何一环出错都可能表现为“抓取失败”：相机外参错会抓偏；图像旧帧会追错位置；训练数据没有失败恢复动作会在失误后继续错；动作单位或关节顺序错会朝错误方向动；推理太慢会在两个块之间停顿。因此排障不能只看网络 loss。</p>
+      </div>
       <p>近期 VLA 岗位描述反复出现五类工作：<strong>训练视觉/语言条件策略、构建多模态数据流水线、定义动作和控制接口、在仿真与真机评测、处理延迟和失败</strong>。例如 Agile Robots 的 VLA 工程岗位把这些列为职责，同时要求 Python/PyTorch、机器人硬件或 ROS 经验；偏训练评测的岗位则更强调数据、实验和基准。这是对具体公开岗位的归纳，不代表每家公司完全相同。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-2">[2]</a></p>
       <div class="flow" aria-label="岗位工作闭环"><span>任务定义</span><i>→</i><span>采集/清洗数据</span><i>→</i><span>训练策略</span><i>→</i><span>离线与仿真评测</span><i>→</i><span>真机运行</span><i>→</i><span>失败回采</span></div>
+      <details class="coverage"><summary>展开：本站已有内容与本文补充的部分</summary>
       <div class="table-scroll"><table><thead><tr><th>知识模块</th><th>本站现有内容</th><th>这篇补充的缺口</th><th>优先级</th></tr></thead><tbody>
         <tr><td>VLA 具体模型</td><td><a href="../pi0-pi05/">π0/π0.5</a>、<a href="../gr00t/">GR00T</a>、<a href="../zr0/">ZR-0</a> 已有精读</td><td>把模型放到统一问题、输入输出和基线比较中</td><td>P0</td></tr>
         <tr><td>连续动作生成</td><td><a href="../flow-matching/">Flow Matching</a> 已有推导与实验</td><td>补 BC、ACT、Diffusion Policy、离散动作 token 的选择逻辑</td><td>P0</td></tr>
@@ -100,7 +113,7 @@
         <tr><td>真机部署</td><td><a href="../vla-sim2real/">Sim2Real 手册</a> 很细</td><td>补求职前必须会推导的运动学、视觉和控制基础</td><td>P0</td></tr>
         <tr><td>数据与评测</td><td>散见各篇模型与部署笔记</td><td>补数据契约、划分原则、指标、统计和失败分类</td><td>P0</td></tr>
         <tr><td>求职输出</td><td>GR00T 和 π0 有局部自测题</td><td>补可展示项目、讲项目模板、分阶段学习计划</td><td>P0</td></tr>
-      </tbody></table></div>
+      </tbody></table></div></details>
       <div class="note important"><b>范围选择</b><p>若目标是机械臂操作 VLA，优先掌握下文 P0。若岗位偏人形、导航、灵巧手或世界模型，再按需求扩展全身控制、SLAM/规划、触觉接触或视频预测。不要把所有子方向当作同一份入门清单。</p></div>
     </section>
 
@@ -113,6 +126,22 @@
 p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
       <h3>1.2 运动学、雅可比与控制</h3>
       <p>前向运动学 <code>x=f(q)</code> 从关节角得到末端位姿；逆运动学从目标位姿找可行关节解，可能多解、无解或接近奇异点。局部速度关系 <code>ẋ=J(q)q̇</code> 说明为什么同一个末端速度在不同姿态下需要不同关节速度。知道位置、速度、力矩控制各自的含义，能解释策略输出的关节目标为什么仍需底层伺服、限位和碰撞检查。<a class="cite" href="#ref-3">[3]</a><a class="cite" href="#ref-5">[5]</a></p>
+      <div class="worked"><h4>手算 1：一串坐标变换到底怎么乘？</h4>
+        <p>设相机相对基座只平移了 <code>(0.40, 0, 0.20) m</code>，两坐标轴同向；相机观测到目标点 <code>p_C=(0.10, 0, 0.50) m</code>。因为 <code>T_BC</code> 是“相机系 → 基座系”，所以 <code>p_B=T_BC·p_C=(0.50, 0, 0.70) m</code>。若相机旋转了，必须先用 <code>R_BC p_C</code> 再加 <code>t_BC</code>，不能直接相加。</p>
+        <p>容易犯的错是把 <code>T_CB</code> 当作 <code>T_BC</code>。两者互逆：<code>R_CB=R_BCᵀ</code>，<code>t_CB=−R_BCᵀt_BC</code>。实测时把相机原点代入变换：它在基座系应落在相机安装位置；这个简单检查比盲看矩阵数字可靠。</p>
+      </div>
+      <h3>1.3 用两关节平面臂看懂雅可比</h3>
+      <p>假设两根连杆各长 <code>0.5 m</code>，关节角 <code>q₁,q₂</code>。末端位置为 <code>x=l₁cos q₁+l₂cos(q₁+q₂)</code>、<code>y=l₁sin q₁+l₂sin(q₁+q₂)</code>。对两个关节角分别求偏导，就得到把关节速度映射成末端速度的雅可比。它不是另一套神秘模型，而是前向运动学的局部导数。</p>
+      <div class="formula">J(q) = [ −l₁sin q₁−l₂sin(q₁+q₂)   −l₂sin(q₁+q₂) ]
+       [  l₁cos q₁+l₂cos(q₁+q₂)    l₂cos(q₁+q₂) ]
+q=(0, π/2) 时：p=(0.5,0.5)m，J=[−0.5 −0.5; 0.5 0]
+若 q̇=(0.2,−0.2)rad/s，则 ṗ=Jq̇=(0,0.1)m/s。</div>
+      <p>这个结果说明：两个关节方向相反地运动，末端可近似沿竖直方向移动。接近完全伸直时，某些方向的运动需要很大的关节速度；逆雅可比会变得不稳定，这就是面试里常问的奇异位形。工程上会用阻尼伪逆、速度限制或重新规划，但限幅必须由机器人控制层执行。</p>
+      <h3>1.4 策略给目标，控制器负责跟踪</h3>
+      <p>若 VLA 输出的是下一帧关节目标 <code>q*</code>，一个简化的位置伺服可按 <code>q̇_cmd=Kp(q*−q)</code> 计算速度命令；真实设备还有限速、加速度、碰撞和驱动约束。若输出末端增量 <code>Δx</code>，通常还要经过坐标变换和逆运动学/伺服，不能把六维向量直接发给七个关节。动作语义错了，即使离线 loss 很小也会把机械臂带向错误方向。</p>
+      <div class="worked"><h4>小实验：先检查动作方向，再检查网络</h4>
+        <p>在仿真或安全低速模式给第一关节一个很小的正增量，记录关节编码器变化和末端移动方向；再逐维检查其他关节。对末端动作分别验证 <code>+x</code>、<code>+y</code>、<code>+z</code>。把结果、坐标系、单位和控制周期写进动作契约。只有这项往返测试通过，才值得训练策略。</p>
+      </div>
       <div class="note"><b>面试达标线</b><p>给你一个 7 维动作，先追问：七维分别是什么？绝对位置还是增量？相对哪个坐标系？单位和频率是什么？夹爪方向如何定义？再谈模型结构。答不清动作语义，无法判断策略是否能安全执行。</p></div>
       <p><span class="tag">P1</span>轨迹规划、阻抗/力控制、接触动力学、模型预测控制；接触丰富的装配任务会更看重这些。<span class="tag">P2</span>全身动力学、步态、抓取稳定性或运动规划，视岗位方向深入。<a class="cite" href="#ref-5">[5]</a></p>
     </section>
@@ -121,8 +150,38 @@ p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
       <h2><span class="chapter-no">02</span>视觉：从像素到可用观测</h2>
       <p><span class="tag">P0</span>掌握针孔相机模型、内外参、畸变、手眼标定、RGB/RGB-D、多相机时间同步。像素不自动等于三维位置：深度、相机姿态和坐标系一致性决定能否把目标位置交给机器人。OpenCV 的标定文档给出了相机矩阵和投影关系。<a class="cite" href="#ref-6">[6]</a></p>
       <div class="formula">s · [u, v, 1]ᵀ = K · [R | t] · [X, Y, Z, 1]ᵀ</div>
-      <h3>2.1 深度学习与 Transformer 最低必备</h3>
+      <h3>2.1 从像素反投影到三维</h3>
+      <p>相机内参 <code>K</code> 里的 <code>fₓ,fᵧ</code> 是以像素计的焦距，<code>cₓ,cᵧ</code> 是主点。若有同一像素的可靠深度 <code>Z</code>，可以反投影：<code>X=(u−cₓ)Z/fₓ</code>、<code>Y=(v−cᵧ)Z/fᵧ</code>。所得 <code>(X,Y,Z)</code> 首先处于<strong>相机坐标系</strong>，还要乘相机到基座的外参才能用于末端控制。没有深度时，一个像素对应空间中的一条射线，不能凭单帧 RGB 唯一恢复距离。<a class="cite" href="#ref-6">[6]</a></p>
+      <div class="worked"><h4>手算 2：像素不是米</h4>
+        <p>设 <code>fₓ=fᵧ=600 px</code>、主点 <code>(320,240)</code>，目标像素 <code>(380,240)</code>，深度 <code>Z=0.50 m</code>。则 <code>X=(380−320)×0.50/600=0.05 m</code>，<code>Y=0</code>，相机系目标点为 <code>(0.05,0,0.50) m</code>。若该像素对应的是物体上沿而非抓取点，还需感知/几何模块确定抓取位置；投影公式只解决坐标，不解决语义。</p>
+      </div>
+      <p>标定误差会放大为动作误差。例如相机安装后移动几毫米，旧外参就不再代表当前设备；深度反光或遮挡也可能令 <code>Z</code> 错误。用标定板或已知尺寸物体验证重投影误差，再在工作区不同位置检查三维落点，不能只在图像中心验一次。</p>
+      <h3>2.2 图像、状态和动作必须来自同一时刻</h3>
+      <p>策略在 <code>t</code> 时刻收到的应是尽量接近该时刻的图像与机器人状态。设相机 30 Hz、状态 100 Hz、策略 20 Hz，三者不能靠数组索引 <code>i</code> 强行配对；应以采集时间戳取最近观测，并记录两者相差多少。若相机队列积压 200 ms，策略“看见”的物体仍在旧位置，而驱动执行的是当前时刻的动作。即使每路日志都显示正常帧率，也会闭环失败。</p>
+      <div class="formula">age_image(t) = t_policy − t_image_capture
+Δ_sync(t) = |t_image_capture − t_robot_state|
+若 age 或 Δ_sync 超过按任务速度设定的阈值：拒绝动作或保持安全状态。</div>
+      <p>手眼标定通常要解相机与末端或基座之间的刚体变换；相机固定在腕部和固定在桌面时，变换链不同。固定相机常需 <code>T_base_camera</code>，腕部相机还需使用当前时刻的 <code>T_base_tool(t)</code>。ROS tf2 可以按时间查询变换，但时间戳错误会让正确的矩阵也对应错误姿态。<a class="cite" href="#ref-4">[4]</a></p>
+      <h3>2.3 深度学习与 Transformer：张量怎样连接</h3>
       <p>能用 PyTorch 写张量运算、自动求导、Dataset/DataLoader、训练与验证循环；理解梯度下降、AdamW、学习率、过拟合、数据增强、混合精度和 checkpoint。多模态模型还要会算注意力 <code>softmax(QKᵀ/√d)V</code>，分清 self-attention 与 cross-attention、因果掩码与双向注意力、图像 patch token 与语言 token 如何拼接或交互。本站的 <a href="../llm-interview/">大模型面试八股</a> 可补 Transformer 与微调基础。<a class="cite" href="#ref-20">[20]</a><a class="cite" href="#ref-21">[21]</a></p>
+      <p>以一批两路相机、每图 224×224 的数据为例：图像张量形状可写为 <code>[B,2,3,224,224]</code>，状态为 <code>[B,S]</code>，文本 token 为 <code>[B,L]</code>。视觉编码器把每路图像变成若干 token；投影层把视觉特征映射到语言主干的宽度；状态可能作为单独 token、连续向量或送入动作专家。进入注意力层前要核对每类 token 的顺序、位置编码和 mask。形状对了但相机顺序错了，模型照样能运行却会学错。</p>
+      <div class="worked"><h4>手算 3：注意力为什么要除以 √d？</h4>
+        <p>点积 <code>QKᵀ</code> 汇集 <code>d</code> 个通道，维度增大时数值幅度通常变大。除以 <code>√d</code> 把 logits 的尺度压回相对稳定的范围，避免 softmax 过早饱和。一个长度 <code>N</code>、宽度 <code>d</code> 的序列，注意力权重形状是 <code>[N,N]</code>；多相机和长文本会显著增加 token 数，推理成本与延迟因此成为 VLA 工程问题。<a class="cite" href="#ref-21">[21]</a></p>
+      </div>
+      <h3>2.4 一次最小训练步实际做了什么</h3>
+      <p>对连续动作的 BC 基线，模型输出与标签形状都是 <code>[B,H,A]</code>。前向计算损失；反向传播把损失对参数的梯度求出；优化器更新参数。验证时必须停止梯度更新，并按完整 episode 汇总指标。下面只展示核心步骤，<code>policy</code> 及数据批次需按具体项目定义：</p>
+      <pre><code>import torch.nn.functional as F
+from torch.nn.utils import clip_grad_norm_
+
+policy.train()
+pred = policy(images, state, text_ids)  # [B, H, A]
+assert pred.shape == target_actions.shape
+loss = F.mse_loss(pred, target_actions)
+optimizer.zero_grad(set_to_none=True)
+loss.backward()
+clip_grad_norm_(policy.parameters(), max_norm=1.0)
+optimizer.step()</code></pre>
+      <p>若训练 loss 降而验证 loss 升，先查数据划分、增强、任务覆盖和训练时长；若两者都降但闭环失败，继续查动作契约、时序同步与分布偏移。微调 VLA 时还应确认哪些模块真的有梯度：冻结视觉编码器、只训动作头、LoRA 和全参训练得到的是不同实验，报告中要明确。</p>
       <p>再掌握视觉编码器把图像切成 patch、生成 token 的基本过程；知道多视角图像如何与机器人本体状态、语言 token 融合。VLM 的视觉语义能力不能保证精确控制，接触点、遮挡、反光和视角变化会造成策略输入分布偏移。OpenVLA 使用融合视觉编码器并由语言模型预测动作 token，是一个可读的范例。<a class="cite" href="#ref-7">[7]</a></p>
       <div class="note"><b>能做的检查</b><p>随机抽一条 episode：同时显示所有相机画面、时间戳、关节状态和任务文本；确认左右腕相机没有交换、色序和分辨率一致、图像不是旧帧。视觉问题先通过可视化定位，不要直接归咎于“模型泛化差”。</p></div>
       <p><span class="tag">P1</span>目标检测/分割、深度与点云、目标姿态估计、视觉表征预训练。<span class="tag">P2</span>触觉、力觉与跨模态融合，视岗位传感器配置而定。</p>
@@ -143,13 +202,43 @@ p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
         <tr><td>Flow Matching</td><td>学习从噪声到动作的速度场</td><td>插值路径、速度监督、ODE 采样</td></tr>
         <tr><td>离散动作 token</td><td>量化动作并自回归预测</td><td>量化误差、序列长度、解码成本</td></tr>
       </tbody></table></div>
+      <h3>3.3 为什么回归均值会让机器人犹豫</h3>
+      <p>想象桌上有障碍，专家有两条等价路线：从左绕对应动作 <code>a=−1</code>，从右绕对应 <code>a=+1</code>。如果图像不足以区分专家接下来选哪条路线，均方误差回归的最优预测是条件均值 <code>E[a|o]=0</code>。机器人因此直冲障碍或原地犹豫。<strong>多峰不是噪声</strong>，而是一个观测下存在几种可行行为；CVAE、扩散、流匹配或混合密度模型尝试表示整个条件分布，再采样一条连贯轨迹。</p>
+      <div class="formula">若 P(a=−1|o)=P(a=+1|o)=0.5：
+argmin_â E[(â−a)²|o] = E[a|o] = 0
+0 不是任一专家动作；单点 MSE 小，不保证闭环任务成功。</div>
+      <p>BC 的第二个问题是状态分布偏移。训练数据里的每一帧都由专家产生；部署时策略做错一步，下一帧就可能不在专家轨迹上。DAgger 的核心是让当前策略访问状态、请专家给这些状态标动作，再把新数据并入训练集。它需要额外标注与安全控制；在真机上常用人工接管和纠错示教实现相近的数据回采思想。<a class="cite" href="#ref-19">[19]</a></p>
+      <h3>3.4 ACT：动作块、潜变量与时间集成</h3>
+      <p>ACT 不是“普通 Transformer 一次输出很多数”这么简单。训练时，CVAE 编码器读取示教动作序列，得到潜变量 <code>z</code> 的分布；解码器以图像、关节状态和 <code>z</code> 为条件输出未来 <code>H</code> 步动作。训练同时优化动作重建误差与潜变量的 KL 正则；原始 ACT 推理时不再使用动作序列编码器，而使用先验均值作为 <code>z</code>。这让模型能学到人类示教中的不同动作风格。<a class="cite" href="#ref-9">[9]</a></p>
+      <div class="formula">L_ACT = L_reconstruction(â_(t:t+H), a_(t:t+H))
+        + β · KL(qφ(z|a_(t:t+H), q_t) || p(z))</div>
+      <p>预测块长 <code>H</code> 和实际执行步数 <code>k</code> 是两个量。比如策略 20 Hz，预测 16 步覆盖 <code>0.8 s</code>；只执行前 4 步就在 <code>0.2 s</code> 后重新观察和规划。<code>k</code> 小则反应快，但需要更频繁推理；<code>k</code> 大则省推理，但更容易忽视中途扰动。ACT 的时间集成还可把“不同预测块对同一时刻的预测”加权平均；要注意它会平滑动作，也可能增加滞后。</p>
+      <div class="worked"><h4>算例：动作块为何不能只看 H</h4>
+        <p>假设每次推理和传输的 95 分位耗时是 <code>140 ms</code>。若每 <code>k=4</code> 步重规划一次，20 Hz 下新块间隔为 <code>200 ms</code>，名义上留有 60 ms 余量；还必须计入图像采集、预处理、排队和动作交接。如果尾延迟变成 230 ms，新块可能在旧块执行完后才到，机器人会停顿。把推理频率、控制频率、<code>H</code>、<code>k</code> 和尾延迟一起报告，才算解释清楚。</p>
+      </div>
+      <h3>3.5 扩散、流匹配与离散 token 的训练目标</h3>
+      <p>Diffusion Policy 给真实动作序列加噪声，训练网络在观测条件下预测噪声（或等价参数化）；推理从随机噪声开始，多步去噪生成动作块。多步生成可以表达多峰分布，但每一步都要运行网络，采样步数直接影响延迟。其项目还采用滚动时域控制：预测一段，只执行前一部分，再重新看环境。<a class="cite" href="#ref-10">[10]</a></p>
+      <div class="formula">扩散的简化训练式：x_k = √ᾱ_k · a + √(1−ᾱ_k) · ε
+L_diff = E[ ||εθ(x_k, k, o, l) − ε||² ]</div>
+      <p>Flow Matching 可取噪声 <code>z</code> 与真实动作 <code>a</code> 的线性插值 <code>x_t=(1−t)z+ta</code>，目标速度为 <code>a−z</code>。网络学会给中间点预测速度，推理时沿这个速度场积分到动作。π0 的动作专家采用连续动作的 flow matching；本站 <a href="../flow-matching/">流匹配笔记</a>有更完整的数学推导。不同论文会采用不同路径、时间方向和损失权重，读源码时必须检查约定。<a class="cite" href="#ref-11">[11]</a></p>
+      <div class="formula">x_t = (1−t)z + ta，t∈[0,1]
+L_FM = E[ ||vθ(x_t,t,o,l) − (a−z)||² ]</div>
+      <p>离散动作路线先把连续值映射为有限个 bin/token，再用自回归模型预测。它可直接借用语言模型的 token 训练形式，却要处理量化误差与多 token 解码延迟。例如把 <code>[−1,1]</code> 均匀分成 256 档，单维步长约 <code>0.0078</code>；这是玩具算例，不代表 OpenVLA 的具体数据归一化和 tokenizer。面试比较模型时先说清<strong>动作语义和评测协议</strong>，再比较“离散/连续”。<a class="cite" href="#ref-7">[7]</a></p>
       <p>对已有详解，可直接读本站的 <a href="../flow-matching/">Flow Matching</a>、<a href="../pi0-pi05/">π0/π0.5</a> 和 <a href="../gr00t/">GR00T</a>；这篇重点是比较框架。</p>
     </section>
 
     <section id="rl" data-title="强化学习与在线改进">
       <h2><span class="chapter-no">04</span>强化学习：知道何时值得用</h2>
       <p><span class="tag">P0</span>能定义 MDP：状态、动作、奖励、转移、折扣因子；能区分离线示教数据与在线交互数据，知道 reward 设计、探索风险和样本效率是机器人 RL 的关键约束。已有 <a href="../ppo/">PPO 教程</a> 足以补策略梯度与优势估计，但“会 PPO”不等于能解决真机数据问题。</p>
+      <h3>4.1 从“模仿人”到“优化结果”</h3>
+      <p>BC 只问“专家在这个观测下做了什么”，不直接知道任务是否成功；RL 则定义奖励 <code>r(s,a)</code>，优化期望累积回报 <code>E[Σγᵗr_t]</code>。以抓取放置为例，可以在物体进入盒中时给成功奖励 1、否则 0。这样的稀疏奖励很贴近任务目标，但机器人可能大量失败才偶然得到一次正反馈；增加距离奖励又可能诱导“靠近但不松手”等错误行为。这就是奖励设计和探索的实际难点。</p>
+      <div class="worked"><h4>同一任务，三类数据</h4>
+        <p><strong>示教数据：</strong>人控制机器人完成任务，适合 BC 起步。<strong>离线交互数据：</strong>已有成功与失败轨迹，可在不继续碰机器人的前提下做离线 RL。<strong>在线交互：</strong>当前策略在仿真或真机继续采样并更新，能纠正自己的分布，但要承担探索成本和安全约束。三者的训练目标、数据偏差和报告方式不同，不能把“用了历史轨迹”都叫强化学习。</p>
+      </div>
+      <h3>4.2 离线 RL 为什么会高估没试过的动作</h3>
+      <p>价值函数 <code>Q(s,a)</code> 只从数据集中的状态动作对学习。若优化器挑出一个数据中几乎没出现的动作，神经网络对它的 Q 值可能只是外推，却被当成真实高回报；再用这个高估值训练策略会进一步偏离数据。CQL 等方法通过保守地估计未充分观察的动作来缓解这种分布外问题。面试里要说清这是<strong>动作分布与价值估计</strong>的问题，不等同于 BC 的单步回归误差。<a class="cite" href="#ref-22">[22]</a></p>
       <p><span class="tag">P1</span>理解 BC 预训练后在线微调、离线 RL 的分布外动作风险、人类干预与纠错数据。LeRobot 的 HIL-SERL 教程展示了示教、奖励分类器、人工接管和在线 actor/learner 的组合；它说明了工作流，不意味着每个 VLA 岗位都要求在真机运行 SAC。<a class="cite" href="#ref-12">[12]</a></p>
+      <p>人类干预不是简单地“多采一些好示教”。操作者通常在策略即将失败时接管，这些状态恰是当前策略的薄弱处；日志要标出自主段、接管段和接管原因，训练与评测也应区分“自主成功”和“有人救回来”。HIL-SERL 的原始项目展示了将人工干预放入真实机器人 RL 工作流的做法。<a class="cite" href="#ref-23">[23]</a></p>
       <div class="note important"><b>一条实用判断</b><p>先把观测、动作和成功条件对齐；如果 BC 已能复现示教却在少数状态失败，优先分析覆盖与纠错数据。只有任务有可靠奖励、可控探索和足够交互预算时，在线 RL 才是合适的下一步。</p></div>
     </section>
 
@@ -158,6 +247,19 @@ p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
       <p>用统一记号描述问题：观测 <code>o_t</code> 包含多相机图像和本体状态，语言指令是 <code>l</code>，策略预测未来动作块 <code>a_(t:t+H)</code>。你要能说清视觉编码器、语言主干、动作头各负责什么，哪些参数训练、哪些冻结，训练标签来自哪里，输出如何反归一化并交给控制器。</p>
       <div class="formula">πθ(a_(t:t+H) | I_t^1 ... I_t^N, q_t, l)
 图像 + 状态 + 语言 → 特征融合 → 动作表示/生成 → 安全适配器 → 控制器</div>
+      <h3>5.1 跟一条样本走完训练与推理</h3>
+      <p>假设任务是“把红色积木放到左边盒子”，数据在时刻 <code>t</code> 有两张图像、当前关节和夹爪状态、这句文本，以及随后 16 步的专家动作。训练时先把图像缩放到编码器所需尺寸，把文本转成 token，状态与动作按训练集统计量归一化；模型根据前三类输入预测 16 步动作，与专家动作计算对应损失并反向传播。部署时没有未来专家动作，模型只看当前观测生成动作块，后处理恢复物理单位，安全适配器检查后只执行前几步，再获取新图像。OpenPI 文档明确状态和动作的归一化必须与机器人动作空间定义对应。<a class="cite" href="#ref-24">[24]</a></p>
+      <div class="formula">训练样本示意（不是某个模型的固定配置）
+images: [B, 2, 3, 224, 224]   state: [B, S]
+text_ids: [B, L]              target_actions: [B, 16, A]
+训练：target_actions 用来算损失
+部署：只输入 images/state/text；模型生成 [1,16,A]</div>
+      <p>“VLA 会语言”需要实验验证。若模型只在一个任务上训练，文本始终相同，它可能完全忽略语言。一个简单的对照是固定图像和状态，交换“放左盒”与“放右盒”的指令，观察动作与闭环成功条件是否随之改变；再与无文本基线比较。若结果不变，不能仅凭模型输入里有文本就声称具备语言跟随能力。</p>
+      <h3>5.2 统一动作表示比统一模型名字更难</h3>
+      <p>跨本体数据可能把动作写成关节位置、关节增量、末端绝对位姿、末端增量或速度；夹爪也可能是二值开合、连续开度或力。把不同数据集直接拼在一起训练，相同第 1 维可能代表完全不同的物理量。训练前要定义标准动作 schema，并对每种机器人实现可逆转换；不相容的自由度需 mask 或专用头处理。Open X-Embodiment 的价值在于跨机器人规模，而可训练性仍依赖数据对齐。<a class="cite" href="#ref-15">[15]</a></p>
+      <div class="worked"><h4>往返测试：防止“模型正常，机器人乱动”</h4>
+        <p>从真实数据取一个动作 <code>a_phys</code>，经过训练端编码/归一化得到 <code>a_model</code>，再用部署端解码/反归一化得到 <code>â_phys</code>。逐维检查 <code>|â_phys−a_phys|</code> 是否在数值容差内，并核对关节顺序、单位、夹爪符号。若用了离散 token，还要单独计算量化误差；若用了旋转表示，还要在姿态空间比较，不能只比欧拉角逐维差值。</p>
+      </div>
       <p>读论文的建议顺序：<strong>RT-2</strong> 看动作 token 如何接到 VLM；<strong>OpenVLA</strong> 看公开模型和跨机器人预训练；<strong>ACT / Diffusion Policy</strong> 看没有大语言主干时的强基线；<strong>π0 / π0.5</strong> 看连续动作专家与分阶段训练；最后用 <strong>GR00T</strong> 比较数据、架构和部署约束。RT-2、OpenVLA 和 π0 的原始资料都值得逐项核对，而不是背模型名称。<a class="cite" href="#ref-7">[7]</a><a class="cite" href="#ref-11">[11]</a><a class="cite" href="#ref-13">[13]</a></p>
       <div class="note"><b>读一篇 VLA 论文，固定问 8 个问题</b><p>任务与机器人是什么？观测有几路、频率多少？动作空间和 horizon 是什么？数据从哪来、怎样混合？损失与采样过程是什么？怎样微调？基线和评测协议是否一致？真机失败集中在哪些条件？</p></div>
       <p><span class="tag">P1</span>LoRA/全参微调、多任务采样、跨本体动作统一、时间条件编码和推理服务。<span class="tag">P2</span>世界模型、层级规划、视频预测与开放词汇导航，根据目标团队方向选择。</p>
@@ -175,6 +277,38 @@ p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
       </ul>
       <h3>6.2 先做数据体检，再训练</h3>
       <p>画每个动作维度的分布和时间曲线；检查 NaN、异常跳变、图像冻结、时间戳逆序、相机错位、任务文本与实际行为不符。按 episode、任务、场景和物体划分训练/验证/测试，避免同一条示教的相邻帧同时出现在训练和测试中。robomimic 的研究也强调数据质量、状态/动作覆盖会影响策略学习。<a class="cite" href="#ref-8">[8]</a></p>
+      <h3>6.3 从 episode 造出动作块样本</h3>
+      <p>一个 episode 是按时间排列的观测和动作。训练动作块策略时，在时刻 <code>t</code> 用当前观测预测 <code>a_t,…,a_(t+H−1)</code>。窗口必须留在同一 episode 内；如果跨过复位边界，标签会出现一次“瞬移”，模型却会把它当正常动作。短 episode 可以丢弃、补齐并标 mask，或采用模型要求的边界策略，但必须明确记录。</p>
+      <pre><code>import numpy as np
+
+def make_action_windows(episodes, horizon):
+    observations, targets = [], []
+    for ep in episodes:
+        obs = np.asarray(ep["observations"])
+        actions = np.asarray(ep["actions"])
+        assert len(obs) == len(actions)
+        assert np.isfinite(actions).all()
+        for t in range(len(actions) - horizon + 1):
+            observations.append(obs[t])
+            targets.append(actions[t:t + horizon])
+    if not observations:
+        raise ValueError("没有足够长的 episode 可组成动作块")
+    return np.stack(observations), np.stack(targets)
+
+# 每条 ep 独立滑窗；输出形状为 [样本数, 观测维] 与 [样本数, H, 动作维]</code></pre>
+      <p>上面代码故意只演示<strong>时间窗口</strong>，尚未接图像、语言、时间戳和缺帧处理。真实流水线要先检查各传感器以同一时钟基准对齐，再按控制时刻索引。LeRobotDataset v3 提供统一存储和索引，但“文件能被读到”不等于采集时已经对齐。<a class="cite" href="#ref-14">[14]</a></p>
+      <h3>6.4 归一化、划分与数据泄漏</h3>
+      <p>若动作维度同时含米、弧度与夹爪开度，直接用统一 MSE 会让尺度大的维度主导损失。常用每维均值/标准差或分位数缩放；<strong>只用训练集</strong>估计统计量，验证集和真机部署用同一份统计文件。分位数裁剪也要保留物理值到归一化值的确切映射，并观察饱和比例。OpenPI 文档特别提醒，归一化统计与机器人动作空间定义要匹配。<a class="cite" href="#ref-24">[24]</a></p>
+      <pre><code># train_actions: [N, H, A]；只能由训练 episode 构成
+mean = train_actions.mean(axis=(0, 1))
+std = train_actions.std(axis=(0, 1))
+std = np.maximum(std, 1e-6)
+normalized = (train_actions - mean) / std
+restored = normalized * std + mean
+assert np.allclose(restored, train_actions, atol=1e-5)</code></pre>
+      <div class="worked"><h4>一个看似漂亮的假结果</h4>
+        <p>一条 500 帧示教随机把 400 帧放训练、100 帧放测试，测试动作 MSE 可能很低，因为两边共享几乎相同的物体、背景和运动阶段。正确做法至少按完整 episode 划分；若要评估场景泛化，还要把整组新物体/新背景/新操作者留作测试。结果表必须写“泛化到什么”，而不是只写“测试集准确率”。</p>
+      </div>
       <div class="note"><b>最有说服力的项目证据</b><p>展示一个“数据错误 → 可视化定位 → 修复 → 固定评测协议下成功率变化”的完整案例，比只列出模型参数量更能说明工程能力。</p></div>
     </section>
 
@@ -184,6 +318,14 @@ p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
       <div class="formula">成功率 = 成功 episode 数 / 按预定协议运行的 episode 数
 比较 A 与 B：固定任务/初态采样/时限/安全参数，报告每类失败数量</div>
       <p>一张高质量结果表至少有模型版本、数据版本、任务/场景、样本量、成功数、成功率和失败类别。若只做 5 次，报告 4/5 而不写成“80% 已证明泛化”；小样本不确定性很大。测试集和调参集必须分开，比较模型时尽量使用相同初态与相同硬件条件。</p>
+      <h3>7.1 同一个模型，为什么三个指标会说不同的话</h3>
+      <p><strong>离线动作误差</strong>在预录数据上比较预测与专家标签，能发现训练和编码问题，却不知道动作执行后下一帧会怎样。<strong>仿真闭环成功率</strong>让策略影响未来观测，能暴露分布偏移，但接触和传感器模型未必真实。<strong>真机成功率</strong>最贴近目标设备，但受复位、磨损、操作者和现场安全约束影响，成本较高。三者应形成诊断链，不能互相替代。</p>
+      <div class="worked"><h4>手算 4：8 次成功 / 10 次试验说明什么？</h4>
+        <p>点估计是 <code>8/10=80%</code>。用 Wilson 方法计算，约 95% 区间为 <code>49%–94%</code>；区间很宽，说明 10 次不足以精确区分两个相近策略。报告写“在预先规定的 10 次试验中成功 8 次”，附完整初态和失败录像。若要比较 A/B，最好对同一批预定义初态分别运行，并记录每个初态的成败，而不是让 A 只碰简单物体、B 只碰困难物体。<a class="cite" href="#ref-25">[25]</a></p>
+      </div>
+      <h3>7.2 预先写协议，避免看完结果再改成功定义</h3>
+      <p>以“红色积木放入盒中”为例：复位时从标记区域随机摆放积木；每次最多 30 秒；积木进入盒内且松开夹爪后保持 2 秒才算成功；人工接管、超时、安全停机分别记为失败类型。冻结 checkpoint、相机位置、任务文本与控制参数，训练和调参用的初态不参加正式测试。这样结果才能被他人重复，失败视频也能指向具体环节。</p>
+      <p>做消融时一次只改变一个可解释因素，例如“是否有腕部相机”“H=8 还是 16”“有无语言输入”。同一任务下记录成功率之外，还要记录每次端到端延迟的中位数与高分位、动作拒绝次数和接管次数。若某模型成功率更高但频繁触发安全停机，不能只展示成功率。</p>
       <div class="table-scroll"><table><thead><tr><th>失败现象</th><th>先查什么</th><th>再考虑什么</th></tr></thead><tbody>
         <tr><td>总是朝反方向动</td><td>坐标系、动作符号、关节顺序、反归一化</td><td>模型结构</td></tr>
         <tr><td>靠近物体就停顿</td><td>推理尾延迟、动作块交接、控制超时</td><td>缩短模型或改采样步数</td></tr>
@@ -195,8 +337,20 @@ p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
     <section id="systems" data-title="仿真与真机系统">
       <h2><span class="chapter-no">08</span>系统：把策略接到可控的机器人上</h2>
       <p><span class="tag">P0</span>Python/PyTorch 要能独立写 Dataset、训练循环、checkpoint、配置和评测脚本；机器人侧至少理解 ROS 2 的节点、topic、时间戳和 tf2，以及相机、驱动、策略服务的进程边界。岗位要求通常强调超越 notebook 原型的训练/评测代码。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-4">[4]</a></p>
+      <h3>8.1 把慢策略与快控制分开</h3>
+      <p>一个典型结构是机器人端负责读传感器、维护设备状态和执行安全限制，GPU 端负责根据观测预测动作块。比如驱动伺服可能以数百 Hz 到更高频率运行，而图像采集与 VLA 推理通常更慢。策略服务返回的必须是带 <code>episode_id</code>、观测时间戳和模型/动作契约版本的<strong>候选目标</strong>，机器人端确认它没有过期、维度正确且可执行，才交给底层控制器。OpenPI 的远程推理文档展示了策略服务与客户端分离的做法。<a class="cite" href="#ref-26">[26]</a></p>
+      <div class="flow" aria-label="推理与控制分层"><span>相机/状态采集</span><i>→</i><span>时间同步</span><i>→</i><span>VLA 服务</span><i>→</i><span>反归一化与安全检查</span><i>→</i><span>驱动伺服</span></div>
       <p>策略推理是慢环，驱动/伺服是快环；不能把 GPU 返回的动作直接当作电机电流。记录从采集到执行的端到端延迟，区分平均值与尾延迟。动作需检查维度、NaN、单位、限位、碰撞、超时及旧 episode 的返回值。完整上机流程见本站 <a href="../vla-sim2real/">VLA 真机 Sim2Real</a>。</p>
+      <div class="formula">端到端延迟 = 采集 + 预处理 + 排队 + 网络 + 模型采样 + 后处理 + 下发
+若每 k 步重规划，重规划间隔 = k / f_control 秒
+新块到达的高分位延迟 + 安全余量 &lt; 可用的旧块覆盖时间</div>
+      <p>只测“GPU forward 平均 30 ms”远远不够：相机缓冲、网络重试和生成式动作头的采样步数都可能造成尾延迟。策略对 200 ms 旧图像做出的动作，即使模型只花 30 ms，仍然可能追着过去的物体走。监测应同时记录图像年龄、状态年龄、推理 p50/p95/p99、每块实际执行步数与拒绝动作原因。</p>
+      <h3>8.2 Sim2Real 要做可证伪的差异实验</h3>
       <p><span class="tag">P1</span>在 MuJoCo、Isaac Lab 或其他仿真器中复现相同观测/动作契约；系统性改变质量、摩擦、光照、相机位姿和控制延迟，判断 sim2real 差距来自哪里。仿真分数本身不能替代真实机器人验证。<a class="cite" href="#ref-2">[2]</a><a class="cite" href="#ref-17">[17]</a></p>
+      <p>若仿真成功、真机抓取失败，不要一次性随机化所有参数。先录一条真机失败：若目标定位偏移，检查相机内外参；若能碰到物体却夹不住，检查夹爪动作与接触/摩擦；若动作迟滞，注入相同延迟到仿真；若训练时物体总在中央而真机分布更广，重新采初态。每次只改变一个差异，比较前后轨迹与成功率，才能知道哪项仿真改动真正有用。</p>
+      <div class="worked"><h4>故障注入练习</h4>
+        <p>在仿真中故意把相机外参平移 <code>2 cm</code>、让策略输入延迟 <code>150 ms</code>，分别记录失败模式。再恢复其中一个因素。若两者都让成功率下降，检查错误形态是否不同；这能训练你把“模型泛化问题”拆成几何问题和时间问题。</p>
+      </div>
       <div class="note important"><b>真机安全边界</b><p>首次运动前由设备和现场流程确定急停、限位、低速模式及人工接管。模型不是安全控制器；网页按钮或 Python 异常也不能替代硬件安全链。具体操作以厂商手册和实验室流程为准。</p></div>
     </section>
 
@@ -259,6 +413,11 @@ p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
         <li id="ref-19"><a href="https://proceedings.mlr.press/v15/ross11a.html">Ross et al. · DAgger / A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning</a></li>
         <li id="ref-20"><a href="https://docs.pytorch.org/tutorials/beginner/basics/intro.html">PyTorch · Learn the Basics</a></li>
         <li id="ref-21"><a href="https://arxiv.org/abs/1706.03762">Vaswani et al. · Attention Is All You Need</a></li>
+        <li id="ref-22"><a href="https://papers.nips.cc/paper_files/paper/2020/hash/0d2b2061826a5df3221116a5085a6052-Abstract.html">Kumar et al. · Conservative Q-Learning for Offline Reinforcement Learning</a></li>
+        <li id="ref-23"><a href="https://hil-serl.github.io/">HIL-SERL · Original Project</a></li>
+        <li id="ref-24"><a href="https://github.com/Physical-Intelligence/openpi/blob/main/docs/norm_stats.md">OpenPI · Normalization Statistics</a></li>
+        <li id="ref-25"><a href="https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm">NIST · Binomial Proportion Confidence Intervals</a></li>
+        <li id="ref-26"><a href="https://github.com/Physical-Intelligence/openpi/blob/main/docs/remote_inference.md">OpenPI · Remote Inference</a></li>
       </ol>
     </section>
     <footer><a href="../">← 返回总目录</a>　·　具身 VLA 求职基础 / Field notes　·　2026-10-22</footer>
