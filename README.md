@@ -10,6 +10,7 @@
 - **ZR-0 原论文中英对照**：https://futurehafuture.github.io/embodied-ai-notes/zr0/bilingual/
 - **上下文压缩**：https://futurehafuture.github.io/embodied-ai-notes/context-compression/
 - **VLA 真机 Sim2Real 实操笔记**：https://futurehafuture.github.io/embodied-ai-notes/vla-sim2real/
+- **具身 VLA 求职基础与面试路线**：https://futurehafuture.github.io/embodied-ai-notes/vla-interview-foundations/
 
 旧的 Astra 章节地址（例如 `/#s-paradigm`）会自动跳转到新的 Astra 页面相应章节。
 
@@ -20,6 +21,7 @@
 - `astra/index.html`：Astra 研究笔记。
 - `gr00t/index.html` / `gr00t/theme.css`：GR00T 完整笔记及专用组件适配。
 - `vla-sim2real/index.html`：VLA 真机部署长文；同目录保留研究范围与原始资料索引。
+- `vla-interview-foundations/index.html`：面向具身 VLA 岗位的基础知识、现有笔记覆盖地图、项目与面试路线。
 
 正文、图示和交互计算器保留在各自内容页，每篇笔记均提供返回首页的入口。新增笔记时，创建独立目录并在首页的 `notebook-list` 中添加入口，然后更新首页数量。
 

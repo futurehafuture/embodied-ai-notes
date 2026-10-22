@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="具身 VLA 岗位基础知识与面试路线：机器人学、视觉、模仿学习、强化学习、VLA 架构、数据、评测、仿真、真机部署和作品集。">
+<title>应聘具身 VLA：基础知识、项目与面试路线 · 研究笔记</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&amp;family=Long+Cang&amp;family=Kalam:wght@400;700&amp;display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" rel="stylesheet">
+<link rel="stylesheet" href="../notebook-theme.css">
+<style>
+  body{font-size:17px;line-height:1.8}
+  .reading-progress{position:fixed;inset:0 0 auto;height:5px;z-index:80;background:var(--paper)}
+  .reading-progress span{display:block;height:100%;width:0;background:var(--red)}
+  .layout{display:grid;grid-template-columns:255px minmax(0,1fr);gap:44px;max-width:1430px;margin:auto;padding:28px 34px 90px}
+  .sidebar{position:sticky;top:20px;align-self:start;max-height:calc(100vh - 40px);overflow:auto;background:var(--card);border:1.5px solid var(--grid-strong);border-radius:5px 13px 8px 12px;padding:20px;backdrop-filter:blur(3px)}
+  .sidebar .brand{font:29px/1.1 var(--f-head);color:var(--ink);text-decoration:none}
+  .sidebar .brand small{display:block;font:12px/1.4 var(--f-num);letter-spacing:.14em;color:var(--red);margin-top:5px}
+  .sidebar p{font-size:13px;color:var(--ink-soft);line-height:1.5;margin:16px 0 12px;padding-top:13px;border-top:1px dashed var(--grid-strong)}
+  .sidebar ol{list-style:none;margin:0;padding:0;counter-reset:nav}
+  .sidebar li{counter-increment:nav;margin:0}
+  .sidebar a[href^="#"]{display:block;position:relative;padding:6px 5px 6px 33px;text-decoration:none;color:var(--ink);font-size:14px;line-height:1.45;border-radius:4px}
+  .sidebar a[href^="#"]:before{content:counter(nav,decimal-leading-zero);position:absolute;left:4px;top:7px;color:var(--red);font:12px/1.45 var(--f-num)}
+  .sidebar a[href^="#"]:hover,.sidebar a.active{background:var(--hl)}
+  .mobile-toc{display:none}
+  .article{min-width:0;max-width:1000px;margin:0;padding:0 38px 0 64px;position:relative}
+  .article:before{content:"";position:absolute;top:0;bottom:0;left:37px;border-left:2px solid var(--margin-line)}
+  .cover{padding:20px 0 44px;border-bottom:2px solid var(--ink);margin-bottom:45px}
+  .back{font-size:14px;text-decoration:none}
+  .eyebrow{font:17px/1.5 var(--f-note);letter-spacing:.07em;color:var(--red);margin:28px 0 7px}
+  .cover h1{font:clamp(43px,5.3vw,70px)/1.2 var(--f-head);margin:0 0 15px}
+  .cover h1 em{font-style:normal;color:var(--red)}
+  .subtitle{font:26px/1.45 var(--f-note);color:var(--red);margin:0 0 18px}
+  .lead{font-size:19px;max-width:820px;margin:0 0 24px}
+  .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:25px}
+  .facts div{padding-top:8px;border-top:1px solid var(--grid-strong);font-size:13px;color:var(--ink-soft)}
+  .facts strong{display:block;color:var(--ink);font-size:15px}
+  .article section{max-width:none;margin:0 0 74px;scroll-margin-top:24px}
+  .article section h2{display:block;font:38px/1.25 var(--f-head);border-bottom:2px solid var(--ink);padding-bottom:9px;margin:0 0 23px}
+  .chapter-no{display:inline-block;vertical-align:5px;min-width:48px;padding:8px 9px;margin-right:11px;border:2px solid var(--red);border-radius:48% 52% 50% 50%;color:var(--red);font:23px/1 var(--f-num);text-align:center;transform:rotate(-5deg)}
+  .article h3{font:27px/1.4 var(--f-head);margin:32px 0 10px}
+  .article h4{font-size:18px;margin:22px 0 7px}
+  .article p,.article li{max-width:840px}
+  .article p{margin:0 0 16px}
+  .article ul,.article ol{padding-left:1.5em;margin:0 0 18px}
+  .article li{margin:6px 0}
+  .article a{overflow-wrap:anywhere}
+  .article code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(47,93,158,.09);padding:2px 5px;border-radius:3px}
+  .formula{font:16px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;background:var(--card);border:1px dashed var(--grid-strong);padding:14px 16px;margin:15px 0 21px;overflow:auto}
+  .note{border-left:4px solid var(--blue);background:var(--card);padding:15px 19px 3px;margin:21px 0;max-width:850px}
+  .note.important{border-color:var(--red);background:var(--red-soft)}
+  .note b:first-child{display:block;margin-bottom:5px}
+  .tag{display:inline-block;color:var(--red);font:15px/1.4 var(--f-note);border:1.5px solid currentColor;border-radius:4px;padding:1px 7px;margin-right:5px;transform:rotate(-2deg)}
+  .table-scroll{overflow:auto;border:1px solid var(--grid-strong);margin:20px 0 28px}
+  table{border-collapse:collapse;width:100%;min-width:680px;background:var(--card);font-size:14px;line-height:1.6}
+  th,td{border:1px solid var(--grid-strong);padding:10px 11px;text-align:left;vertical-align:top}
+  th{background:var(--hl)}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:22px 0 28px;font-size:14px}
+  .flow span{border:1.5px solid var(--ink);border-radius:5px;background:var(--card);padding:9px 12px}
+  .flow i{font-style:normal;color:var(--red);font-weight:700}
+  .question{padding:17px 18px 4px;border:1px dashed var(--grid-strong);background:var(--card);margin:15px 0}
+  .question strong{color:var(--red)}
+  .refs{font-size:14px;line-height:1.5;columns:2;column-gap:35px}
+  .refs li{break-inside:avoid;margin:0 0 11px}
+  .cite{font:12px/1 var(--f-num);vertical-align:super;margin-left:2px;white-space:nowrap}
+  .article footer{border-top:2px solid var(--ink);padding:20px 0;font-size:14px;color:var(--ink-soft)}
+  @media(max-width:1050px){.layout{display:block;padding:0 16px 70px}.sidebar{display:none}.mobile-toc{display:block;margin:18px 0;padding:9px 13px;border:1px solid var(--grid-strong);background:var(--card)}.mobile-toc summary{cursor:pointer;font-weight:700}.mobile-toc nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 12px;margin-top:10px}.mobile-toc a{font-size:14px;text-decoration:none}.article{margin:auto;padding:0 15px 0 34px}.article:before{left:17px}}
+  @media(max-width:600px){.article{padding:0 4px 0 21px}.article:before{left:9px}.cover h1{font-size:43px}.facts{grid-template-columns:1fr}.article section h2{font-size:31px}.article section h2 .chapter-no{font-size:18px;min-width:38px;margin-right:7px;vertical-align:3px}.article h3{font-size:24px}.mobile-toc nav{grid-template-columns:1fr}.refs{columns:1}}
+</style>
+</head>
+<body>
+<div class="reading-progress" aria-hidden="true"><span id="progress"></span></div>
+<div class="layout">
+  <aside class="sidebar" aria-label="章节目录">
+    <a class="brand" href="../">研究笔记<small>VLA INTERVIEW MAP</small></a>
+    <p>先把闭环讲清，再读模型；每个知识点都要能落到一次实验。</p>
+    <nav id="toc" aria-label="目录"></nav>
+  </aside>
+  <main class="article">
+    <details class="mobile-toc"><summary>展开本篇目录</summary><nav id="mobile-toc" aria-label="移动端目录"></nav></details>
+    <header class="cover">
+      <a class="back" href="../">← 返回总目录</a>
+      <p class="eyebrow">EMBODIED AI / CAREER FIELD NOTES</p>
+      <h1>应聘具身 <em>VLA</em> 岗位<br>先补哪些基础？</h1>
+      <p class="subtitle">从数学与机器人学，到模型、数据、实验和真机</p>
+      <p class="lead">把 VLA 当作一个受物理约束的闭环系统来学：视觉和语言给出条件，策略生成动作，控制器执行，机器人在新的观测下继续修正。面试中既要解释模型，也要说清数据如何采、动作如何落地、失败如何定位。</p>
+      <div class="facts"><div><strong>适用方向</strong>机器人学习 / VLA 算法与工程岗位</div><div><strong>优先级</strong>P0 必会 · P1 深挖 · P2 按岗位选择</div><div><strong>资料日期</strong>2026-10-22 · 以原始论文和官方文档为主</div></div>
+    </header>
+
+    <section id="position" data-title="岗位要求与现有笔记">
+      <h2><span class="chapter-no">00</span>先看岗位到底要什么</h2>
+      <p>近期 VLA 岗位描述反复出现五类工作：<strong>训练视觉/语言条件策略、构建多模态数据流水线、定义动作和控制接口、在仿真与真机评测、处理延迟和失败</strong>。例如 Agile Robots 的 VLA 工程岗位把这些列为职责，同时要求 Python/PyTorch、机器人硬件或 ROS 经验；偏训练评测的岗位则更强调数据、实验和基准。这是对具体公开岗位的归纳，不代表每家公司完全相同。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-2">[2]</a></p>
+      <div class="flow" aria-label="岗位工作闭环"><span>任务定义</span><i>→</i><span>采集/清洗数据</span><i>→</i><span>训练策略</span><i>→</i><span>离线与仿真评测</span><i>→</i><span>真机运行</span><i>→</i><span>失败回采</span></div>
+      <div class="table-scroll"><table><thead><tr><th>知识模块</th><th>本站现有内容</th><th>这篇补充的缺口</th><th>优先级</th></tr></thead><tbody>
+        <tr><td>VLA 具体模型</td><td><a href="../pi0-pi05/">π0/π0.5</a>、<a href="../gr00t/">GR00T</a>、<a href="../zr0/">ZR-0</a> 已有精读</td><td>把模型放到统一问题、输入输出和基线比较中</td><td>P0</td></tr>
+        <tr><td>连续动作生成</td><td><a href="../flow-matching/">Flow Matching</a> 已有推导与实验</td><td>补 BC、ACT、Diffusion Policy、离散动作 token 的选择逻辑</td><td>P0</td></tr>
+        <tr><td>强化学习</td><td><a href="../ppo/">PPO</a> 有完整教程</td><td>补机器人常用的离线/在线学习、分布偏移和人类干预</td><td>P1</td></tr>
+        <tr><td>真机部署</td><td><a href="../vla-sim2real/">Sim2Real 手册</a> 很细</td><td>补求职前必须会推导的运动学、视觉和控制基础</td><td>P0</td></tr>
+        <tr><td>数据与评测</td><td>散见各篇模型与部署笔记</td><td>补数据契约、划分原则、指标、统计和失败分类</td><td>P0</td></tr>
+        <tr><td>求职输出</td><td>GR00T 和 π0 有局部自测题</td><td>补可展示项目、讲项目模板、分阶段学习计划</td><td>P0</td></tr>
+      </tbody></table></div>
+      <div class="note important"><b>范围选择</b><p>若目标是机械臂操作 VLA，优先掌握下文 P0。若岗位偏人形、导航、灵巧手或世界模型，再按需求扩展全身控制、SLAM/规划、触觉接触或视频预测。不要把所有子方向当作同一份入门清单。</p></div>
+    </section>
+
+    <section id="math" data-title="数学与机器人学">
+      <h2><span class="chapter-no">01</span>数学与机器人学：把动作说成物理量</h2>
+      <p><span class="tag">P0</span>线性代数、概率和优化要服务于具体问题：矩阵乘法与坐标变换、条件概率与似然、梯度与反向传播。机器人部分至少会<strong>刚体位姿、前/逆运动学、雅可比、关节与末端两种控制空间</strong>。Modern Robotics 的章节可作为系统教材。<a class="cite" href="#ref-3">[3]</a></p>
+      <h3>1.1 坐标系与 SE(3)</h3>
+      <p>约定 <code>T_AB</code> 把 B 系坐标变成 A 系坐标，则 <code>p_A = T_AB p_B</code>，链式变换是 <code>T_AC = T_AB T_BC</code>。齐次矩阵上左角是旋转 <code>R</code>，右上角是平移 <code>t</code>。要能画出 <code>camera → base → tool</code> 的变换链，分清相机外参方向、姿态表示和米/毫米。ROS 2 的 tf2 正是管理带时间戳坐标变换的基础设施。<a class="cite" href="#ref-4">[4]</a></p>
+      <div class="formula">T_AB = [ R_AB  t_AB ; 0  1 ]
+p_A = T_AB · [p_B; 1]      T_AC = T_AB · T_BC</div>
+      <h3>1.2 运动学、雅可比与控制</h3>
+      <p>前向运动学 <code>x=f(q)</code> 从关节角得到末端位姿；逆运动学从目标位姿找可行关节解，可能多解、无解或接近奇异点。局部速度关系 <code>ẋ=J(q)q̇</code> 说明为什么同一个末端速度在不同姿态下需要不同关节速度。知道位置、速度、力矩控制各自的含义，能解释策略输出的关节目标为什么仍需底层伺服、限位和碰撞检查。<a class="cite" href="#ref-3">[3]</a><a class="cite" href="#ref-5">[5]</a></p>
+      <div class="note"><b>面试达标线</b><p>给你一个 7 维动作，先追问：七维分别是什么？绝对位置还是增量？相对哪个坐标系？单位和频率是什么？夹爪方向如何定义？再谈模型结构。答不清动作语义，无法判断策略是否能安全执行。</p></div>
+      <p><span class="tag">P1</span>轨迹规划、阻抗/力控制、接触动力学、模型预测控制；接触丰富的装配任务会更看重这些。<span class="tag">P2</span>全身动力学、步态、抓取稳定性或运动规划，视岗位方向深入。<a class="cite" href="#ref-5">[5]</a></p>
+    </section>
+
+    <section id="vision" data-title="视觉与多模态表示">
+      <h2><span class="chapter-no">02</span>视觉：从像素到可用观测</h2>
+      <p><span class="tag">P0</span>掌握针孔相机模型、内外参、畸变、手眼标定、RGB/RGB-D、多相机时间同步。像素不自动等于三维位置：深度、相机姿态和坐标系一致性决定能否把目标位置交给机器人。OpenCV 的标定文档给出了相机矩阵和投影关系。<a class="cite" href="#ref-6">[6]</a></p>
+      <div class="formula">s · [u, v, 1]ᵀ = K · [R | t] · [X, Y, Z, 1]ᵀ</div>
+      <h3>2.1 深度学习与 Transformer 最低必备</h3>
+      <p>能用 PyTorch 写张量运算、自动求导、Dataset/DataLoader、训练与验证循环；理解梯度下降、AdamW、学习率、过拟合、数据增强、混合精度和 checkpoint。多模态模型还要会算注意力 <code>softmax(QKᵀ/√d)V</code>，分清 self-attention 与 cross-attention、因果掩码与双向注意力、图像 patch token 与语言 token 如何拼接或交互。本站的 <a href="../llm-interview/">大模型面试八股</a> 可补 Transformer 与微调基础。<a class="cite" href="#ref-20">[20]</a><a class="cite" href="#ref-21">[21]</a></p>
+      <p>再掌握视觉编码器把图像切成 patch、生成 token 的基本过程；知道多视角图像如何与机器人本体状态、语言 token 融合。VLM 的视觉语义能力不能保证精确控制，接触点、遮挡、反光和视角变化会造成策略输入分布偏移。OpenVLA 使用融合视觉编码器并由语言模型预测动作 token，是一个可读的范例。<a class="cite" href="#ref-7">[7]</a></p>
+      <div class="note"><b>能做的检查</b><p>随机抽一条 episode：同时显示所有相机画面、时间戳、关节状态和任务文本；确认左右腕相机没有交换、色序和分辨率一致、图像不是旧帧。视觉问题先通过可视化定位，不要直接归咎于“模型泛化差”。</p></div>
+      <p><span class="tag">P1</span>目标检测/分割、深度与点云、目标姿态估计、视觉表征预训练。<span class="tag">P2</span>触觉、力觉与跨模态融合，视岗位传感器配置而定。</p>
+    </section>
+
+    <section id="learning" data-title="模仿学习与动作生成">
+      <h2><span class="chapter-no">03</span>机器人学习：先会做基线</h2>
+      <h3>3.1 行为克隆与分布偏移</h3>
+      <p>行为克隆（BC）用专家轨迹监督 <code>πθ(a|o,l)</code>，最小化动作预测误差。它易实现、适合第一条基线，但训练只见专家状态；部署时一个小错误会让机器人进入未见过的状态，后续错误可能累积。能解释训练误差低、闭环成功率低的原因，以及通过增加纠错示教、在线回采和 DAgger 式数据聚合缓解。robomimic 提供了多种示教学习算法和数据结构。<a class="cite" href="#ref-8">[8]</a><a class="cite" href="#ref-19">[19]</a></p>
+      <div class="formula">连续动作回归示例：L_BC(θ) = E_(o,l,a)~D [ ||πθ(o,l) - a||² ]
+训练集：专家访问的状态       部署：当前策略访问的状态</div>
+      <h3>3.2 为什么预测动作块</h3>
+      <p>逐步回归简单，但多峰示教可能被均值化；一次预测未来 <code>H</code> 步的 action chunk 能降低有效决策长度，也带来块间连续性和反馈滞后的问题。ACT 使用 Transformer/CVAE 预测动作块；Diffusion Policy 将策略建成条件去噪过程；π0 的动作专家用 flow matching 生成连续动作。三者目标相近，训练目标、采样成本和接口不同。<a class="cite" href="#ref-9">[9]</a><a class="cite" href="#ref-10">[10]</a><a class="cite" href="#ref-11">[11]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>基线/动作头</th><th>核心思想</th><th>面试必须能比较</th></tr></thead><tbody>
+        <tr><td>BC / MLP</td><td>直接回归当前动作或短块</td><td>快、易复现；多峰动作易被均值化</td></tr>
+        <tr><td>ACT</td><td>Transformer + CVAE 预测动作块</td><td>块长、执行步数、时间集成、潜变量</td></tr>
+        <tr><td>Diffusion Policy</td><td>条件去噪生成动作序列</td><td>多峰建模、采样步数、推理延迟</td></tr>
+        <tr><td>Flow Matching</td><td>学习从噪声到动作的速度场</td><td>插值路径、速度监督、ODE 采样</td></tr>
+        <tr><td>离散动作 token</td><td>量化动作并自回归预测</td><td>量化误差、序列长度、解码成本</td></tr>
+      </tbody></table></div>
+      <p>对已有详解，可直接读本站的 <a href="../flow-matching/">Flow Matching</a>、<a href="../pi0-pi05/">π0/π0.5</a> 和 <a href="../gr00t/">GR00T</a>；这篇重点是比较框架。</p>
+    </section>
+
+    <section id="rl" data-title="强化学习与在线改进">
+      <h2><span class="chapter-no">04</span>强化学习：知道何时值得用</h2>
+      <p><span class="tag">P0</span>能定义 MDP：状态、动作、奖励、转移、折扣因子；能区分离线示教数据与在线交互数据，知道 reward 设计、探索风险和样本效率是机器人 RL 的关键约束。已有 <a href="../ppo/">PPO 教程</a> 足以补策略梯度与优势估计，但“会 PPO”不等于能解决真机数据问题。</p>
+      <p><span class="tag">P1</span>理解 BC 预训练后在线微调、离线 RL 的分布外动作风险、人类干预与纠错数据。LeRobot 的 HIL-SERL 教程展示了示教、奖励分类器、人工接管和在线 actor/learner 的组合；它说明了工作流，不意味着每个 VLA 岗位都要求在真机运行 SAC。<a class="cite" href="#ref-12">[12]</a></p>
+      <div class="note important"><b>一条实用判断</b><p>先把观测、动作和成功条件对齐；如果 BC 已能复现示教却在少数状态失败，优先分析覆盖与纠错数据。只有任务有可靠奖励、可控探索和足够交互预算时，在线 RL 才是合适的下一步。</p></div>
+    </section>
+
+    <section id="vla" data-title="VLA 架构与论文地图">
+      <h2><span class="chapter-no">05</span>VLA 架构：从 VLM 到机器人动作</h2>
+      <p>用统一记号描述问题：观测 <code>o_t</code> 包含多相机图像和本体状态，语言指令是 <code>l</code>，策略预测未来动作块 <code>a_(t:t+H)</code>。你要能说清视觉编码器、语言主干、动作头各负责什么，哪些参数训练、哪些冻结，训练标签来自哪里，输出如何反归一化并交给控制器。</p>
+      <div class="formula">πθ(a_(t:t+H) | I_t^1 ... I_t^N, q_t, l)
+图像 + 状态 + 语言 → 特征融合 → 动作表示/生成 → 安全适配器 → 控制器</div>
+      <p>读论文的建议顺序：<strong>RT-2</strong> 看动作 token 如何接到 VLM；<strong>OpenVLA</strong> 看公开模型和跨机器人预训练；<strong>ACT / Diffusion Policy</strong> 看没有大语言主干时的强基线；<strong>π0 / π0.5</strong> 看连续动作专家与分阶段训练；最后用 <strong>GR00T</strong> 比较数据、架构和部署约束。RT-2、OpenVLA 和 π0 的原始资料都值得逐项核对，而不是背模型名称。<a class="cite" href="#ref-7">[7]</a><a class="cite" href="#ref-11">[11]</a><a class="cite" href="#ref-13">[13]</a></p>
+      <div class="note"><b>读一篇 VLA 论文，固定问 8 个问题</b><p>任务与机器人是什么？观测有几路、频率多少？动作空间和 horizon 是什么？数据从哪来、怎样混合？损失与采样过程是什么？怎样微调？基线和评测协议是否一致？真机失败集中在哪些条件？</p></div>
+      <p><span class="tag">P1</span>LoRA/全参微调、多任务采样、跨本体动作统一、时间条件编码和推理服务。<span class="tag">P2</span>世界模型、层级规划、视频预测与开放词汇导航，根据目标团队方向选择。</p>
+    </section>
+
+    <section id="data" data-title="数据工程与质量">
+      <h2><span class="chapter-no">06</span>数据：VLA 项目的实际起点</h2>
+      <p>一条机器人 episode 至少包含时间对齐的图像、状态、动作、任务描述、终止/成功标签和元数据。LeRobotDataset 的官方格式将多模态时序、视频和索引元信息组织在一起；Open X-Embodiment 展示了跨机器人数据的价值，也提醒我们不同本体的数据必须统一语义后才能混训。<a class="cite" href="#ref-14">[14]</a><a class="cite" href="#ref-15">[15]</a></p>
+      <h3>6.1 写一份数据契约</h3>
+      <ul>
+        <li><strong>观测：</strong>相机名称、分辨率、颜色顺序、采集时间、关节顺序、夹爪状态、缺失帧规则。</li>
+        <li><strong>动作：</strong>关节/末端空间、绝对/相对/增量、坐标系、单位、控制频率、动作块长度、归一化统计。</li>
+        <li><strong>任务：</strong>指令与具体 episode 是否对应，成功条件是否可复核，人工干预是否标记。</li>
+        <li><strong>版本：</strong>机器人/相机标定、代码 commit、checkpoint、训练划分、场景与操作者。</li>
+      </ul>
+      <h3>6.2 先做数据体检，再训练</h3>
+      <p>画每个动作维度的分布和时间曲线；检查 NaN、异常跳变、图像冻结、时间戳逆序、相机错位、任务文本与实际行为不符。按 episode、任务、场景和物体划分训练/验证/测试，避免同一条示教的相邻帧同时出现在训练和测试中。robomimic 的研究也强调数据质量、状态/动作覆盖会影响策略学习。<a class="cite" href="#ref-8">[8]</a></p>
+      <div class="note"><b>最有说服力的项目证据</b><p>展示一个“数据错误 → 可视化定位 → 修复 → 固定评测协议下成功率变化”的完整案例，比只列出模型参数量更能说明工程能力。</p></div>
+    </section>
+
+    <section id="evaluation" data-title="评测与实验设计">
+      <h2><span class="chapter-no">07</span>评测：离线 loss 不等于会干活</h2>
+      <p>离线动作误差用于检查训练和接口，但真实闭环指标应包括任务成功率、完成时间、碰撞/安全停止、人工接管次数、推理延迟和跨场景鲁棒性。LIBERO 专门测试机器人学习中的知识迁移；真机实验则需要明确初态分布、复位规则、相机位置、失败判定和试验次数。<a class="cite" href="#ref-16">[16]</a></p>
+      <div class="formula">成功率 = 成功 episode 数 / 按预定协议运行的 episode 数
+比较 A 与 B：固定任务/初态采样/时限/安全参数，报告每类失败数量</div>
+      <p>一张高质量结果表至少有模型版本、数据版本、任务/场景、样本量、成功数、成功率和失败类别。若只做 5 次，报告 4/5 而不写成“80% 已证明泛化”；小样本不确定性很大。测试集和调参集必须分开，比较模型时尽量使用相同初态与相同硬件条件。</p>
+      <div class="table-scroll"><table><thead><tr><th>失败现象</th><th>先查什么</th><th>再考虑什么</th></tr></thead><tbody>
+        <tr><td>总是朝反方向动</td><td>坐标系、动作符号、关节顺序、反归一化</td><td>模型结构</td></tr>
+        <tr><td>靠近物体就停顿</td><td>推理尾延迟、动作块交接、控制超时</td><td>缩短模型或改采样步数</td></tr>
+        <tr><td>训练场景好，新背景差</td><td>物体/背景覆盖、相机视角、光照</td><td>增强、回采与域随机化</td></tr>
+        <tr><td>离线 loss 降、真机失败</td><td>时间对齐、数据泄漏、动作语义、闭环分布偏移</td><td>新模型与更大数据量</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="systems" data-title="仿真与真机系统">
+      <h2><span class="chapter-no">08</span>系统：把策略接到可控的机器人上</h2>
+      <p><span class="tag">P0</span>Python/PyTorch 要能独立写 Dataset、训练循环、checkpoint、配置和评测脚本；机器人侧至少理解 ROS 2 的节点、topic、时间戳和 tf2，以及相机、驱动、策略服务的进程边界。岗位要求通常强调超越 notebook 原型的训练/评测代码。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-4">[4]</a></p>
+      <p>策略推理是慢环，驱动/伺服是快环；不能把 GPU 返回的动作直接当作电机电流。记录从采集到执行的端到端延迟，区分平均值与尾延迟。动作需检查维度、NaN、单位、限位、碰撞、超时及旧 episode 的返回值。完整上机流程见本站 <a href="../vla-sim2real/">VLA 真机 Sim2Real</a>。</p>
+      <p><span class="tag">P1</span>在 MuJoCo、Isaac Lab 或其他仿真器中复现相同观测/动作契约；系统性改变质量、摩擦、光照、相机位姿和控制延迟，判断 sim2real 差距来自哪里。仿真分数本身不能替代真实机器人验证。<a class="cite" href="#ref-2">[2]</a><a class="cite" href="#ref-17">[17]</a></p>
+      <div class="note important"><b>真机安全边界</b><p>首次运动前由设备和现场流程确定急停、限位、低速模式及人工接管。模型不是安全控制器；网页按钮或 Python 异常也不能替代硬件安全链。具体操作以厂商手册和实验室流程为准。</p></div>
+    </section>
+
+    <section id="projects" data-title="作品集与实操项目">
+      <h2><span class="chapter-no">09</span>做什么项目，才能证明你会</h2>
+      <div class="table-scroll"><table><thead><tr><th>项目</th><th>最低可交付物</th><th>能证明的能力</th></tr></thead><tbody>
+        <tr><td>① 纯软件基线</td><td>用公开机器人数据训练 BC 与 ACT/DP；固定划分，跑闭环仿真，给出失败视频和复现实验命令</td><td>数据、模型、训练、评测全链条</td></tr>
+        <tr><td>② VLA 微调与对比</td><td>同一数据上对比语言条件模型与无语言基线；说明相机/动作适配、显存、延迟和真实收益</td><td>读源码、改接口、做公平比较</td></tr>
+        <tr><td>③ 真机闭环（有设备）</td><td>安全清单、示教数据、动作契约、试验协议、成功/失败记录及复盘</td><td>系统集成、排障和可信报告</td></tr>
+      </tbody></table></div>
+      <p>没有机器人也可从 LeRobot 的仿真模仿学习教程开始；它覆盖示教、数据、训练和仿真评测。真机路线可接本站的 <a href="../vla-sim2real/#runbook">SO-101 + LeRobot</a>。项目 README 应写清数据许可、环境版本、硬件/显卡、训练命令、指标定义、失败案例与可复现边界。<a class="cite" href="#ref-18">[18]</a></p>
+      <div class="note"><b>面试讲项目的顺序</b><p>任务和成功标准 → 输入/动作契约 → 数据量与划分 → 最简单基线 → 改动与消融 → 闭环结果 → 失败案例 → 下一轮实验。每个结论都对应一张图、一段视频或一条可复现命令。</p></div>
+    </section>
+
+    <section id="questions" data-title="高频面试追问">
+      <h2><span class="chapter-no">10</span>用这些问题检查自己</h2>
+      <div class="question"><strong>Q1 · VLA 和普通 VLM 的关键差别？</strong><p>回答应包含动作空间、时序闭环、物理约束和评测方式；只说“加了动作头”不够。</p></div>
+      <div class="question"><strong>Q2 · 为什么同一个观测可能有多种正确动作？</strong><p>说明多峰轨迹和均值化问题，再比较 CVAE、扩散、流匹配与离散 token。</p></div>
+      <div class="question"><strong>Q3 · 动作块越长越好吗？</strong><p>讲清推理摊销、有效 horizon、块间接缝和反馈滞后；结合控制频率与延迟预算回答。</p></div>
+      <div class="question"><strong>Q4 · 离线 MSE 下降，但真机成功率不变，怎么查？</strong><p>按数据/时间同步 → 坐标与反归一化 → 控制接口 → 闭环分布偏移 → 评测协议的顺序定位。</p></div>
+      <div class="question"><strong>Q5 · 如何证明语言真的被模型使用？</strong><p>固定图像/状态，更换相冲突的任务文本；加入无语言基线和任务切换评测，观察动作与成功率是否随指令改变。</p></div>
+      <div class="question"><strong>Q6 · 如何比较 OpenVLA 与 π0？</strong><p>明确两者的动作表示、训练数据、推理成本、可微调性、机器人接口和同协议结果；避免跨论文直接比较百分比。</p></div>
+      <div class="question"><strong>Q7 · sim 里 90%，真机 20%，下一步？</strong><p>对照相机、物理接触、控制延迟、动作语义和初态分布，做单变量实验；不要先盲目增加训练轮数。</p></div>
+    </section>
+
+    <section id="roadmap" data-title="学习顺序与达标线">
+      <h2><span class="chapter-no">11</span>一条可执行的学习顺序</h2>
+      <p>以下按“已有 Python/深度学习基础、目标是机械臂操作方向”设计；周数只是排程示例，是否达标以交付物判断。</p>
+      <ol>
+        <li><strong>第 1–2 周：机器人 + 视觉。</strong>手推坐标变换和雅可比；用一段数据画多相机、关节与动作曲线；能解释每一维动作的物理意义。</li>
+        <li><strong>第 3–4 周：BC + ACT/DP。</strong>复现两条基线，做闭环仿真与失败归因；不以训练 loss 作为唯一结论。</li>
+        <li><strong>第 5–6 周：VLA。</strong>精读 RT-2、OpenVLA、π0/π0.5；在统一表格中写出输入、动作、损失、数据和延迟；微调一个可运行模型。</li>
+        <li><strong>第 7–8 周：评测与部署。</strong>固定评测协议，补失败视频与统计；有设备再做低速真机闭环，否则完成仿真中的部署接口和延迟分析。</li>
+      </ol>
+      <div class="note"><b>能投递的最低证据</b><p>一个可复现仓库 + 一份清楚的实验报告 + 一段闭环运行视频 + 一个你亲自定位并修复的失败案例。研究岗再增加有说服力的消融或新方法；工程岗再增加接口、安全、延迟和稳定性证据。</p></div>
+    </section>
+
+    <section id="references" data-title="原始资料与进一步阅读">
+      <h2><span class="chapter-no">↗</span>原始资料与进一步阅读</h2>
+      <p>资料优先选公开岗位、论文项目页和官方文档。岗位要求、软件接口和模型版本会变化；点击原始链接确认当前版本。本文的优先级和学习顺序是依据这些资料做的求职建议，不是来源原文的规定。</p>
+      <ol class="refs">
+        <li id="ref-1"><a href="https://job-boards.greenhouse.io/agilerobotsse/jobs/4964863101">Agile Robots · Robot Learning Engineer, VLA &amp; Foundation Models</a>（岗位）</li>
+        <li id="ref-2"><a href="https://job-boards.eu.greenhouse.io/agilerobotsse/jobs/5006075101">Agile Robots · VLA Training &amp; Evaluation</a>（岗位）</li>
+        <li id="ref-3"><a href="https://modernrobotics.northwestern.edu/nu-gm-book-resource/">Modern Robotics · Book Resources</a>（运动学/雅可比教材）</li>
+        <li id="ref-4"><a href="https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Tf2/Introduction-To-Tf2.html">ROS 2 · Introduction to tf2</a>（坐标变换）</li>
+        <li id="ref-5"><a href="https://underactuated.mit.edu/">MIT · Underactuated Robotics</a>（控制/规划教材）</li>
+        <li id="ref-6"><a href="https://github.com/opencv/opencv/blob/4.x/doc/py_tutorials/py_calib3d/py_calibration/py_calibration.markdown">OpenCV · Camera Calibration Tutorial Source</a></li>
+        <li id="ref-7"><a href="https://openvla.github.io/">OpenVLA · Project Page</a>（模型与代码）</li>
+        <li id="ref-8"><a href="https://robomimic.github.io/">robomimic · Learning from Demonstration</a></li>
+        <li id="ref-9"><a href="https://tonyzhaozh.github.io/aloha/">ALOHA / ACT · Project Page</a></li>
+        <li id="ref-10"><a href="https://diffusion-policy.cs.columbia.edu/">Diffusion Policy · Project Page</a></li>
+        <li id="ref-11"><a href="https://www.physicalintelligence.company/blog/pi0">Physical Intelligence · π0</a>；<a href="https://github.com/Physical-Intelligence/openpi">openpi 源码</a></li>
+        <li id="ref-12"><a href="https://huggingface.co/docs/lerobot/hilserl">LeRobot · HIL-SERL Workflow</a></li>
+        <li id="ref-13"><a href="https://robotics-transformer2.github.io/">RT-2 · Project Page</a></li>
+        <li id="ref-14"><a href="https://huggingface.co/docs/lerobot/lerobot-dataset-v3">LeRobotDataset v3 · Official Docs</a></li>
+        <li id="ref-15"><a href="https://robotics-transformer-x.github.io/">Open X-Embodiment · Dataset &amp; Models</a></li>
+        <li id="ref-16"><a href="https://libero-project.github.io/main.html">LIBERO · Benchmark</a></li>
+        <li id="ref-17"><a href="https://isaac-sim.github.io/IsaacLab/main/index.html">NVIDIA Isaac Lab · Documentation</a></li>
+        <li id="ref-18"><a href="https://huggingface.co/docs/lerobot/main/il_sim">LeRobot · Imitation Learning in Simulation</a></li>
+        <li id="ref-19"><a href="https://proceedings.mlr.press/v15/ross11a.html">Ross et al. · DAgger / A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning</a></li>
+        <li id="ref-20"><a href="https://docs.pytorch.org/tutorials/beginner/basics/intro.html">PyTorch · Learn the Basics</a></li>
+        <li id="ref-21"><a href="https://arxiv.org/abs/1706.03762">Vaswani et al. · Attention Is All You Need</a></li>
+      </ol>
+    </section>
+    <footer><a href="../">← 返回总目录</a>　·　具身 VLA 求职基础 / Field notes　·　2026-10-22</footer>
+  </main>
+</div>
+<script>
+  const sections = [...document.querySelectorAll('main section[data-title]')];
+  const toc = document.getElementById('toc');
+  const mobileToc = document.getElementById('mobile-toc');
+  const list = document.createElement('ol');
+  for (const section of sections) {
+    const item = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = '#' + section.id;
+    link.textContent = section.dataset.title;
+    item.appendChild(link);
+    list.appendChild(item);
+    mobileToc.appendChild(link.cloneNode(true));
+  }
+  toc.appendChild(list);
+  const progress = document.getElementById('progress');
+  const updateProgress = () => {
+    const max = document.documentElement.scrollHeight - innerHeight;
+    progress.style.width = (max > 0 ? Math.min(100, Math.max(0, scrollY / max * 100)) : 0) + '%';
+  };
+  addEventListener('scroll', updateProgress, {passive:true});
+  addEventListener('resize', updateProgress);
+  updateProgress();
+  if ('IntersectionObserver' in window) {
+    const links = [...toc.querySelectorAll('a')];
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries.filter(entry => entry.isIntersecting).sort((a,b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (!visible) return;
+      links.forEach(link => link.classList.toggle('active', link.hash === '#' + visible.target.id));
+    }, {rootMargin:'-15% 0px -70% 0px'});
+    sections.forEach(section => observer.observe(section));
+  }
+</script>
+</body>
+</html>
