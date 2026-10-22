@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="从仿真到真实机械臂：VLA 真机部署的硬件、安全、标定、数据、动作接口、推理、评测与排障实操笔记。">
+<title>VLA 真机 Sim2Real：从模型输出到机器人真正动起来 · 研究笔记</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Long+Cang&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" rel="stylesheet">
+<link rel="stylesheet" href="../notebook-theme.css">
+<style>
+  :root{--local-border:rgba(36,50,74,.28);--local-wash:rgba(255,255,255,.58);--local-muted:#59677a}
+  body{font-size:17px;line-height:1.82}
+  .reading-progress{position:fixed;top:0;left:0;right:0;height:5px;z-index:100;background:var(--paper)}
+  .reading-progress span{display:block;height:100%;width:0;background:var(--red)}
+  .page-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:48px;max-width:1460px;margin:0 auto;padding:26px 34px 100px}
+  .side{position:sticky;top:20px;align-self:start;max-height:calc(100vh - 40px);overflow:auto;border:1.5px solid var(--local-border);background:var(--local-wash);border-radius:5px 13px 8px 12px;padding:18px 17px 24px;backdrop-filter:blur(3px)}
+  .side .brand{font:29px/1.1 var(--f-head);color:var(--ink);text-decoration:none;display:block}
+  .side .brand small{font:12px/1.4 var(--f-num);display:block;letter-spacing:.16em;color:var(--red);margin-top:4px}
+  .side .side-rule{height:9px;background:linear-gradient(100deg,transparent 0,var(--hl) 8%,var(--hl) 88%,transparent 100%);margin:20px 0 11px}
+  .side p{font-size:13px;color:var(--ink-soft);line-height:1.5;margin:0 0 12px}
+  .side ol{list-style:none;margin:0;padding:0;counter-reset:nav}
+  .side li{counter-increment:nav;margin:1px 0}
+  .side li a{font-size:14px;color:var(--ink);text-decoration:none;display:block;line-height:1.45;padding:5px 6px 5px 32px;position:relative;border-radius:5px}
+  .side li a:before{content:counter(nav,decimal-leading-zero);position:absolute;left:4px;top:5px;font:12px/1.45 var(--f-num);color:var(--red)}
+  .side li a:hover,.side li a.active{background:var(--hl)}
+  .side .meta{border-top:1px dashed var(--local-border);padding-top:10px;margin-top:14px;font-size:12px;color:var(--ink-soft)}
+  .mobile-nav{display:none}
+  .article{min-width:0;max-width:1010px;margin:0;padding:0 42px 0 67px;position:relative}
+  .article:before{content:"";position:absolute;top:0;bottom:0;left:39px;border-left:2px solid var(--margin-line)}
+  .article header.cover{padding:24px 0 46px;border-bottom:2px solid var(--ink);margin-bottom:42px}
+  .back{font:14px/1.5 var(--f-body);text-decoration:none}
+  .cover .eyebrow{font:16px/1.5 var(--f-note);color:var(--red);letter-spacing:.08em;margin:28px 0 6px}
+  .cover h1{font:clamp(43px,5.2vw,72px)/1.23 var(--f-head);letter-spacing:.03em;margin:0 0 16px;max-width:900px}
+  .cover h1 em{font-style:normal;color:var(--red)}
+  .cover .subtitle{font:26px/1.45 var(--f-note);color:var(--red);margin:0 0 22px}
+  .cover .lead{font-size:19px;line-height:1.8;max-width:800px;margin:0 0 25px}
+  .cover .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:26px}
+  .cover .facts div{border-top:1px solid var(--local-border);padding:8px 0;font-size:13px;color:var(--ink-soft)}
+  .cover .facts strong{display:block;color:var(--ink);font-size:15px}
+  .article section{max-width:none;margin:0 0 76px;scroll-margin-top:26px}
+  .article section h2{display:block;font:39px/1.25 var(--f-head);border-bottom:2px solid var(--ink);padding-bottom:8px;margin:0 0 22px}
+  .article section h2 .chapter-no{display:inline-block;color:var(--red);font:24px/1 var(--f-num);border:2px solid var(--red);border-radius:47% 53% 50% 50%;padding:8px 9px;min-width:48px;text-align:center;transform:rotate(-5deg);margin-right:11px;vertical-align:5px}
+  .article h3{font:27px/1.4 var(--f-head);margin:35px 0 10px}
+  .article h4{font-size:18px;margin:22px 0 7px}
+  .article p,.article li{max-width:850px}
+  .article p{margin:0 0 17px;text-align:justify}
+  .article ol,.article ul{margin:0 0 19px;padding-left:1.5em}
+  .article li{margin:6px 0}
+  .article a{overflow-wrap:anywhere}
+  .article code{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(47,93,158,.09);padding:2px 5px;border-radius:3px}
+  .article pre{font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(36,50,74,.07);padding:16px 18px;border:1px dashed var(--local-border);overflow:auto;white-space:pre;margin:18px 0 24px;max-width:100%}
+  .article pre code{background:transparent;padding:0}
+  .tag{display:inline-block;color:var(--red);font:14px/1.4 var(--f-note);border:1.5px solid currentColor;padding:2px 7px;border-radius:5px;transform:rotate(-2deg);margin-right:5px}
+  .box{border-left:4px solid var(--blue);background:var(--local-wash);padding:16px 18px 7px;margin:23px 0;max-width:850px}
+  .box.warning{border-color:var(--red);background:var(--red-soft)}
+  .box.practical{border-color:#769447;background:rgba(160,196,108,.12)}
+  .box b:first-child{display:block;font-size:16px;margin-bottom:5px}
+  .box p:last-child,.box ul:last-child{margin-bottom:8px}
+  .paper-note{background:var(--sticky);color:var(--sticky-ink);font:21px/1.55 var(--f-note);padding:18px 20px;margin:25px 0 30px;max-width:780px;box-shadow:4px 5px 0 var(--shadow);transform:rotate(-.5deg)}
+  .table-scroll{overflow-x:auto;margin:21px 0 30px;border:1px solid var(--local-border);max-width:100%}
+  table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.55;background:var(--local-wash);min-width:650px}
+  th,td{padding:9px 11px;vertical-align:top;border:1px solid var(--local-border);text-align:left}
+  th{background:var(--hl);font-weight:700}
+  td:first-child{font-weight:700;white-space:nowrap}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:24px 0 30px;font-size:14px}
+  .flow span{border:1.5px solid var(--ink);background:var(--local-wash);border-radius:5px;padding:10px 11px}
+  .flow i{font-style:normal;color:var(--red);font-weight:700}
+  .checklist{list-style:none;padding:0!important;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px;max-width:850px}
+  .checklist li{padding:8px 11px 8px 32px;border-bottom:1px dashed var(--local-border);position:relative;margin:0}
+  .checklist li:before{content:"□";position:absolute;left:6px;top:7px;color:var(--red)}
+  .cite{font:12px/1 var(--f-num);vertical-align:super;margin-left:2px;white-space:nowrap}
+  .refs{font-size:14px;line-height:1.55;columns:2;column-gap:34px;padding-left:1.5em}
+  .refs li{break-inside:avoid;margin:0 0 10px}
+  .endnote{font-size:14px;color:var(--ink-soft);border-top:1px dashed var(--local-border);padding-top:14px}
+  .article footer{border-top:2px solid var(--ink);padding:20px 0 40px;font-size:14px;color:var(--ink-soft)}
+  @media(max-width:1050px){.page-shell{display:block;padding:0 16px 70px}.side{display:none}.mobile-nav{display:block;margin:18px 0;background:var(--local-wash);border:1px solid var(--local-border);padding:9px 13px}.mobile-nav summary{cursor:pointer;font-weight:700}.mobile-nav .links{display:grid;grid-template-columns:repeat(2,1fr);gap:2px 12px;margin:9px 0}.mobile-nav a{font-size:14px;text-decoration:none}.article{padding:0 15px 0 34px;max-width:900px;margin:auto}.article:before{left:17px}}
+  @media(max-width:600px){.article{padding:0 4px 0 21px}.article:before{left:9px}.cover .facts{grid-template-columns:1fr}.article section h2{font-size:31px}.article section h2 .chapter-no{font-size:18px;min-width:37px;vertical-align:3px;margin-right:7px}.article h3{font-size:24px}.checklist{grid-template-columns:1fr}.refs{columns:1}.mobile-nav .links{grid-template-columns:1fr}.cover .lead{font-size:17px}}
+</style>
+</head>
+<body>
+<div class="reading-progress" aria-hidden="true"><span id="progress"></span></div>
+<div class="page-shell">
+  <aside class="side" aria-label="章节目录">
+    <a class="brand" href="../">具身研究笔记<small>FIELD NOTES / VLA DEPLOYMENT</small></a>
+    <div class="side-rule"></div>
+    <p>沿着一条真实控制链，从桌面机械臂入门，走到能够复盘的真机实验。</p>
+    <nav id="toc"></nav>
+    <div class="meta">更新：2026-10-22<br>范围：桌面机械臂操作 · 中文长文</div>
+  </aside>
+  <main class="article" id="top">
+    <details class="mobile-nav"><summary>展开章节目录</summary><nav class="links" id="mobile-toc"></nav></details>
+    <header class="cover">
+      <a class="back" href="../">← 返回研究笔记首页</a>
+      <p class="eyebrow">FIELD GUIDE 01 · SIMULATION → PHYSICAL ROBOT</p>
+      <h1>VLA 如何真正 <em>Sim2Real</em></h1>
+      <p class="subtitle">从模型输出，到机器人安全地动起来</p>
+      <p class="lead">这是一份按实际执行顺序写的真机部署手册。它回答的不是“仿真里成功了没有”，而是拿到机械臂、相机、示教设备和一台 GPU 之后，怎样让视觉–语言–动作模型在物理世界里可控、可测、可排障地完成任务。</p>
+      <div class="facts"><div><strong>适用对象</strong>从未做过真机的 VLA / 机器人学习研究者</div><div><strong>主要例子</strong>桌面机械臂的积木抓取与放置</div><div><strong>证据边界</strong>公开论文、官方文档与原始代码；不冒称亲历实验</div></div>
+    </header>
+
+    <section id="start" data-title="先看全流程">
+      <h2><span class="chapter-no">00</span>先看全流程</h2>
+      <p>先给“成功部署”下定义：模型收到与训练时同语义的相机画面、机器人状态和任务文本，预测与驱动接口一致的动作；底层控制器把动作平滑执行；安全链能独立截断；实验记录能让你知道成功率和失败原因。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-19">[19]</a></p>
+      <div class="flow" aria-label="部署流程"><span>任务与安全边界</span><i>→</i><span>硬件/时间/坐标标定</span><i>→</i><span>仿真与接口对齐</span><i>→</i><span>真机示教</span><i>→</i><span>训练与离线验证</span><i>→</i><span>限幅部署</span><i>→</i><span>真实评测与回采</span></div>
+      <p>一个重要的概念澄清：VLA 的 sim2real 有三种常见路线。<strong>纯仿真训练后迁移</strong>要求动力学、视觉和动作接口足够一致；<strong>仿真预训练 + 少量真机示教微调</strong>最适合研究型操作任务；<strong>直接用大规模真机数据预训练 + 目标平台微调</strong>严格说不是“从零仿真迁移”，但真机落地同样要处理观测/动作分布差。DROID 展示了跨场景真机数据的价值，Isaac Lab 则展示了训练、导出、部署的仿真迁移路径。<a class="cite" href="#ref-15">[15]</a><a class="cite" href="#ref-26">[26]</a><a class="cite" href="#ref-27">[27]</a></p>
+      <div class="box warning"><b>先说清“实操经验”的来源</b><p>下文是依据公开真机教程、原始代码和论文整理的工程操作笔记，并非作者亲自操作某台物理机器人后的实验日志。具体按钮、默认参数、控制接口会随硬件与软件版本变化；上机以厂商手册、现场风险评估和当时安装版本为准。</p></div>
+    </section>
+
+    <section id="contract" data-title="模型与控制链">
+      <h2><span class="chapter-no">01</span>VLA 在真实系统里处于哪一层</h2>
+      <p>多数操作类 VLA 不直接输出电机电流。它通常读入一张或多张图像、关节/末端状态和语言指令，输出未来数步的<strong>目标关节位置、末端位姿/增量、夹爪命令</strong>。模型输出要经过反归一化、坐标变换、限幅、碰撞/奇异位形检查，再由机器人驱动或伺服控制器执行。Franka 的 FCI 可在 1 kHz 下运行底层实时控制；这与几十 Hz 的策略循环是两个不同层级。<a class="cite" href="#ref-4">[4]</a><a class="cite" href="#ref-19">[19]</a><a class="cite" href="#ref-21">[21]</a></p>
+      <div class="flow" aria-label="真机控制架构"><span>相机/编码器/任务</span><i>→</i><span>时间对齐 + 预处理</span><i>→</i><span>VLA 预测动作块</span><i>→</i><span>反归一化 + 安全过滤</span><i>→</i><span>机器人驱动/伺服</span><i>→</i><span>电机与物理环境</span></div>
+      <p>把每条箭头写成“接口契约”，而非凭印象接线。尤其要写清相机键名、图像分辨率和色序、状态维度/关节顺序、动作空间、单位、频率、夹爪开合方向、归一化统计文件、最大可执行动作长度。OpenPI 的 ALOHA 真机适配器把图像缩放补边后转换为 CHW，把 <code>qpos</code> 作为状态，再把服务端返回的动作传给真实环境；OpenVLA 的服务端需要用 <code>unnorm_key</code> 选择动作反归一化统计。<a class="cite" href="#ref-12">[12]</a><a class="cite" href="#ref-13">[13]</a></p>
+      <div class="box practical"><b>建议把契约保存在运行记录里</b><p><code>robot_id</code>、固件/驱动版本、关节名顺序、相机序列号/安装位姿、任务文本、policy checkpoint 与 commit、normalization stats 的哈希、动作坐标系/单位、目标频率、控制器类型与限幅配置。任何一项改变，都应视为新的实验条件。</p></div>
+    </section>
+
+    <section id="hardware" data-title="硬件与任务定界">
+      <h2><span class="chapter-no">02</span>选一个第一周能完成的任务</h2>
+      <p>第一次上机不要从柔性衣物、插接、双臂协作开始。推荐<strong>固定桌面、单机械臂、同一类积木/小物体、取放到宽口盒</strong>：可重复摆放初态，成功条件可见，失误不会破坏物体。LeRobot 的真机入门教程也以物体抓取放置为起点，建议先收集至少约 50 条示教，并按位置分布采样，再逐步增加变化。这个数量是起步参考，不是性能保证。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-6">[6]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>物品/服务</th><th>第一版需求</th><th>现场要核对什么</th></tr></thead><tbody>
+        <tr><td>机械臂和夹爪</td><td>能读关节状态、接收位置/速度目标、报告错误</td><td>驱动是否有软限位？急停后如何恢复？夹爪命令的数值方向？</td></tr>
+        <tr><td>主视角相机</td><td>固定在桌面外，可看见目标、夹爪、放置区域</td><td>是否被手/机械臂遮挡；自动曝光会否跳变；USB 重插后 ID 会否改变</td></tr>
+        <tr><td>腕部相机（可选）</td><td>看清接触与夹爪附近细节</td><td>线缆不会碰撞/缠绕；安装后重新标定</td></tr>
+        <tr><td>示教设备</td><td>leader arm、手柄、手机或安全的拖动示教方式</td><td>切换接管是否平滑；有无死区、比例、方向反转</td></tr>
+        <tr><td>机器人端电脑</td><td>相机采集、状态读取、驱动控制、日志</td><td>端口、时钟、重启后的设备名称、控制周期稳定性</td></tr>
+        <tr><td>GPU 电脑</td><td>训练和可能的远程推理</td><td>网络时延、丢包、服务断开后机器人行为</td></tr>
+      </tbody></table></div>
+      <p>多相机不要只写 <code>camera=0/1</code>：这类索引重插、重启后可能改变。记录设备序列号或稳定路径，并让代码在启动时检查“顶部相机画面确实是顶部相机”。LeRobot 官方相机文档提醒索引变化；RealSense 多相机示例直接按设备序列号绑定。<a class="cite" href="#ref-3">[3]</a><a class="cite" href="#ref-25">[25]</a></p>
+    </section>
+
+    <section id="safety" data-title="安全是独立控制链">
+      <h2><span class="chapter-no">03</span>先让系统能停，再让模型能动</h2>
+      <p>模型不是安全控制器。真机首轮必须先验证实体急停、保护停机、驱动掉线处理和人工接管；运动空间内只留必要人员。保护停机与急停是不同状态，恢复程序也不同；不要用模型输出、网页“停止”按钮或 Python 异常处理代替硬件安全链。UR 文档区分保护停机和机器人急停，Franka 文档也明确其开发用监测功能不构成安全标准保证。<a class="cite" href="#ref-20">[20]</a><a class="cite" href="#ref-22">[22]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>层级</th><th>应该做什么</th><th>实际验收动作</th></tr></thead><tbody>
+        <tr><td>物理层</td><td>急停、风险区隔离、工装固定、线缆整理</td><td>在没有模型参与时按下急停，确认机器人按厂商设计停止并可复位</td></tr>
+        <tr><td>驱动/控制层</td><td>关节/速度/加速度/力矩边界，控制器掉线后的停止或保持策略</td><td>低速试运行，断开策略进程与网络，观察驱动的确定行为</td></tr>
+        <tr><td>软件安全层</td><td>工作空间围栏、步长限幅、命令超时、图像过期拒绝、碰撞与奇异位形检测</td><td>注入越界目标、旧图像、NaN 和超时，确认命令被拒绝并记录原因</td></tr>
+        <tr><td>操作层</td><td>人工接管、现场观察、每次 reset 后确认环境</td><td>从自主切到接管再切回，检查没有突然跳到旧动作块</td></tr>
+      </tbody></table></div>
+      <p>MoveIt Servo 能进行关节限位、奇异位形与碰撞检查，并在接近风险时降低速度，但它只是软件控制链的一层。限速/安全区数值必须按设备、负载和现场风险评估设定；不能把网上教程的数字原样搬到真实设备。<a class="cite" href="#ref-21">[21]</a></p>
+      <div class="paper-note">安全验收顺序：人工能停 → 驱动会停 → 适配器拒绝危险命令 → 才允许 VLA 发运动目标。</div>
+    </section>
+
+    <section id="calibration" data-title="标定、坐标与时间">
+      <h2><span class="chapter-no">04</span>标定和时间同步，比换模型更先做</h2>
+      <h3>4.1 机械零点、夹爪与相机身份</h3>
+      <p>先按厂商流程校准关节零点、确认 leader/follower 映射，再拍下“各关节中位、夹爪全开/全闭”的状态和数值。LeRobot 校准命令依赖稳定的机器人 ID 找到校准文件；若 ID 改了、设备重装或更换电机，旧校准不能想当然复用。检查同一个小正向命令是否让真实关节按预期方向运动。<a class="cite" href="#ref-2">[2]</a></p>
+      <h3>4.2 坐标系要能画出变换链</h3>
+      <p>至少命名 <code>base</code>（机器人基座）、<code>tool</code>（末端工具）、<code>camera</code>（主相机）、<code>object</code>（目标）四个坐标系。若动作是末端位姿，需写明目标在谁的坐标系中表示、姿态用欧拉角/轴角/四元数哪个约定，单位是 m 还是 mm。ROS 2 的 tf2 用带时间的变换树追踪这些坐标系；OpenCV 的 <code>calibrateHandEye</code> 有明确的输入/输出方向，传反矩阵会得到看似合理却方向错误的结果。<a class="cite" href="#ref-23">[23]</a><a class="cite" href="#ref-24">[24]</a></p>
+      <p>若只做固定场景的图像到关节动作模仿，未必需要精确手眼标定才能启动，但<strong>相机一旦移动，训练分布就变了</strong>；涉及 3D 目标、不同相机重定位或末端位姿控制时，标定必须加入验收。可用标定板在工作区多位置反投影，查看误差是否在任务容许范围内；记录标定日期与安装照片。</p>
+      <h3>4.3 “同一时刻”的图像、状态和动作</h3>
+      <p>一个数据样本应尽量回答：机器人在 <code>t</code> 时看到什么、处于什么状态、随后执行了什么。记录各传感器<strong>采集时间</strong>而非仅记录文件写入时间；统一时钟基准；按时间戳配对相机与关节状态；查看帧间隔、丢帧、延迟分布。LeRobot 数据集有 fps、特征模式与同步容差，但真实链路仍要检查相机读取超时/旧帧。<a class="cite" href="#ref-3">[3]</a><a class="cite" href="#ref-5">[5]</a></p>
+      <div class="box warning"><b>一个高频隐性错误</b><p>日志显示 30 FPS，不代表图像真的新鲜。若 USB 堵塞或缓存堆积，推理可能一直看几百毫秒前的画面。启动时画面挥手测试、运行时记录 <code>now - frame.capture_time</code>，并让超过阈值的帧触发保持/停机；阈值由任务速度和控制器决定。</p></div>
+    </section>
+
+    <section id="actions" data-title="动作接口对齐">
+      <h2><span class="chapter-no">05</span>动作表示必须逐维对齐</h2>
+      <p>“7 维动作”本身没有任何可执行含义。它可能是 6 个关节目标加夹爪开度，也可能是末端平移 3 维、旋转 3 维和夹爪，也可能每一维都是相对上一帧的增量。LeRobot 明确区分关节空间与末端空间，以及绝对、相对轨迹、逐步增量动作；三者在动作块中的累积方式不同。<a class="cite" href="#ref-4">[4]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>要问的问题</th><th>可能的错误</th><th>验证方法</th></tr></thead><tbody>
+        <tr><td>第 i 维是什么？</td><td>左右臂、关节顺序、夹爪维度错位</td><td>单维小幅命令，逐轴核对编码器变化</td></tr>
+        <tr><td>单位是什么？</td><td>度 ↔ 弧度、毫米 ↔ 米</td><td>在模型与驱动边界打印单位和物理量级</td></tr>
+        <tr><td>参考点在哪里？</td><td>绝对目标被当增量；相对块每步重复叠加</td><td>用零动作、常数动作和两步动作块做纸面演算</td></tr>
+        <tr><td>夹爪方向？</td><td>模型以 1 为开，驱动以 1 为关</td><td>脱离目标物，小幅开合并观察反馈</td></tr>
+        <tr><td>归一化统计？</td><td>选错数据集键或丢失 checkpoint 配套统计</td><td>对 10 个真实样本做 normalize → unnormalize 往返检查</td></tr>
+        <tr><td>目标 vs 实测？</td><td>把控制器目标值误当真实关节状态</td><td>同时记录目标、实测和跟踪误差</td></tr>
+      </tbody></table></div>
+      <p>OpenPI 明确将状态和动作统计保存在 checkpoint 附近，微调新机器人时需要决定复用预训练统计还是重新计算；OpenVLA 的真机代码也显式加载数据集统计，再用 <code>unnorm_key</code> 还原动作。最危险的是模型能输出“平滑数字”，但映射错一维仍会在真实机器人上造成错误运动。<a class="cite" href="#ref-11">[11]</a><a class="cite" href="#ref-13">[13]</a></p>
+      <div class="box practical"><b>上电前的无运动验证</b><p>用三条真实相机帧与状态作“影子推理”：只记录模型动作，不传给驱动；逐维输出原始值、反归一化值、单位转换值、限幅后的值，以及预计末端运动方向。让操作者对照画面逐条确认。</p></div>
+    </section>
+
+    <section id="simulation" data-title="仿真应该匹配什么">
+      <h2><span class="chapter-no">06</span>仿真先追求“接口一样”，再追求好看</h2>
+      <p>仿真中的成功率只有在<strong>观测、动作、控制器、初态和成功定义</strong>与真机可比较时才有价值。要先跑通同一套预处理与动作后处理：同样的图像裁切/补边、相机键名、状态顺序、动作单位、控制频率、动作保持时间、夹爪行为。Isaac Lab 的齿轮装配案例将仿真训练与 ROS 真机部署分成两个阶段，且明确任务初态已经握住齿轮；如果读者把结果当成“从桌上抓起齿轮再装配”，就误解了任务边界。<a class="cite" href="#ref-16">[16]</a></p>
+      <h3>6.1 标定名义模型</h3>
+      <p>从真机采一次慢速关节阶跃与夹爪开合：估计可达速度、响应迟滞、死区、跟踪误差和命令到运动的时延；再在仿真中复现同一命令，比较曲线。Isaac Lab 的执行器模型允许描述 PD 增益、饱和、传动、延迟等差异。接触任务还需检查桌面高度、物体尺寸/质量、摩擦、夹爪几何和末端 TCP。<a class="cite" href="#ref-17">[17]</a></p>
+      <h3>6.2 随机化“可能发生的误差”</h3>
+      <p>随机化对象通常包括光照/曝光/材质、相机小幅位姿与内参扰动、目标位置与尺寸、质量和摩擦、关节增益/迟滞、传感器噪声、动作延迟。范围应来自设备公差和真实测量，不是越宽越好。Isaac Lab 的跨物理引擎指南指出：若随机化必须极端宽才能迁移，应回头检查名义模型和策略利用的错误特征。<a class="cite" href="#ref-18">[18]</a></p>
+      <h3>6.3 留出与真实不同的仿真检验</h3>
+      <p>除了训练场景，固定一组“从未参与训练”的相机角度、物体初态、光照和动力学种子；再换物理引擎或渲染路径做 sim-to-sim 检查。这里测试的是脆弱性，不能把通过仿真测试当作真机安全许可。真实失败时保存对应场景，回到仿真复现并缩小差距。<a class="cite" href="#ref-15">[15]</a><a class="cite" href="#ref-18">[18]</a></p>
+    </section>
+
+    <section id="data" data-title="采真机数据">
+      <h2><span class="chapter-no">07</span>示教采集：把人的动作变成可学习的轨迹</h2>
+      <p>一条演示应包含任务文本、每步相机图像、关节/夹爪实测状态、发出的动作、采集时间、episode 边界、是否成功以及重置条件。示教前锁定相机位置和光线，做 3–5 条短演示回放视频并核对动作对齐，再批量录制。LeRobot 的入门流程是遥操作 → 录制 → 训练 → 部署；DROID 则公开了多站点机械臂平台和相机标定/采集流程，说明真实数据工程本身就是系统工作。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-26">[26]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>采集策略</th><th>做法</th><th>避开的坑</th></tr></thead><tbody>
+        <tr><td>先窄后宽</td><td>先固定物体类型和相机，分几个起点位置，每个位置多条成功轨迹</td><td>少量数据里同时改变物体、背景、相机和抓法，模型不知道学什么</td></tr>
+        <tr><td>让视觉足够</td><td>操作者只看模型会看到的视角完成任务</td><td>人依赖额外视角/触觉，模型无法观察关键接触</td></tr>
+        <tr><td>统一示教规则</td><td>接近、夹取、抬起、移动、放下的动作逻辑尽量一致</td><td>同一指令对应互相矛盾的演示</td></tr>
+        <tr><td>单独保留失败</td><td>失误、碰撞、操作员救场单独标记</td><td>把失败片段当成功动作模仿</td></tr>
+        <tr><td>每次 reset 拍照</td><td>记录初始物体位置、机器人姿态、背景</td><td>训练/评测初态分布说不清</td></tr>
+      </tbody></table></div>
+      <p>对初版积木抓取，50 条左右只是便于启动训练的经验参考。若 50 条在同一位置完全重复，覆盖率可能比 20 条分层摆位还差；反过来，变化太多又会让少量数据不足以支持泛化。LeRobot 建议先覆盖几个位置，每个位置多条演示，再逐步增加变化。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-6">[6]</a></p>
+    </section>
+
+    <section id="qa" data-title="数据质量验收">
+      <h2><span class="chapter-no">08</span>训练前逐集做数据体检</h2>
+      <p>数据集创建成功并不代表数据可用。先用可视化器逐集看：动作发生前画面有没有冻结？是否每条都看得见夹爪与目标？夹爪闭合的记录与画面同帧吗？是否有空 episode、重置动作混入任务轨迹、录制结束后继续空转、训练集与评测集初态相同？LeRobot 数据格式将视频、状态/动作、任务与 episode 元信息一起索引；需要把“可解码”与“时间上对应”分别检查。<a class="cite" href="#ref-5">[5]</a></p>
+      <ul class="checklist"><li>特征名、维度、dtype 在所有 episode 一致</li><li>图像画面与命名相机对应</li><li>采集时间连续，丢帧/重复帧有记录</li><li>动作、关节状态没有 NaN/Inf 或突变</li><li>夹爪开闭方向和视频一致</li><li>成功/失败标签、重置边界可靠</li><li>训练/验证按 episode 和场景拆分</li><li>固定 checkpoint、数据版本、预处理版本</li></ul>
+      <p>最直观的检查是<strong>回放一条演示</strong>：在低速、安全空间内把记录动作交给驱动，并对照视频与状态轨迹。但回放本身也是一次真机运动，必须遵循第 03 节安全验收。若回放与原示教不同，先排查控制接口、校准、时间延迟和闭环反馈，再谈训练网络。</p>
+    </section>
+
+    <section id="training" data-title="模型选择与微调">
+      <h2><span class="chapter-no">09</span>模型选择和微调：先求稳定基线</h2>
+      <p>第一版用能在当前硬件上稳定跑通的策略。轻量 ACT 或 Diffusion Policy 可当动作/数据接口基线；要让语言真正参与任务切换，再上 SmolVLA、π0/π0.5 或 OpenVLA。不要只比较论文榜单：检查模型是否支持你的相机数量、状态维度、动作空间、训练数据格式、推理显存和控制频率。SmolVLA 文档明确输入多相机、当前状态和自然语言，并给出从预训练权重微调的示例。<a class="cite" href="#ref-6">[6]</a><a class="cite" href="#ref-28">[28]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>路线</th><th>第一阶段适用性</th><th>真机注意点</th></tr></thead><tbody>
+        <tr><td>ACT / Diffusion Policy</td><td>验证数据与控制链、单任务基线</td><td>动作块长度、执行步数、滚动重规划</td></tr>
+        <tr><td>SmolVLA / LeRobot</td><td>已有 LeRobot 数据、想用统一采训部署工具</td><td>相机键、状态/动作 processor、模型所需 GPU</td></tr>
+        <tr><td>π0 / π0.5 / openpi</td><td>有较强算力和合适动作适配器</td><td>机器人特定 transform、统计资产、服务端/客户端契约</td></tr>
+        <tr><td>OpenVLA</td><td>研究语言视觉到动作、已有支持的平台</td><td>反归一化键、动作约定、单步推理时延</td></tr>
+      </tbody></table></div>
+      <p>微调时只让数据、模型配置和统计文件形成一个可追溯的版本组合。先在验证 episode 上看动作误差及视频回放，再拿<strong>未参与训练的真实初态</strong>作影子推理。损失下降只能说明模型拟合了训练标签，不说明能在闭环真机中纠错。训练期间保留至少一个简单基线，避免把数据管线问题误判为“大模型能力不足”。</p>
+      <div class="box practical"><b>一个必须做的往返测试</b><p>从真机数据里随机取 10 个状态/动作，经训练预处理变成模型输入/标签，再走部署端后处理还原。逐维比较还原值与原始物理量。这个测试优先于训练更长时间；OpenPI 与 OpenVLA 都把统计映射放在策略接口的重要位置。<a class="cite" href="#ref-11">[11]</a><a class="cite" href="#ref-13">[13]</a></p></div>
+    </section>
+
+    <section id="deployment" data-title="推理服务与动作块">
+      <h2><span class="chapter-no">10</span>推理部署：不要让 GPU 延迟直接控制电机</h2>
+      <p>推荐把机器人端采集/控制进程与 GPU 策略服务分开：机器人端掌握设备、节拍和安全状态；GPU 端只负责收到观测后返回带时间戳、序号和契约版本的动作块。OpenPI 的 ALOHA 真机例子采用 WebSocket 策略客户端和独立服务进程；LeRobot 的远程推理文档采用相似的机器人端/服务端分工。<a class="cite" href="#ref-8">[8]</a><a class="cite" href="#ref-10">[10]</a></p>
+      <p>动作块会缓解重模型的推理延迟，但有两个新问题：一是块用完时新块还没到，机器人会停顿；二是新块与旧块在交界处不一致，机器人会突然跳变。LeRobot RTC 文档专门讨论块间连续性、等待预算和新鲜度检查；ACT 真机代码中也有动作块和时间聚合的实现。<a class="cite" href="#ref-9">[9]</a><a class="cite" href="#ref-29">[29]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>必须记录的量</th><th>为什么重要</th><th>失效时的动作</th></tr></thead><tbody>
+        <tr><td>观测年龄</td><td>旧画面会把策略引向过去的目标位置</td><td>拒绝该预测，进入驱动定义的安全保持/停止</td></tr>
+        <tr><td>推理总延迟及 p95/p99</td><td>均值无法覆盖偶发慢帧</td><td>缩小执行节拍、调整动作块/提前请求，或换更快模型</td></tr>
+        <tr><td>动作队列剩余量</td><td>提前知道要断粮</td><td>开始受控减速，禁止重播旧块</td></tr>
+        <tr><td>目标与实测误差</td><td>夹取受阻时控制器可能跟不上</td><td>超过任务阈值即暂停并记录</td></tr>
+        <tr><td>服务/驱动心跳</td><td>网络断开时不能继续开放环运动</td><td>触发独立的超时处理</td></tr>
+      </tbody></table></div>
+      <p>粗略预算：若动作块可安全执行 <code>H</code> 步、控制频率为 <code>f</code>，则覆盖时长是 <code>H/f</code> 秒。下一次推理与传输的高分位延迟必须小于可用覆盖时间，并留出余量；还要考虑只执行块的前 <code>k</code> 步以保持闭环响应。实际数值由模型、任务和设备测得，不应从论文表格直接复制。</p>
+    </section>
+
+    <section id="adapter" data-title="机器人端安全适配器">
+      <h2><span class="chapter-no">11</span>在模型和驱动中间放一道可检查的适配器</h2>
+      <p>安全适配器的职责是把“模型想做什么”变成“此刻机器人允许做什么”，包括契约检查、反归一化、坐标变换、关节/工作空间限制、速度与步长限制、碰撞检查、超时以及日志。它应独立于模型训练代码，能用人工输入和故障注入测试。下面是逻辑示意，不是可直接连真实电机的控制程序：</p>
+      <pre><code>def admit(observation, prediction, measured, now):
+    require(observation.camera_age(now) &lt; configured_max_age)
+    require(prediction.contract_id == active_contract_id)
+    require(prediction.episode_id == active_episode_id)
+    require(prediction.is_finite() and prediction.shape == expected_shape)
+
+    target = decode_and_unnormalize(prediction, active_norm_stats)
+    target = transform_into_driver_frame(target, calibrated_frames)
+    require(within_joint_and_workspace_limits(target))
+    require(collision_checker.accepts(measured, target))
+
+    limited = apply_velocity_acceleration_and_step_limits(measured, target)
+    require(driver.healthy() and operator_enable_is_active())
+    return limited  # only the verified driver can send this command</code></pre>
+      <p>不要静默裁剪所有错误：小的越界可受控限幅，维度错误、NaN、坐标系不符、旧 episode 的动作块应直接拒绝，并写明拒绝原因。抓取接触时软件碰撞模型可能过于保守，阈值需要和任务、设备手册一起调；不能因此关闭全部检查。Franka 和 MoveIt 文档分别说明了驱动层的滤波/速率限制以及碰撞/奇异位形检查的功能与局限。<a class="cite" href="#ref-20">[20]</a><a class="cite" href="#ref-21">[21]</a></p>
+    </section>
+
+    <section id="first-run" data-title="第一次上电到自主运行">
+      <h2><span class="chapter-no">12</span>第一次真机运行的逐步清单</h2>
+      <ol>
+        <li><strong>机械与风险区：</strong>固定桌面、工装、相机和线缆；清空危险区；确认急停与操作员位置。</li>
+        <li><strong>只读启动：</strong>启动驱动，仅显示关节状态、相机画面和安全模式，不发运动命令；核对设备 ID。</li>
+        <li><strong>手动微动：</strong>先在远离障碍的安全空间，以现场批准的低速逐轴运动；核对关节顺序、符号、单位、夹爪方向。</li>
+        <li><strong>示教与回放：</strong>录 3–5 条，逐帧看数据；必要时在同样安全边界下低速回放。</li>
+        <li><strong>影子推理：</strong>模型加载后只记录动作、不执行；打印每维物理量和预测末端方向。</li>
+        <li><strong>单步批准：</strong>人逐步确认少量动作，检查软限位、时间戳、目标与实测跟踪。</li>
+        <li><strong>短闭环：</strong>运行几秒、立即停止，复查日志与视频；再逐步增加 episode 时长。</li>
+        <li><strong>故障注入：</strong>拔掉策略服务网络、冻结相机、发送错误维度和过期块，确认适配器拒绝动作。</li>
+        <li><strong>正式评测：</strong>锁定 checkpoint 和参数，按预先写好的初态分布执行完整批次。</li>
+      </ol>
+      <div class="box warning"><b>每次 reset 都是新的安全检查</b><p>物体放置、机械臂初始位姿、夹爪状态、相机画面、桌面障碍和任务文本都重新确认。OpenPI 的 ALOHA 真机说明也强调任务初态和物体位置对已发布 checkpoint 的成败有影响，并明确零样本运行仍属实验性。<a class="cite" href="#ref-10">[10]</a></p></div>
+    </section>
+
+    <section id="eval" data-title="真实评测与报告">
+      <h2><span class="chapter-no">13</span>成功率要在真实初态分布上测</h2>
+      <p>评测前定义“成功”：例如抓起积木、移动到盒内、松开夹爪后仍留在盒内；只碰到盒沿、人工接管、超时或安全停机均按预定义规则记录。每次试验固定 checkpoint、任务文本、相机位置与安全参数，随机化物体初态但记录位置。训练和调参用的初态不要再当最终测试集。LeRobot 的政策贡献指南要求报告真实机器人的硬件、命令、checkpoint 和多条 episode 的成功率。<a class="cite" href="#ref-30">[30]</a></p>
+      <div class="table-scroll"><table><thead><tr><th>报告字段</th><th>写法建议</th></tr></thead><tbody>
+        <tr><td>主指标</td><td>成功次数 / 总次数，并写明每次是否有人工接管、是否超时</td></tr>
+        <tr><td>分层成功率</td><td>按物体位置、朝向、光照、是否遮挡拆开，防止均值掩盖盲点</td></tr>
+        <tr><td>效率</td><td>完成时间、有效控制频率、推理延迟 p50/p95/p99、重规划次数</td></tr>
+        <tr><td>安全/稳定</td><td>碰撞/保护停机、过期帧、丢块、超限拒绝、跟踪误差事件</td></tr>
+        <tr><td>可复现资产</td><td>数据版本、模型权重、统计文件、运行配置、完整视频、失败分类</td></tr>
+      </tbody></table></div>
+      <p>小样本下不要只写“90% 成功”。例如 9/10 与 90/100 都是 90%，但不确定性差很多。先按至少 10 次作为最小可讨论记录，再根据任务成本扩大到能覆盖各初态层；报告分子和分母。若调过一次阈值或重新摆相机，应重新编号实验，而非混到原批次。</p>
+    </section>
+
+    <section id="debug" data-title="失败诊断树">
+      <h2><span class="chapter-no">14</span>失败时按链路排，而不是先重训</h2>
+      <div class="table-scroll"><table><thead><tr><th>现象</th><th>先检查</th><th>再考虑</th></tr></thead><tbody>
+        <tr><td>动作方向错、机器人突然大幅运动</td><td>关节顺序、单位、绝对/相对、夹爪符号、反归一化键</td><td>模型训练</td></tr>
+        <tr><td>总抓偏固定方向</td><td>相机位置变动、内外参、TCP、桌面高度</td><td>增加视觉数据</td></tr>
+        <tr><td>总慢半拍、追不上物体</td><td>图像年龄、网络时延、动作块队列、有效控制频率</td><td>异步/RTC 或更快模型</td></tr>
+        <tr><td>接近物体但夹不住</td><td>夹爪开度、闭合时机、接触/摩擦与负载、腕视角</td><td>接触阶段补示教</td></tr>
+        <tr><td>仿真好、真机差</td><td>真实观测/动作契约、名义动力学、相机分布、初态覆盖</td><td>针对性随机化与真实微调</td></tr>
+        <tr><td>训练视频好、闭环差</td><td>训练/推理预处理不一致、动作目标和实测偏差、分布外状态</td><td>DAgger/人工接管数据</td></tr>
+      </tbody></table></div>
+      <p>诊断时保留完整观察→预测→过滤→执行→反馈链，能定位到哪一层改变了结果。若基础接口已正确，采集策略诱发的失败并由人接管纠正，比盲目重复成功示教更有针对性。LeRobot 的 DAgger 模式能把人工干预帧标出并记录，用于后续训练。<a class="cite" href="#ref-7">[7]</a></p>
+    </section>
+
+    <section id="runbook" data-title="可执行的 SO-101 路线">
+      <h2><span class="chapter-no">15</span>一条入门路线：SO-101 + LeRobot + SmolVLA</h2>
+      <p>下面是<strong>执行顺序</strong>，不是对所有机器都能复制粘贴的固定命令。LeRobot 的参数和 CLI 可能随版本变化，按安装版本的 <code>--help</code> 与官方教程填写设备端口、相机路径、ID 和数据集名。建议固定一个发布版本或 commit，再开始采集。<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-2">[2]</a></p>
+      <ol>
+        <li><strong>装配与校准：</strong>按 SO-101 厂商/LeRobot 指引装配 follower 与 leader，使用 <code>lerobot-find-cameras</code> 确认主视角；用 <code>lerobot-calibrate</code> 校准各设备，保存 ID、标定文件和照片。<a class="cite" href="#ref-2">[2]</a></li>
+        <li><strong>遥操作验证：</strong>用 <code>lerobot-teleoperate</code> 在安全空间完成数次空手取放，核对相机画面、夹爪符号、运动方向和控制节拍。<a class="cite" href="#ref-2">[2]</a></li>
+        <li><strong>录制：</strong>用 <code>lerobot-record</code> 录制一个任务，先 3–5 条检查数据，再按物体位置分层扩至约 50 条起步；只把符合目标定义的 episode 纳入主训练集。<a class="cite" href="#ref-1">[1]</a></li>
+        <li><strong>训练：</strong>按 SmolVLA 文档，用预训练 <code>lerobot/smolvla_base</code> 对自己的 <code>dataset.repo_id</code> 微调。根据 GPU 显存选择 batch，保存 checkpoint、processor 和统计文件。<a class="cite" href="#ref-6">[6]</a></li>
+        <li><strong>部署：</strong>先影子推理，再以 <code>lerobot-rollout --strategy.type=base</code> 做短时、低速试验。若模型延迟明显，再评估 RTC 或远程推理；先记录实际节拍和尾延迟再调动作块。<a class="cite" href="#ref-7">[7]</a><a class="cite" href="#ref-9">[9]</a></li>
+        <li><strong>评测与改进：</strong>用 <code>episodic</code> 模式保存真实评测，按失败类别补示教或用 DAgger 记录干预，不要用评测集直接继续调参。<a class="cite" href="#ref-7">[7]</a></li>
+      </ol>
+      <h3>15.1 可改成自己设备参数的命令骨架</h3>
+      <p>以下按 <a href="https://huggingface.co/docs/lerobot/v0.6.0/en/cheat-sheet">LeRobot v0.6.0 官方命令页</a> 与 <a href="https://huggingface.co/docs/lerobot/v0.6.0/en/smolvla">SmolVLA v0.6.0 文档</a>整理。先安装相同版本和 SmolVLA 依赖；把端口、相机索引、设备 ID、Hub 用户名改为自己的值。示例只用一台顶部相机，训练和部署必须保留相同的相机键 <code>top</code>。<code>lerobot-record</code> 默认可能上传数据到 Hugging Face Hub；包含实验室画面的数据请先确认访问设置或查当前版本的本地保存参数。</p>
+      <pre><code># 1. 识别端口与相机，并分别完成 follower / leader 标定
+lerobot-find-port
+lerobot-find-cameras
+lerobot-calibrate --robot.type=so101_follower \
+  --robot.port=/dev/ttyACM0 --robot.id=lab_follower
+
+# 2. 先录 5 条试采数据；通过数据体检后再单独录正式数据
+lerobot-record \
+  --robot.type=so101_follower --robot.port=/dev/ttyACM0 \
+  --robot.id=lab_follower \
+  --robot.cameras="{ top: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30} }" \
+  --teleop.type=so101_leader --teleop.port=/dev/ttyACM1 \
+  --teleop.id=lab_leader \
+  --dataset.repo_id=YOUR_HF_USER/so101_pickplace_pilot \
+  --dataset.num_episodes=5 \
+  --dataset.single_task="put the red block in the box"
+
+# 3. 正式数据集确认无误后微调；数值是文档示例，按显存调整
+lerobot-train \
+  --policy.path=lerobot/smolvla_base \
+  --dataset.repo_id=YOUR_HF_USER/so101_pickplace_train \
+  --batch_size=64 --steps=20000 \
+  --output_dir=outputs/train/so101_smolvla \
+  --job_name=so101_smolvla --policy.device=cuda \
+  --wandb.enable=false
+
+# 4. 影子验证和安全验收通过后，才运行短时间自主 rollout
+lerobot-rollout \
+  --strategy.type=base \
+  --policy.path=outputs/train/so101_smolvla/checkpoints/last/pretrained_model \
+  --robot.type=so101_follower --robot.port=/dev/ttyACM0 \
+  --robot.id=lab_follower \
+  --robot.cameras="{ top: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30} }" \
+  --task="put the red block in the box" --duration=10</code></pre>
+      <p>上面没有给出“用 Python 命令直接急停”的伪代码，因为这必须使用该机器人经过验收的硬件/驱动安全链。若使用另一版本的 LeRobot，先运行各 CLI 的 <code>--help</code> 并核对 checkpoint 目录；不要在版本不一致时直接照抄。试采 5 条与正式训练集是两个不同 repo，不能把上面的 <code>pilot</code> 命令重复执行 50 次就假设会自动变成 <code>train</code>。</p>
+      <div class="box practical"><b>一个可复用的实验记录模板</b><p><code>date / robot_id / camera_serials / task / object_init / checkpoint / norm_stats / action_contract / target_hz / achieved_hz / latency_p95 / success / intervention / stop_reason / video_path</code>。把这些字段填全，比只留一段成功视频更接近可复现的实验。</p></div>
+    </section>
+
+    <section id="openpi" data-title="另一条路线：openpi">
+      <h2><span class="chapter-no">16</span>另一条路线：ALOHA + openpi 的真机实例</h2>
+      <p>若实验室已有 ALOHA，openpi 提供真实 ALOHA 目录与示例。其官方说明要求先完成 ALOHA 硬件安装，将 RealSense 摄像头按序列号绑定，然后分别启动机器人环境、ROS 节点和策略服务；客户端从模型服务获取动作块再在真实环境执行。<a class="cite" href="#ref-10">[10]</a><a class="cite" href="#ref-12">[12]</a></p>
+      <p>研究这个实例时应重点读四处：<code>examples/aloha_real/README.md</code> 的硬件与启动顺序；<code>env.py</code> 的图像/状态预处理；<code>main.py</code> 的服务端客户端和动作 horizon；<code>docs/norm_stats.md</code> 的统计资产选择。它们正好对应真机系统最容易错的四个接口。openpi 也明确提醒：发布 checkpoint 的零样本行为是实验性的，物体与初态分布会显著影响表现。<a class="cite" href="#ref-10">[10]</a><a class="cite" href="#ref-11">[11]</a></p>
+    </section>
+
+    <section id="finish" data-title="交付标准与术语">
+      <h2><span class="chapter-no">17</span>做到什么程度，才算“完成一次 Sim2Real”</h2>
+      <ul class="checklist"><li>明确定义真机任务、成功条件与安全边界</li><li>相机、关节、夹爪、时钟和坐标系经验证</li><li>仿真/数据/模型/驱动共用一个动作契约</li><li>公开或内部保存完整数据与 checkpoint 版本</li><li>影子推理和故障注入通过</li><li>短闭环与正式评测分开执行</li><li>报告真实成功次数/总次数与失败分类</li><li>可从日志重建每一步“看到—预测—执行—反馈”</li></ul>
+      <p><strong>术语速记：</strong><em>observation</em> 是模型读到的图像、状态和任务；<em>action chunk</em> 是一次预测的未来动作序列；<em>control frequency</em> 是驱动发送目标的频率，未必等于模型调用频率；<em>shadow inference</em> 是只预测不执行；<em>DAgger</em> 是策略执行时由人介入纠正并采集这些状态；<em>domain randomization</em> 是训练时对可合理变化的视觉/动力学参数取样。</p>
+      <p>真正的经验不是“把一个 checkpoint 接上 USB”，而是让每层接口都可测试、让不确定性可测、让每次失败都能定位。第一批真机实验往往是在修设备、时钟、数据和动作语义；这些基础一旦可靠，后续更强的 VLA 才有可比较的舞台。</p>
+    </section>
+
+    <section id="references" data-title="原始资料与进一步阅读">
+      <h2><span class="chapter-no">↗</span>原始资料与进一步阅读</h2>
+      <p>以下均为本篇写作时检索并读取的官方文档、原始代码或原论文。文档随版本更新，命令以你实际安装的版本为准。访问日期：2026-10-22。</p>
+      <ol class="refs">
+        <li id="ref-1"><a href="https://huggingface.co/docs/lerobot/il_robots">LeRobot · Imitation Learning on Real-World Robots</a></li>
+        <li id="ref-2"><a href="https://huggingface.co/docs/lerobot/main/cheat-sheet">LeRobot · Cheat sheet</a></li>
+        <li id="ref-3"><a href="https://huggingface.co/docs/lerobot/cameras">LeRobot · Cameras</a></li>
+        <li id="ref-4"><a href="https://huggingface.co/docs/lerobot/main/action_representations">LeRobot · Action Representations</a></li>
+        <li id="ref-5"><a href="https://huggingface.co/docs/lerobot/main/api/datasets">LeRobot · Datasets API</a></li>
+        <li id="ref-6"><a href="https://huggingface.co/docs/lerobot/v0.6.0/en/smolvla">LeRobot · SmolVLA</a></li>
+        <li id="ref-7"><a href="https://huggingface.co/docs/lerobot/main/inference">LeRobot · Policy Deployment / rollout</a></li>
+        <li id="ref-8"><a href="https://huggingface.co/docs/lerobot/main/remote_inference">LeRobot · Remote Inference</a></li>
+        <li id="ref-9"><a href="https://huggingface.co/docs/lerobot/main/rtc">LeRobot · Real-Time Chunking</a></li>
+        <li id="ref-10"><a href="https://github.com/Physical-Intelligence/openpi/blob/main/examples/aloha_real/README.md">openpi · Run ALOHA (Real Robot)</a></li>
+        <li id="ref-11"><a href="https://github.com/Physical-Intelligence/openpi/blob/main/docs/norm_stats.md">openpi · Normalization statistics</a></li>
+        <li id="ref-12"><a href="https://github.com/Physical-Intelligence/openpi/blob/main/examples/aloha_real/env.py">openpi · ALOHA real environment adapter</a></li>
+        <li id="ref-13"><a href="https://github.com/openvla/openvla/blob/main/vla-scripts/deploy.py">OpenVLA · deployment server</a></li>
+        <li id="ref-14"><a href="https://github.com/openvla/openvla/blob/main/experiments/robot/bridge/run_bridgev2_eval.py">OpenVLA · Bridge V2 real-world evaluation loop</a></li>
+        <li id="ref-15"><a href="https://isaac-sim.github.io/IsaacLab/main/source/policy_deployment/index.html">Isaac Lab · Sim2Real policy deployment</a></li>
+        <li id="ref-16"><a href="https://isaac-sim.github.io/IsaacLab/main/source/policy_deployment/02_gear_assembly/gear_assembly_policy.html">Isaac Lab · Gear insertion and ROS deployment</a></li>
+        <li id="ref-17"><a href="https://isaac-sim.github.io/IsaacLab/main/source/concepts/actuators.html">Isaac Lab · Actuators</a></li>
+        <li id="ref-18"><a href="https://isaac-sim.github.io/IsaacLab/develop/source/how-to/transfer_policies_between_physx_and_newton.html">Isaac Lab · Transfer policies between PhysX and Newton</a></li>
+        <li id="ref-19"><a href="https://frankaemika.github.io/docs/overview.html">Franka · Control Interface overview</a></li>
+        <li id="ref-20"><a href="https://frankaemika.github.io/docs/libfranka.html">Franka · libfranka control and monitoring</a></li>
+        <li id="ref-21"><a href="https://moveit.picknik.ai/main/doc/examples/realtime_servo/realtime_servo_tutorial.html">MoveIt · Realtime Servo</a></li>
+        <li id="ref-22"><a href="https://docs.universal-robots.com/tutorials/controlling-robot-externally/stop-recovery.html">Universal Robots · Stop recovery</a></li>
+        <li id="ref-23"><a href="https://docs.opencv.org/3.4.11/d9/d0c/group__calib3d.html">OpenCV · Camera / hand-eye calibration</a></li>
+        <li id="ref-24"><a href="https://github.com/ros2/ros2_documentation/blob/rolling/source/ROS-Framework/interfaces/About-Tf2/About-Tf2.rst">ROS 2 · About tf2</a></li>
+        <li id="ref-25"><a href="https://github.com/realsenseai/librealsense/blob/master/examples/multicam/readme.md?plain=1">RealSense · Multi-camera example</a></li>
+        <li id="ref-26"><a href="https://github.com/droid-dataset/droid">DROID · Robot platform repository</a></li>
+        <li id="ref-27"><a href="https://arxiv.org/abs/2403.12945">DROID paper</a></li>
+        <li id="ref-28"><a href="https://arxiv.org/abs/2303.04137">Diffusion Policy paper</a></li>
+        <li id="ref-29"><a href="https://github.com/tonyzhaozh/act/blob/main/imitate_episodes.py">ACT · real robot rollout implementation</a></li>
+        <li id="ref-30"><a href="https://huggingface.co/docs/lerobot/main/en/bring_your_own_policies">LeRobot · Adding a policy / reporting results</a></li>
+      </ol>
+      <p class="endnote">本篇由 AI 根据公开资料检索整理，关键事实附有原始链接。它反映检索时点的公开信息，可能存在版本差异或遗漏；文中的现场操作建议须结合具体设备、厂商手册和实验室安全流程验证。</p>
+    </section>
+    <footer><a href="../">← 返回总目录</a>　·　VLA 真机 Sim2Real / Field notes　·　2026-10-22</footer>
+  </main>
+</div>
+<script>
+  const sections = [...document.querySelectorAll('main section[data-title]')];
+  const toc = document.getElementById('toc');
+  const mobileToc = document.getElementById('mobile-toc');
+  const list = document.createElement('ol');
+  for (const section of sections) {
+    const item = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = '#' + section.id;
+    link.textContent = section.dataset.title;
+    item.appendChild(link);
+    list.appendChild(item);
+    const mobileLink = link.cloneNode(true);
+    mobileToc.appendChild(mobileLink);
+  }
+  toc.appendChild(list);
+  const progress = document.getElementById('progress');
+  const updateProgress = () => {
+    const max = document.documentElement.scrollHeight - innerHeight;
+    progress.style.width = (max > 0 ? Math.min(100, Math.max(0, scrollY / max * 100)) : 0) + '%';
+  };
+  addEventListener('scroll', updateProgress, {passive:true});
+  addEventListener('resize', updateProgress);
+  updateProgress();
+  if ('IntersectionObserver' in window) {
+    const links = [...toc.querySelectorAll('a')];
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries.filter(entry => entry.isIntersecting).sort((a,b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (!visible) return;
+      links.forEach(link => link.classList.toggle('active', link.hash === '#' + visible.target.id));
+    }, {rootMargin:'-15% 0px -70% 0px'});
+    sections.forEach(section => observer.observe(section));
+  }
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
 <title>AI · 研究笔记</title>
-<meta content="AI 研究笔记总目录：Agent、具身智能与大模型。包含 DeepGEMM、上下文压缩、PPO、GR00T、ZR-0、Flow Matching 与 π0/π0.5。" name="description"/>
+<meta content="AI 研究笔记总目录：Agent、具身智能与大模型。包含 VLA 真机 Sim2Real、DeepGEMM、上下文压缩、PPO、GR00T、ZR-0、Flow Matching 与 π0/π0.5。" name="description"/>
 <script>
     // Keep previously shared Astra section URLs working after introducing the index.
     function redirectLegacySection() {
@@ -30,15 +30,15 @@
 <section aria-labelledby="index-title" class="index-intro">
 <p class="eyebrow">读论文，拆模型，也把实践记下来。</p>
 <h1 id="index-title">AI 研究笔记<span>按主题，慢慢读懂</span></h1>
-<p class="intro-copy">按 Agent、具身智能与大模型整理学习记录。<br/>目前收录 9 篇笔记，选择一个主题开始阅读。</p>
-<nav aria-label="按主题跳转" class="topic-nav"><a href="#agent">Agent <span>2 篇</span></a><a href="#embodied">具身智能 <span>6 篇</span></a><a href="#llm">大模型 <span>1 篇</span></a></nav></section>
+<p class="intro-copy">按 Agent、具身智能与大模型整理学习记录。<br/>目前收录 10 篇笔记，选择一个主题开始阅读。</p>
+<nav aria-label="按主题跳转" class="topic-nav"><a href="#agent">Agent <span>2 篇</span></a><a href="#embodied">具身智能 <span>7 篇</span></a><a href="#llm">大模型 <span>1 篇</span></a></nav></section>
 <div class="collections"><section aria-labelledby="agent-heading" class="collection" id="agent"><div class="collection-heading"><div><p class="collection-kicker">01 / AGENTS</p><h2 id="agent-heading">Agent 类</h2><p class="collection-description">上下文工程与强化学习基础。</p></div><span>2 篇笔记</span></div><div class="notebook-list"><a aria-labelledby="context-title" class="notebook notebook-context" href="context-compression/">
 <div class="notebook-top"><span class="notebook-number">01</span><span class="notebook-type">实战研究</span></div>
 <h3 id="context-title">上下文压缩<span class="edition">实战研究笔记</span></h3>
 <p class="notebook-description">从资料采集、逐篇小结到最佳实践，梳理压缩触发条件、信息保留与质量评估。</p>
 <div class="topic-line"><span>上下文工程</span><span>压缩策略</span><span>质量评估</span></div>
 <div class="notebook-bottom"><span>可编辑笔记 · 实践指南</span><span class="read-link">翻开阅读 ↗</span></div>
-</a><a aria-labelledby="ppo-title" class="notebook notebook-ppo" href="ppo/"><div class="notebook-top"><span class="notebook-number">02</span><span class="notebook-type">强化学习基础</span></div><h3 id="ppo-title">PPO 近端策略优化<span class="edition">从直觉到手写实现</span></h3><p class="notebook-description">从策略梯度、Actor-Critic 与 GAE 到 PPO-Clip，保留手算计算器、训练诊断和 PyTorch 实现。</p><div class="topic-line"><span>策略优化</span><span>GAE</span><span>交互计算</span></div><div class="notebook-bottom"><span>13 章 · 完整教程</span><span class="read-link">翻开阅读 ↗</span></div></a></div></section><section aria-labelledby="embodied-heading" class="collection" id="embodied"><div class="collection-heading"><div><p class="collection-kicker">02 / EMBODIED AI</p><h2 id="embodied-heading">具身智能类</h2><p class="collection-description">机器人模型、连续动作生成与系统实践。</p></div><span>6 篇笔记</span></div><div class="notebook-list"><a aria-labelledby="astra-title" class="notebook notebook-astra" href="astra/">
+</a><a aria-labelledby="ppo-title" class="notebook notebook-ppo" href="ppo/"><div class="notebook-top"><span class="notebook-number">02</span><span class="notebook-type">强化学习基础</span></div><h3 id="ppo-title">PPO 近端策略优化<span class="edition">从直觉到手写实现</span></h3><p class="notebook-description">从策略梯度、Actor-Critic 与 GAE 到 PPO-Clip，保留手算计算器、训练诊断和 PyTorch 实现。</p><div class="topic-line"><span>策略优化</span><span>GAE</span><span>交互计算</span></div><div class="notebook-bottom"><span>13 章 · 完整教程</span><span class="read-link">翻开阅读 ↗</span></div></a></div></section><section aria-labelledby="embodied-heading" class="collection" id="embodied"><div class="collection-heading"><div><p class="collection-kicker">02 / EMBODIED AI</p><h2 id="embodied-heading">具身智能类</h2><p class="collection-description">机器人模型、连续动作生成与系统实践。</p></div><span>7 篇笔记</span></div><div class="notebook-list"><a aria-labelledby="astra-title" class="notebook notebook-astra" href="astra/">
 <div class="notebook-top"><span class="notebook-number">01</span><span class="notebook-type">研究综述</span></div>
 <h3 id="astra-title">GPT-6 Astra<span class="cross">×</span>具身智能</h3>
 <p class="notebook-description">通用模型如何接入机器人？从接入范式、操作与导航，到工程实践、评测与研究讨论。</p>
@@ -62,7 +62,7 @@
 <p class="notebook-description">左侧保留论文结构，右侧逐段中文翻译。包含摘要、正文、图注、实验表格与附录，支持图表放大和原版 PDF 查看。</p>
 <div class="topic-line"><span>双栏阅读</span><span>公式与图表</span><span>全文翻译</span></div>
 <div class="notebook-bottom"><span>完整对照 · 可离线阅读</span><span class="read-link">翻开阅读 ↗</span></div>
-</a></div></section><section aria-labelledby="llm-heading" class="collection" id="llm"><div class="collection-heading"><div><p class="collection-kicker">03 / LANGUAGE MODELS</p><h2 id="llm-heading">大模型类</h2><p class="collection-description">底层算子、GPU 执行与推理系统。</p></div><span>1 篇笔记</span></div><div class="notebook-list"><a aria-labelledby="deepgemm-title" class="notebook notebook-deepgemm" href="deepgemm/">
+</a><a aria-labelledby="sim2real-title" class="notebook notebook-gr00t" href="vla-sim2real/"><div class="notebook-top"><span class="notebook-number">07</span><span class="notebook-type">真机实操</span></div><h3 id="sim2real-title">VLA 如何真正 Sim2Real<span class="edition">从模型输出到机器人动起来</span></h3><p class="notebook-description">硬件、安全、相机与动作接口、示教采集、微调、推理部署和真实评测，按上机顺序写成可核对的操作手册。</p><div class="topic-line"><span>真机部署</span><span>数据与标定</span><span>安全评测</span></div><div class="notebook-bottom"><span>18 节 · 30 条原始资料</span><span class="read-link">翻开阅读 ↗</span></div></a></div></section><section aria-labelledby="llm-heading" class="collection" id="llm"><div class="collection-heading"><div><p class="collection-kicker">03 / LANGUAGE MODELS</p><h2 id="llm-heading">大模型类</h2><p class="collection-description">底层算子、GPU 执行与推理系统。</p></div><span>1 篇笔记</span></div><div class="notebook-list"><a aria-labelledby="deepgemm-title" class="notebook notebook-deepgemm" href="deepgemm/">
 <div class="notebook-top"><span class="notebook-number">01</span><span class="notebook-type">源码学习</span></div>
 <h3 id="deepgemm-title">DeepGEMM<span class="edition">从大模型走到 GPU</span></h3>
 <p class="notebook-description">先手算矩阵乘法，再用 NVIDIA 官方图与手绘理解 GPU，沿 Python、JIT 和 kernel 主循环深入阅读源码。</p>
